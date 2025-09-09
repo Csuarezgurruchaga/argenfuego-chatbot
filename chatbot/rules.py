@@ -72,9 +72,9 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
     def _get_pregunta_campo_individual(campo: str) -> str:
         preguntas = {
             'email': "📧 ¿Cuál es tu email de contacto?",
-            'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio?",
+            'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio?(aclarar CABA o Provincia)",
             'horario_visita': "🕒 ¿Cuál es tu horario disponible para la visita? (ej: lunes a viernes 9-17h)",
-            'descripcion': "📝 ¿Podrías describir qué necesitas específicamente? (ej: tipo de equipos, cantidad de ambientes, etc.)"
+            'descripcion': "📝 ¿Podrías describir qué necesitas específicamente? (ej: tipo de equipos (polvo quimico, CO2), capacidad (5kg, 10kg) y Cantidad)"
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     
