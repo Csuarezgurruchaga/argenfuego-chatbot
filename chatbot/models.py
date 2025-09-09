@@ -12,6 +12,7 @@ class EstadoConversacion(str, Enum):
     INICIO = "inicio"
     ESPERANDO_OPCION = "esperando_opcion"
     RECOLECTANDO_DATOS = "recolectando_datos"
+    RECOLECTANDO_DATOS_INDIVIDUALES = "recolectando_datos_individuales"
     VALIDANDO_DATOS = "validando_datos"
     CONFIRMANDO = "confirmando"
     ENVIANDO = "enviando"

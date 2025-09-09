@@ -59,6 +59,107 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
 ✏️ Responde **"NO"** si hay algo que corregir"""
     
     @staticmethod
+    def _get_texto_tipo_consulta(tipo_consulta: TipoConsulta) -> str:
+        textos = {
+            TipoConsulta.PRESUPUESTO: "un presupuesto",
+            TipoConsulta.VISITA_TECNICA: "coordinar una visita técnica", 
+            TipoConsulta.URGENCIA: "atender una urgencia",
+            TipoConsulta.OTRAS: "resolver una consulta"
+        }
+        return textos.get(tipo_consulta, "ayuda")
+    
+    @staticmethod
+    def _get_pregunta_campo_individual(campo: str) -> str:
+        preguntas = {
+            'email': "📧 ¿Cuál es tu email de contacto?",
+            'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio?",
+            'horario_visita': "🕒 ¿Cuál es tu horario disponible para la visita? (ej: lunes a viernes 9-17h)",
+            'descripcion': "📝 ¿Podrías describir qué necesitas específicamente? (ej: tipo de equipos, cantidad de ambientes, etc.)"
+        }
+        return preguntas.get(campo, "Por favor proporciona más información.")
+    
+    @staticmethod
+    def _procesar_campo_individual(numero_telefono: str, mensaje: str) -> str:
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        campos_faltantes = conversacion.datos_temporales.get('_campos_faltantes', [])
+        indice_actual = conversacion.datos_temporales.get('_campo_actual', 0)
+        
+        if indice_actual >= len(campos_faltantes):
+            # Error, no deberíamos estar aquí
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
+            return "🤖 Hubo un error. Escribe 'hola' para comenzar de nuevo."
+        
+        campo_actual = campos_faltantes[indice_actual]
+        
+        # Validar y guardar la respuesta
+        if ChatbotRules._validar_campo_individual(campo_actual, mensaje.strip()):
+            conversation_manager.set_datos_temporales(numero_telefono, campo_actual, mensaje.strip())
+            
+            # Avanzar al siguiente campo
+            siguiente_indice = indice_actual + 1
+            conversation_manager.set_datos_temporales(numero_telefono, '_campo_actual', siguiente_indice)
+            
+            if siguiente_indice >= len(campos_faltantes):
+                # Ya tenemos todos los campos, proceder a validación final
+                conversation_manager.set_datos_temporales(numero_telefono, '_campos_faltantes', None)
+                conversation_manager.set_datos_temporales(numero_telefono, '_campo_actual', None)
+                
+                valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+                
+                if not valido:
+                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
+                    return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
+                
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+                return ChatbotRules.get_mensaje_confirmacion(conversacion)
+            else:
+                # Preguntar por el siguiente campo
+                siguiente_campo = campos_faltantes[siguiente_indice]
+                return f"✅ Perfecto!\n\n{ChatbotRules._get_pregunta_campo_individual(siguiente_campo)}"
+        else:
+            # Campo inválido, pedir de nuevo
+            error_msg = ChatbotRules._get_error_campo_individual(campo_actual)
+            return f"❌ {error_msg}\n\n{ChatbotRules._get_pregunta_campo_individual(campo_actual)}"
+    
+    @staticmethod
+    def _validar_campo_individual(campo: str, valor: str) -> bool:
+        if campo == 'email':
+            import re
+            email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            return bool(re.search(email_pattern, valor))
+        elif campo == 'direccion':
+            return len(valor) >= 5
+        elif campo == 'horario_visita':
+            return len(valor) >= 3
+        elif campo == 'descripcion':
+            return len(valor) >= 10
+        return False
+    
+    @staticmethod
+    def _get_error_campo_individual(campo: str) -> str:
+        errores = {
+            'email': "El email no tiene un formato válido.",
+            'direccion': "La dirección debe tener al menos 5 caracteres.",
+            'horario_visita': "El horario debe tener al menos 3 caracteres.",
+            'descripcion': "La descripción debe tener al menos 10 caracteres."
+        }
+        return errores.get(campo, "El formato no es válido.")
+    
+    @staticmethod
+    def _extraer_datos_con_llm(mensaje: str) -> dict:
+        """
+        Usa el servicio NLU para extraer datos cuando el parsing básico no es suficiente
+        """
+        try:
+            from services.nlu_service import nlu_service
+            return nlu_service.extraer_datos_estructurados(mensaje)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error en extracción LLM: {str(e)}")
+            return {}
+    
+    @staticmethod
     def get_mensaje_final_exito() -> str:
         return """✅ ¡Perfecto! Tu solicitud ha sido enviada exitosamente.
 
@@ -111,6 +212,9 @@ Por favor envíame todos estos datos juntos."""
         elif conversacion.estado == EstadoConversacion.RECOLECTANDO_DATOS:
             return ChatbotRules._procesar_datos_contacto(numero_telefono, mensaje)
         
+        elif conversacion.estado == EstadoConversacion.RECOLECTANDO_DATOS_INDIVIDUALES:
+            return ChatbotRules._procesar_campo_individual(numero_telefono, mensaje)
+        
         elif conversacion.estado == EstadoConversacion.CONFIRMANDO:
             return ChatbotRules._procesar_confirmacion(numero_telefono, mensaje_limpio)
         
@@ -136,26 +240,71 @@ Por favor envíame todos estos datos juntos."""
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
             return ChatbotRules.get_mensaje_recoleccion_datos(tipo_consulta)
         else:
-            return ChatbotRules.get_mensaje_error_opcion()
+            # Fallback: usar NLU para mapear mensaje a intención
+            from services.nlu_service import nlu_service
+            tipo_consulta_nlu = nlu_service.mapear_intencion(mensaje)
+            
+            if tipo_consulta_nlu:
+                conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta_nlu)
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
+                return f"✅ Entendí que necesitas {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}.\n\n{ChatbotRules.get_mensaje_recoleccion_datos(tipo_consulta_nlu)}"
+            else:
+                return ChatbotRules.get_mensaje_error_opcion()
     
     @staticmethod
     def _procesar_datos_contacto(numero_telefono: str, mensaje: str) -> str:
         datos_parseados = ChatbotRules._parsear_datos_contacto(mensaje)
         
-        if not all(datos_parseados.values()):
-            return ChatbotRules.get_mensaje_datos_incompletos()
+        # Si el parsing básico no obtuvo buenos resultados, intentar con LLM
+        campos_encontrados_basicos = sum(1 for v in datos_parseados.values() if v)
+        if campos_encontrados_basicos < 2 and len(mensaje) > 50:
+            datos_llm = ChatbotRules._extraer_datos_con_llm(mensaje)
+            if datos_llm:
+                # Combinar resultados, dando prioridad al LLM para campos que no encontró el parser básico
+                for key, value in datos_llm.items():
+                    if key != 'tipo_consulta' and value and not datos_parseados.get(key):
+                        datos_parseados[key] = value
         
+        # Guardar los datos que sí se pudieron extraer
+        campos_encontrados = []
         for key, value in datos_parseados.items():
-            conversation_manager.set_datos_temporales(numero_telefono, key, value)
+            if value:
+                conversation_manager.set_datos_temporales(numero_telefono, key, value)
+                campos_encontrados.append(key)
         
-        valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+        # Determinar qué campos faltan
+        campos_requeridos = ['email', 'direccion', 'horario_visita', 'descripcion']
+        campos_faltantes = [campo for campo in campos_requeridos if not datos_parseados.get(campo)]
         
-        if not valido:
-            return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
-        
-        conversacion = conversation_manager.get_conversacion(numero_telefono)
-        conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
-        return ChatbotRules.get_mensaje_confirmacion(conversacion)
+        if not campos_faltantes:
+            # Todos los campos están presentes, proceder con validación
+            valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+            
+            if not valido:
+                return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
+            
+            conversacion = conversation_manager.get_conversacion(numero_telefono)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+            return ChatbotRules.get_mensaje_confirmacion(conversacion)
+        else:
+            # Faltan campos, cambiar a modo de preguntas individuales
+            conversation_manager.set_datos_temporales(numero_telefono, '_campos_faltantes', campos_faltantes)
+            conversation_manager.set_datos_temporales(numero_telefono, '_campo_actual', 0)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS_INDIVIDUALES)
+            
+            # Mostrar qué se encontró y preguntar por el primer campo faltante
+            mensaje_encontrados = ""
+            if campos_encontrados:
+                nombres_campos = {
+                    'email': '📧 Email',
+                    'direccion': '📍 Dirección', 
+                    'horario_visita': '🕒 Horario',
+                    'descripcion': '📝 Descripción'
+                }
+                campos_texto = [nombres_campos[campo] for campo in campos_encontrados]
+                mensaje_encontrados = f"✅ Ya tengo: {', '.join(campos_texto)}\n\n"
+            
+            return mensaje_encontrados + ChatbotRules._get_pregunta_campo_individual(campos_faltantes[0])
     
     @staticmethod
     def _procesar_confirmacion(numero_telefono: str, mensaje: str) -> str:
@@ -173,8 +322,10 @@ Por favor envíame todos estos datos juntos."""
     @staticmethod
     def _parsear_datos_contacto(mensaje: str) -> dict:
         import re
+        import dateparser
+        from datetime import datetime
         
-        # Buscar email
+        # Buscar email con regex mejorado
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         email_match = re.search(email_pattern, mensaje)
         email = email_match.group() if email_match else ""
@@ -186,19 +337,61 @@ Por favor envíame todos estos datos juntos."""
         horario = ""
         descripcion = ""
         
-        # Buscar patrones comunes
+        # Keywords mejoradas con scoring
+        keywords_direccion = [
+            'dirección', 'direccion', 'domicilio', 'ubicación', 'ubicacion', 
+            'domicilio', 'calle', 'avenida', 'av.', 'av ', 'barrio'
+        ]
+        keywords_horario = [
+            'horario', 'hora', 'disponible', 'visita', 'lunes', 'martes', 
+            'miércoles', 'jueves', 'viernes', 'sábado', 'domingo', 'mañana', 
+            'tarde', 'noche', 'am', 'pm'
+        ]
+        keywords_descripcion = [
+            'necesito', 'descripción', 'descripcion', 'detalle', 'matafuego',
+            'extintor', 'incendio', 'seguridad', 'oficina', 'empresa', 'local'
+        ]
+        
+        # Buscar patrones con scoring
         for linea in lineas:
             linea_lower = linea.lower()
-            if any(palabra in linea_lower for palabra in ['dirección', 'direccion', 'domicilio', 'ubicación']):
-                direccion = linea.split(':', 1)[-1].strip() if ':' in linea else linea
-            elif any(palabra in linea_lower for palabra in ['horario', 'hora', 'disponible', 'visita']):
-                horario = linea.split(':', 1)[-1].strip() if ':' in linea else linea
-            elif any(palabra in linea_lower for palabra in ['necesito', 'descripción', 'descripcion', 'detalle']):
-                descripcion = linea.split(':', 1)[-1].strip() if ':' in linea else linea
+            
+            # Saltar líneas que solo contienen email (ya lo tenemos)
+            if email and linea.strip() == email:
+                continue
+            
+            # Scoring para direccion
+            score_direccion = sum(1 for kw in keywords_direccion if kw in linea_lower)
+            # Scoring para horario
+            score_horario = sum(1 for kw in keywords_horario if kw in linea_lower)
+            # Scoring para descripcion
+            score_descripcion = sum(1 for kw in keywords_descripcion if kw in linea_lower)
+            
+            # Determinar el valor extraído de la línea
+            valor_extraido = linea.split(':', 1)[-1].strip() if ':' in linea else linea
+            
+            # Solo procesar si el valor no es el email ya encontrado
+            if valor_extraido == email:
+                continue
+                
+            # Asignar basado en scores
+            if score_direccion > 0 and score_direccion >= score_horario and score_direccion >= score_descripcion and not direccion:
+                direccion = valor_extraido
+            elif score_horario > 0 and score_horario >= score_direccion and score_horario >= score_descripcion and not horario:
+                horario = valor_extraido
+            elif score_descripcion > 0 and score_descripcion >= score_direccion and score_descripcion >= score_horario and not descripcion:
+                descripcion = valor_extraido
+            elif len(linea) > 15 and score_direccion == score_horario == score_descripcion == 0:
+                # Sin keywords específicas, clasificar por longitud y posición
+                if not descripcion and any(word in linea_lower for word in ['necesito', 'quiero', 'para', 'equipar']):
+                    descripcion = linea
+                elif not direccion and len(linea) > 8:
+                    direccion = linea
+                elif not horario and len(linea) > 5:
+                    horario = linea
         
-        # Si no encontramos datos estructurados, intentar extraer por posición
+        # Fallback: buscar por posición si no encontramos nada estructurado
         if not direccion and not horario and not descripcion and len(lineas) >= 3:
-            # Asumir que después del email viene: dirección, horario, descripción
             mensaje_sin_email = mensaje
             if email:
                 mensaje_sin_email = mensaje.replace(email, "").strip()
@@ -208,6 +401,14 @@ Por favor envíame todos estos datos juntos."""
                 direccion = partes[0] if not direccion else direccion
                 horario = partes[1] if not horario else horario  
                 descripcion = " ".join(partes[2:]) if not descripcion else descripcion
+        
+        # Validación mínima de longitud
+        if len(direccion) < 5:
+            direccion = ""
+        if len(horario) < 3:
+            horario = ""
+        if len(descripcion) < 10:
+            descripcion = ""
         
         return {
             'email': email,
