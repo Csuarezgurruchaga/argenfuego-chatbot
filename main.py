@@ -88,7 +88,7 @@ async def webhook_whatsapp(request: Request):
                 twilio_service.send_whatsapp_message(numero_telefono, error_msg)
                 logger.error(f"Error enviando email para {numero_telefono}")
         
-        return PlainTextResponse("OK", status_code=200)
+        return PlainTextResponse("", status_code=200)
         
     except Exception as e:
         logger.error(f"Error en webhook: {str(e)}")
