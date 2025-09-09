@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field
 from enum import Enum
 from typing import Optional
 
@@ -21,27 +21,9 @@ class EstadoConversacion(str, Enum):
 
 class DatosContacto(BaseModel):
     email: EmailStr
-    direccion: str = Field(..., min_length=5, max_length=200)
-    horario_visita: str = Field(..., min_length=3, max_length=100)
-    descripcion: str = Field(..., min_length=10, max_length=500)
-    
-    @validator('direccion')
-    def validar_direccion(cls, v):
-        if not v.strip():
-            raise ValueError('La dirección no puede estar vacía')
-        return v.strip()
-    
-    @validator('horario_visita')
-    def validar_horario(cls, v):
-        if not v.strip():
-            raise ValueError('El horario no puede estar vacío')
-        return v.strip()
-    
-    @validator('descripcion')
-    def validar_descripcion(cls, v):
-        if not v.strip():
-            raise ValueError('La descripción no puede estar vacía')
-        return v.strip()
+    direccion: str = Field(..., min_length=5, max_length=200, strip_whitespace=True)
+    horario_visita: str = Field(..., min_length=3, max_length=100, strip_whitespace=True)
+    descripcion: str = Field(..., min_length=10, max_length=500, strip_whitespace=True)
 
 class ConversacionData(BaseModel):
     numero_telefono: str
@@ -49,7 +31,8 @@ class ConversacionData(BaseModel):
     tipo_consulta: Optional[TipoConsulta] = None
     datos_contacto: Optional[DatosContacto] = None
     datos_temporales: dict = Field(default_factory=dict)
-    nombre_usuario: Optional[str] = None  # Nombre del perfil de WhatsApp del usuario
+    nombre_usuario: Optional[str] = None
     
     class Config:
         use_enum_values = True
+        

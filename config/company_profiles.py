@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 # Perfiles de empresas configurables
 COMPANY_PROFILES = {
