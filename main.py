@@ -39,7 +39,7 @@ async def health():
         "service": "argenfuego-chatbot"
     }
 
-@app.post("/webhook/whatsapp")
+@app.post("/webhook")
 async def webhook_whatsapp(request: Request):
     try:
         # Obtener datos del formulario de Twilio
