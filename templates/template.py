@@ -69,3 +69,67 @@ Ejemplos:
 
 Responde solo JSON.
 """)
+
+# Templates para detección de consultas de contacto
+CONTACT_INFO_DETECTION_PROMPT = Template("""
+Analiza este mensaje del usuario: "{{mensaje_usuario}}"
+
+¿El usuario está preguntando sobre información de contacto, datos o ubicación de la empresa?
+
+TIPOS DE CONSULTAS DE CONTACTO:
+- Teléfono: "cuál es su teléfono", "número de contacto", "como los llamo"
+- Dirección: "dónde están ubicados", "cuál es su dirección", "donde los encuentro"
+- Horarios: "qué horarios tienen", "cuándo abren", "hasta qué hora atienden"
+- Email: "cuál es su email", "correo electrónico"
+- Información general: "datos de contacto", "cómo los contacto"
+
+Responde ÚNICAMENTE: CONTACTO o NO
+
+Ejemplos:
+"cuál es su teléfono?" → CONTACTO
+"necesito un presupuesto" → NO
+"dónde están ubicados?" → CONTACTO
+"ok, pero cuándo abren?" → CONTACTO
+""")
+
+CONTACT_INFO_RESPONSE_PROMPT = Template("""
+Responde de manera natural y amigable esta consulta sobre información de contacto de nuestra empresa:
+
+Pregunta del usuario: "{{mensaje_usuario}}"
+
+Información de la empresa {{company_name}}:
+- Nombre: {{company_name}}
+- Teléfono: {{company_phone}}  
+- Dirección: {{company_address}}
+- Horarios: {{company_hours}}
+- Email: {{company_email}}
+{% if company_website %}- Web: {{company_website}}{% endif %}
+
+Instrucciones:
+1. Responde de manera conversacional y amigable
+2. Proporciona la información específica que está pidiendo
+3. Si la pregunta es general, da la información más relevante
+4. Usa emojis apropiados para hacer la respuesta más visual
+5. Mantén un tono profesional pero cercano
+
+Genera una respuesta natural en español.
+""")
+
+PERSONALIZED_GREETING_PROMPT = Template("""
+Genera un saludo personalizado para WhatsApp como {{bot_name}} de {{company_name}}.
+
+Información del usuario:
+- Nombre: {{user_name}}
+- Es primera vez: {{is_first_time}}
+
+Instrucciones:
+1. Si tiene nombre, úsalo en el saludo
+2. Si no tiene nombre, saluda de manera general  
+3. Preséntate como {{bot_name}} de {{company_name}}
+4. Menciona que especialidad tiene la empresa ({{industry}})
+5. Usa un tono amigable y profesional
+6. Incluye emojis apropiados
+7. Invita a elegir una opción del menú
+
+Genera un saludo natural en español.
+""")

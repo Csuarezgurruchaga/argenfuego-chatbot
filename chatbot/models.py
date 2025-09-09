@@ -49,6 +49,7 @@ class ConversacionData(BaseModel):
     tipo_consulta: Optional[TipoConsulta] = None
     datos_contacto: Optional[DatosContacto] = None
     datos_temporales: dict = Field(default_factory=dict)
+    nombre_usuario: Optional[str] = None  # Nombre del perfil de WhatsApp del usuario
     
     class Config:
         use_enum_values = True

@@ -2,6 +2,7 @@ import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, From, To, Subject, HtmlContent
 from chatbot.models import ConversacionData, TipoConsulta
+from config.company_profiles import get_active_company_profile
 from datetime import datetime
 import logging
 
@@ -10,8 +11,14 @@ logger = logging.getLogger(__name__)
 class EmailService:
     def __init__(self):
         self.api_key = os.getenv('SENDGRID_API_KEY')
-        self.from_email = os.getenv('SENDGRID_FROM_EMAIL', 'eva@argenfuego.com')
-        self.to_email = os.getenv('COMPANY_EMAIL', 'csuarezgurruchaga@gmail.com')
+        
+        # Obtener configuración de empresa activa
+        company_profile = get_active_company_profile()
+        
+        self.from_email = os.getenv('SENDGRID_FROM_EMAIL', company_profile['email'])
+        self.to_email = os.getenv('LEAD_RECIPIENT', company_profile['email'])
+        self.company_name = company_profile['name']
+        self.bot_name = company_profile['bot_name']
         
         if not self.api_key:
             raise ValueError("SENDGRID_API_KEY es requerido")
@@ -24,7 +31,7 @@ class EmailService:
             html_content = self._generate_email_html(conversacion)
             
             message = Mail(
-                from_email=From(self.from_email, "Eva - Asistente Virtual Argenfuego"),
+                from_email=From(self.from_email, f"{self.bot_name} - Asistente Virtual {self.company_name}"),
                 to_emails=To(self.to_email),
                 subject=Subject(subject),
                 html_content=HtmlContent(html_content)
@@ -45,12 +52,12 @@ class EmailService:
     
     def _get_email_subject(self, tipo_consulta: TipoConsulta) -> str:
         subjects = {
-            TipoConsulta.PRESUPUESTO: "🔥 Nueva Solicitud de Presupuesto - Argenfuego",
-            TipoConsulta.VISITA_TECNICA: "📋 Nueva Solicitud de Visita Técnica - Argenfuego", 
-            TipoConsulta.URGENCIA: "🚨 URGENCIA - Nueva Consulta - Argenfuego",
-            TipoConsulta.OTRAS: "💬 Nueva Consulta General - Argenfuego"
+            TipoConsulta.PRESUPUESTO: f"🔥 Nueva Solicitud de Presupuesto - {self.company_name}",
+            TipoConsulta.VISITA_TECNICA: f"📋 Nueva Solicitud de Visita Técnica - {self.company_name}", 
+            TipoConsulta.URGENCIA: f"🚨 URGENCIA - Nueva Consulta - {self.company_name}",
+            TipoConsulta.OTRAS: f"💬 Nueva Consulta General - {self.company_name}"
         }
-        return subjects.get(tipo_consulta, "Nueva Consulta - Argenfuego")
+        return subjects.get(tipo_consulta, f"Nueva Consulta - {self.company_name}")
     
     def _generate_email_html(self, conversacion: ConversacionData) -> str:
         tipo_consulta_texto = {
@@ -76,7 +83,7 @@ class EmailService:
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
             
             <div style="background-color: #1f2937; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                <h1 style="margin: 0; font-size: 24px;">🔥 ARGENFUEGO</h1>
+                <h1 style="margin: 0; font-size: 24px;">🔥 {self.company_name.upper()}</h1>
                 <p style="margin: 5px 0 0 0; font-size: 14px;">Nueva consulta desde WhatsApp</p>
             </div>
             
@@ -146,7 +153,7 @@ class EmailService:
                 
                 <p style="text-align: center; color: #6b7280; font-size: 12px; margin: 0;">
                     📅 Solicitud generada el {fecha_actual}<br>
-                    🤖 Procesado automáticamente por Eva - Asistente Virtual de Argenfuego
+                    🤖 Procesado automáticamente por {self.bot_name} - Asistente Virtual de {self.company_name}
                 </p>
                 
             </div>

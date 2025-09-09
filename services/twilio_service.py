@@ -38,16 +38,17 @@ class TwilioService:
             logger.error(f"Error enviando mensaje a {to_number}: {str(e)}")
             return False
     
-    def extract_message_data(self, request_data: dict) -> tuple[str, str, str]:
+    def extract_message_data(self, request_data: dict) -> tuple[str, str, str, str]:
         """
         Extrae los datos relevantes del webhook de Twilio
-        Returns: (numero_telefono, mensaje, message_sid)
+        Returns: (numero_telefono, mensaje, message_sid, profile_name)
         """
         numero_telefono = request_data.get('From', '').replace('whatsapp:', '')
         mensaje = request_data.get('Body', '').strip()
         message_sid = request_data.get('MessageSid', '')
+        profile_name = request_data.get('ProfileName', '').strip()
         
-        return numero_telefono, mensaje, message_sid
+        return numero_telefono, mensaje, message_sid, profile_name
     
     def validate_webhook_signature(self, request_url: str, post_data: dict, signature: str) -> bool:
         """

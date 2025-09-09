@@ -61,6 +61,10 @@ class ConversationManager:
         conversacion = self.get_conversacion(numero_telefono)
         conversacion.datos_temporales.clear()
     
+    def set_nombre_usuario(self, numero_telefono: str, nombre: str):
+        conversacion = self.get_conversacion(numero_telefono)
+        conversacion.nombre_usuario = nombre
+    
     def finalizar_conversacion(self, numero_telefono: str):
         if numero_telefono in self.conversaciones:
             del self.conversaciones[numero_telefono]

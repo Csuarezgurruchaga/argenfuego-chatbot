@@ -36,6 +36,35 @@ class ChatbotRules:
 Responde con el número de la opción que necesitas 📱"""
     
     @staticmethod
+    def get_mensaje_inicial_personalizado(nombre_usuario: str = "") -> str:
+        """
+        Genera saludo personalizado usando NLU o fallback estático
+        """
+        try:
+            from services.nlu_service import nlu_service
+            saludo = nlu_service.generar_saludo_personalizado(nombre_usuario, es_primera_vez=True)
+            
+            # Agregar menú de opciones
+            menu = """
+¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
+
+1️⃣ Solicitar un presupuesto
+2️⃣ Coordinar una visita técnica para evaluar la dotación necesaria del lugar
+3️⃣ Reportar una urgencia
+4️⃣ Otras consultas
+
+Responde con el número de la opción que necesitas 📱"""
+            
+            return saludo + menu
+            
+        except Exception as e:
+            # Fallback estático si falla el NLU
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error generando saludo personalizado: {str(e)}")
+            return ChatbotRules.get_mensaje_inicial()
+    
+    @staticmethod
     def get_mensaje_recoleccion_datos(tipo_consulta: TipoConsulta) -> str:
         consulta_texto = {
             TipoConsulta.PRESUPUESTO: "un presupuesto",
@@ -316,19 +345,40 @@ Necesito que me envíes en un mensaje:
 Por favor envíame todos estos datos juntos."""
     
     @staticmethod
-    def procesar_mensaje(numero_telefono: str, mensaje: str) -> str:
+    def procesar_mensaje(numero_telefono: str, mensaje: str, nombre_usuario: str = "") -> str:
         conversacion = conversation_manager.get_conversacion(numero_telefono)
+        
+        # Guardar nombre de usuario si es la primera vez que lo vemos
+        if nombre_usuario and not conversacion.nombre_usuario:
+            conversation_manager.set_nombre_usuario(numero_telefono, nombre_usuario)
+        
+        # INTERCEPTAR CONSULTAS DE CONTACTO EN CUALQUIER MOMENTO (Contextual Intent Interruption)
+        from services.nlu_service import nlu_service
+        if nlu_service.detectar_consulta_contacto(mensaje):
+            respuesta_contacto = nlu_service.generar_respuesta_contacto(mensaje)
+            
+            # Si estamos en un flujo activo, agregar mensaje para continuar
+            if conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:
+                respuesta_contacto += "\n\n💬 *Ahora sigamos con tu consulta anterior...*"
+            
+            return respuesta_contacto
+        
         mensaje_limpio = mensaje.strip().lower()
         
         if mensaje_limpio in ['hola', 'hi', 'hello', 'inicio', 'empezar']:
             conversation_manager.reset_conversacion(numero_telefono)
             conversacion = conversation_manager.get_conversacion(numero_telefono)
+            
+            # Guardar nombre de usuario en la nueva conversación
+            if nombre_usuario:
+                conversation_manager.set_nombre_usuario(numero_telefono, nombre_usuario)
+            
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
-            return ChatbotRules.get_mensaje_inicial()
+            return ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
         
         if conversacion.estado == EstadoConversacion.INICIO:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
-            return ChatbotRules.get_mensaje_inicial()
+            return ChatbotRules.get_mensaje_inicial_personalizado(conversacion.nombre_usuario or nombre_usuario)
         
         elif conversacion.estado == EstadoConversacion.ESPERANDO_OPCION:
             return ChatbotRules._procesar_seleccion_opcion(numero_telefono, mensaje_limpio)

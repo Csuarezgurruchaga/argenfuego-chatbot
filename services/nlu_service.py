@@ -4,7 +4,8 @@ import json
 from typing import Optional, Dict, Any
 from openai import OpenAI
 from chatbot.models import TipoConsulta
-from ..templates.template import NLU_INTENT_PROMPT, NLU_MESSAGE_PARSING_PROMPT, NLU_LOCATION_PROMPT
+from ..templates.template import NLU_INTENT_PROMPT, NLU_MESSAGE_PARSING_PROMPT, NLU_LOCATION_PROMPT, CONTACT_INFO_DETECTION_PROMPT, CONTACT_INFO_RESPONSE_PROMPT, PERSONALIZED_GREETING_PROMPT
+from ..config.company_profiles import get_active_company_profile, get_company_info_text
 from jinja2 import Template
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,108 @@ class NLUService:
         except Exception as e:
             logger.error(f"Error detectando ubicación: {str(e)}")
             return {"ubicacion_detectada": "UNCLEAR", "confianza": 1, "razon": "error LLM"}
+    
+    def detectar_consulta_contacto(self, mensaje_usuario: str) -> bool:
+        """
+        Detecta si el usuario está preguntando sobre información de contacto de la empresa
+        """
+        try:
+            prompt = CONTACT_INFO_DETECTION_PROMPT.render(mensaje_usuario=mensaje_usuario)
+
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "Eres un clasificador especializado en detectar consultas sobre información de contacto empresarial."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0,
+                max_tokens=10
+            )
+            
+            resultado = response.choices[0].message.content.strip().upper()
+            logger.info(f"Detección consulta contacto: '{mensaje_usuario}' -> '{resultado}'")
+            
+            return resultado == "CONTACTO"
+            
+        except Exception as e:
+            logger.error(f"Error detectando consulta de contacto: {str(e)}")
+            return False
+    
+    def generar_respuesta_contacto(self, mensaje_usuario: str) -> str:
+        """
+        Genera una respuesta natural sobre información de contacto de la empresa
+        """
+        try:
+            company_profile = get_active_company_profile()
+            
+            prompt = CONTACT_INFO_RESPONSE_PROMPT.render(
+                mensaje_usuario=mensaje_usuario,
+                company_name=company_profile['name'],
+                company_phone=company_profile['phone'],
+                company_address=company_profile['address'],
+                company_hours=company_profile['hours'],
+                company_email=company_profile['email'],
+                company_website=company_profile.get('website', '')
+            )
+
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": f"Eres {company_profile['bot_name']}, asistente virtual de {company_profile['name']}. Responde de manera amigable y profesional."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=200
+            )
+            
+            respuesta = response.choices[0].message.content.strip()
+            logger.info(f"Respuesta contacto generada para: '{mensaje_usuario}'")
+            
+            return respuesta
+            
+        except Exception as e:
+            logger.error(f"Error generando respuesta de contacto: {str(e)}")
+            # Fallback a respuesta estática si falla el LLM
+            return get_company_info_text()
+    
+    def generar_saludo_personalizado(self, nombre_usuario: str = "", es_primera_vez: bool = True) -> str:
+        """
+        Genera un saludo personalizado usando el nombre del usuario si está disponible
+        """
+        try:
+            company_profile = get_active_company_profile()
+            
+            prompt = PERSONALIZED_GREETING_PROMPT.render(
+                bot_name=company_profile['bot_name'],
+                company_name=company_profile['name'],
+                user_name=nombre_usuario or "sin nombre",
+                is_first_time=es_primera_vez,
+                industry=company_profile['industry']
+            )
+
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": f"Eres {company_profile['bot_name']}, asistente virtual amigable de {company_profile['name']}. Genera saludos naturales y profesionales."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.4,
+                max_tokens=150
+            )
+            
+            saludo = response.choices[0].message.content.strip()
+            logger.info(f"Saludo personalizado generado para usuario: '{nombre_usuario}'")
+            
+            return saludo
+            
+        except Exception as e:
+            logger.error(f"Error generando saludo personalizado: {str(e)}")
+            # Fallback a saludo estático si falla el LLM
+            company_profile = get_active_company_profile()
+            if nombre_usuario:
+                return f"¡Hola {nombre_usuario}! 👋 Soy {company_profile['bot_name']} de {company_profile['name']}"
+            else:
+                return f"¡Hola! 👋 Soy {company_profile['bot_name']} de {company_profile['name']}"
 
 # Instancia global del servicio
 nlu_service = NLUService()

@@ -49,16 +49,16 @@ async def webhook_whatsapp(request: Request):
         logger.info(f"Webhook recibido: {form_dict}")
         
         # Extraer datos del mensaje
-        numero_telefono, mensaje_usuario, message_sid = twilio_service.extract_message_data(form_dict)
+        numero_telefono, mensaje_usuario, message_sid, profile_name = twilio_service.extract_message_data(form_dict)
         
         if not numero_telefono or not mensaje_usuario:
             logger.warning("Datos incompletos en el webhook")
             return PlainTextResponse("OK", status_code=200)
         
-        logger.info(f"Procesando mensaje de {numero_telefono}: {mensaje_usuario}")
+        logger.info(f"Procesando mensaje de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
         
-        # Procesar el mensaje con el chatbot
-        respuesta = ChatbotRules.procesar_mensaje(numero_telefono, mensaje_usuario)
+        # Procesar el mensaje con el chatbot (incluyendo nombre del perfil)
+        respuesta = ChatbotRules.procesar_mensaje(numero_telefono, mensaje_usuario, profile_name)
         
         # Enviar respuesta via WhatsApp
         mensaje_enviado = twilio_service.send_whatsapp_message(numero_telefono, respuesta)
