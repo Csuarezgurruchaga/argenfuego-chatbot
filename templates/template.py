@@ -36,13 +36,13 @@ Devuelve JSON con estos campos (cadena vacía si no encuentras):
 
 EJEMPLOS:
 Input: "Del valle centenera 3222 piso 4D, pueden pasar de 15-17h"
-Output: {{"direccion": "Del valle centenera 3222 piso 4D", "horario_visita": "15-17h", "email": "", "descripcion": "", "tipo_consulta": ""}}
+Output: {{ "{" }}"direccion": "Del valle centenera 3222 piso 4D", "horario_visita": "15-17h", "email": "", "descripcion": "", "tipo_consulta": ""{{ "}" }}
 
 Input: "juan@empresa.com, Luis Viale 2020, necesito 4 extintores clase ABC 5kg"
-Output: {{"email": "juan@empresa.com", "direccion": "Luis Viale 2020", "descripcion": "necesito 4 extintores clase ABC 5kg", "horario_visita": "", "tipo_consulta": ""}}
+Output: {{ "{" }}"email": "juan@empresa.com", "direccion": "Luis Viale 2020", "descripcion": "necesito 4 extintores clase ABC 5kg", "horario_visita": "", "tipo_consulta": ""{{ "}" }}
 
 Input: "pinturerias_rex@rex.com.ar, Av del barco centenera 322, necesito que vengan a ver que matafuegos y elementos necesito para mi local, estamos disponibles de lunes a viernes de 8 a 18hs"
-Output: {{"email": "juan@empresa.com", "direccion": "Luis Viale 2020", "descripcion": "necesito que vengan a ver que matafuegos y elementos necesito para mi local", "horario_visita": "8-18h", "tipo_consulta": ""}}
+Output: {{ "{" }}"email": "pinturerias_rex@rex.com.ar", "direccion": "Av del barco centenera 322", "descripcion": "necesito que vengan a ver que matafuegos y elementos necesito para mi local", "horario_visita": "lunes a viernes de 8 a 18hs", "tipo_consulta": ""{{ "}" }}
 
 Responde ÚNICAMENTE con JSON válido, sin texto adicional.
 """)
@@ -63,9 +63,9 @@ Responde JSON:
 - "razon": explicación breve
 
 Ejemplos:
-"Av. Corrientes 1234 CABA" → {{"ubicacion_detectada": "CABA", "confianza": 10, "razon": "menciona CABA explícitamente"}}
-"Del valle centenera 3222" → {{"ubicacion_detectada": "UNCLEAR", "confianza": 2, "razon": "no especifica CABA o Provincia"}}
-"La Plata centro" → {{"ubicacion_detectada": "PROVINCIA", "confianza": 9, "razon": "La Plata es ciudad de Provincia de Buenos Aires"}}
+"Av. Corrientes 1234 CABA" → {{ "{" }}"ubicacion_detectada": "CABA", "confianza": 10, "razon": "menciona CABA explícitamente"{{ "}" }}
+"Del valle centenera 3222" → {{ "{" }}"ubicacion_detectada": "UNCLEAR", "confianza": 2, "razon": "no especifica CABA o Provincia"{{ "}" }}
+"La Plata centro" → {{ "{" }}"ubicacion_detectada": "PROVINCIA", "confianza": 9, "razon": "La Plata es ciudad de Provincia de Buenos Aires"{{ "}" }}
 
 Responde solo JSON.
 """)
