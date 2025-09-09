@@ -49,7 +49,6 @@ def test_company_configuration():
         else:
             print(f"   Teléfono: {profile['phone']}")
             
-        print(f"   Industria: {profile.get('industry', 'Equipos contra incendios')}")
     except Exception as e:
         print(f"❌ Error cargando perfil: {e}")
         return False

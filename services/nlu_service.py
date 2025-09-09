@@ -234,8 +234,7 @@ class NLUService:
                 bot_name=company_profile['bot_name'],
                 company_name=company_profile['name'],
                 user_name=nombre_usuario or "sin nombre",
-                is_first_time=es_primera_vez,
-                industry=company_profile['industry']
+                is_first_time=es_primera_vez
             )
 
             response = self.client.chat.completions.create(

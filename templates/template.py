@@ -131,8 +131,7 @@ Instrucciones:
 1. Si tiene nombre, úsalo en el saludo
 2. Si no tiene nombre, saluda de manera general  
 3. Preséntate como {{bot_name}} de {{company_name}}
-4. Menciona que especialidad tiene la empresa ({{industry}})
-5. Usa un tono amigable y profesional
+4. Usa un tono amigable y profesional
 6. Incluye emojis apropiados
 7. Invita a elegir una opción del menú
 

@@ -19,7 +19,6 @@ COMPANY_PROFILES = {
         "address": "Dirección ejemplo",
         "hours": "Horarios ejemplo",
         "email": "info@ejemplo.com",
-        "industry": "Industria ejemplo",
         "website": "www.ejemplo.com"
     }
 }
