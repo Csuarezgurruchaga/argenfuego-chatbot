@@ -9,7 +9,10 @@ class TwilioService:
     def __init__(self):
         self.account_sid = os.getenv('TWILIO_ACCOUNT_SID')
         self.auth_token = os.getenv('TWILIO_AUTH_TOKEN')
-        self.whatsapp_number = os.getenv('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
+        whatsapp_num = os.getenv('TWILIO_WHATSAPP_NUMBER')
+        if not whatsapp_num:
+            raise ValueError("TWILIO_WHATSAPP_NUMBER es requerido")
+        self.whatsapp_number = f'whatsapp:{whatsapp_num}' if not whatsapp_num.startswith('whatsapp:') else whatsapp_num
         
         if not self.account_sid or not self.auth_token:
             raise ValueError("TWILIO_ACCOUNT_SID y TWILIO_AUTH_TOKEN son requeridos")
