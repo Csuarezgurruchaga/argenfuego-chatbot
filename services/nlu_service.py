@@ -4,8 +4,8 @@ import json
 from typing import Optional, Dict, Any
 from openai import OpenAI
 from chatbot.models import TipoConsulta
-from ..templates.template import NLU_INTENT_PROMPT, NLU_MESSAGE_PARSING_PROMPT, NLU_LOCATION_PROMPT, CONTACT_INFO_DETECTION_PROMPT, CONTACT_INFO_RESPONSE_PROMPT, PERSONALIZED_GREETING_PROMPT
-from ..config.company_profiles import get_active_company_profile, get_company_info_text
+from templates.template import NLU_INTENT_PROMPT, NLU_MESSAGE_PARSING_PROMPT, NLU_LOCATION_PROMPT, CONTACT_INFO_DETECTION_PROMPT, CONTACT_INFO_RESPONSE_PROMPT, PERSONALIZED_GREETING_PROMPT
+from config.company_profiles import get_active_company_profile, get_company_info_text
 
 logger = logging.getLogger(__name__)
 
