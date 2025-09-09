@@ -197,7 +197,7 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
         return """📍 **¿Tu dirección es en:**
 
 1️⃣ **CABA** (Ciudad Autónoma de Buenos Aires / Capital Federal)
-2️⃣ **Provincia de Buenos Aires** (GBA / Interior)
+2️⃣ **Provincia de Buenos Aires**
 
 Por favor responde **1** para CABA o **2** para Provincia."""
     
