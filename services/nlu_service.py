@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import re
 from typing import Optional, Dict, Any
 from openai import OpenAI
 from chatbot.models import TipoConsulta
@@ -8,6 +9,35 @@ from templates.template import NLU_INTENT_PROMPT, NLU_MESSAGE_PARSING_PROMPT, NL
 from config.company_profiles import get_active_company_profile, get_company_info_text
 
 logger = logging.getLogger(__name__)
+
+# Patrones regex para detectar consultas específicas de contacto empresarial
+CONTACT_QUERY_PATTERNS = [
+    # Teléfono
+    r'\b(?:cuál|cual)\s+es\s+su\s+(?:teléfono|telefono|número|numero)',
+    r'\b(?:número|numero)\s+de\s+(?:teléfono|telefono)',
+    r'\b(?:cómo|como)\s+(?:los|las)\s+(?:contacto|llamo)',
+    r'\bteléfonos?\b.*\b(?:empresa|ustedes|su)',
+    
+    # Dirección
+    r'\b(?:dónde|donde)\s+(?:están|esta|estan)\s+(?:ubicados|ubicada)',
+    r'\b(?:cuál|cual)\s+es\s+su\s+dirección',
+    r'\b(?:dónde|donde)\s+(?:los|las)\s+encuentro',
+    
+    # Horarios
+    r'\b(?:cuándo|cuando)\s+(?:abren|abre|atienden)',
+    r'\b(?:qué|que)\s+horarios?\s+tienen',
+    r'\bhasta\s+(?:qué|que)\s+hora',
+    r'\bhorarios?\b.*\b(?:empresa|ustedes)',
+    
+    # Email
+    r'\b(?:cuál|cual)\s+es\s+su\s+(?:email|correo)',
+    r'\bcorreo\s+electrónico\b.*\b(?:empresa|ustedes)',
+    
+    # Información general
+    r'\bdatos?\s+de\s+contacto\b',
+    r'\binformación\s+de\s+contacto\b',
+    r'\b(?:cómo|como)\s+(?:los|las)\s+contacto\b'
+]
 
 class NLUService:
     
@@ -150,25 +180,19 @@ class NLUService:
     
     def detectar_consulta_contacto(self, mensaje_usuario: str) -> bool:
         """
-        Detecta si el usuario está preguntando sobre información de contacto de la empresa
+        Detecta si el usuario está preguntando sobre información de contacto de la empresa usando regex
         """
         try:
-            prompt = CONTACT_INFO_DETECTION_PROMPT.render(mensaje_usuario=mensaje_usuario)
-
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "Eres un clasificador especializado en detectar consultas sobre información de contacto empresarial."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0,
-                max_tokens=10
-            )
+            mensaje_lower = mensaje_usuario.lower().strip()
             
-            resultado = response.choices[0].message.content.strip().upper()
-            logger.info(f"Detección consulta contacto: '{mensaje_usuario}' -> '{resultado}'")
+            # Buscar coincidencias con los patrones de consulta de contacto
+            for pattern in CONTACT_QUERY_PATTERNS:
+                if re.search(pattern, mensaje_lower, re.IGNORECASE):
+                    logger.info(f"Detección consulta contacto (regex): '{mensaje_usuario}' -> CONTACTO (pattern: {pattern})")
+                    return True
             
-            return resultado == "CONTACTO"
+            logger.info(f"Detección consulta contacto (regex): '{mensaje_usuario}' -> NO")
+            return False
             
         except Exception as e:
             logger.error(f"Error detectando consulta de contacto: {str(e)}")
