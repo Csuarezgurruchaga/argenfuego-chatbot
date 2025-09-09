@@ -2,6 +2,24 @@ from typing import Tuple
 from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
 
+# Mapeo de sinónimos para validación geográfica
+SINONIMOS_CABA = [
+    'caba', 'c.a.b.a', 'ciudad autonoma', 'ciudad autónoma', 
+    'capital', 'capital federal', 'microcentro', 'palermo', 
+    'recoleta', 'san telmo', 'puerto madero', 'belgrano',
+    'barracas', 'boca', 'caballito', 'flores', 'once',
+    'retiro', 'villa crespo', 'almagro', 'balvanera'
+]
+
+SINONIMOS_PROVINCIA = [
+    'provincia', 'prov', 'buenos aires', 'bs as', 'bs. as.',
+    'gba', 'gran buenos aires', 'zona norte', 'zona oeste', 
+    'zona sur', 'la plata', 'quilmes', 'lomas de zamora',
+    'san isidro', 'tigre', 'pilar', 'escobar', 'moreno',
+    'merlo', 'moron', 'tres de febrero', 'vicente lopez',
+    'avellaneda', 'lanus', 'berazategui', 'florencio varela'
+]
+
 class ChatbotRules:
     
     @staticmethod
@@ -74,7 +92,7 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
             'email': "📧 ¿Cuál es tu email de contacto?",
             'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio?(aclarar CABA o Provincia)",
             'horario_visita': "🕒 ¿Cuál es tu horario disponible para la visita? (ej: lunes a viernes 9-17h)",
-            'descripcion': "📝 ¿Podrías describir qué necesitas específicamente? (ej: tipo de equipos (polvo quimico, CO2), capacidad (5kg, 10kg) y Cantidad)"
+            'descripcion': "📝 ¿Podrías describir qué necesitas específicamente? (ej: tipo de equipo (polvo quimico, CO2), capacidad (5kg, 10kg) y Cantidad)"
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     
@@ -146,6 +164,112 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
         return errores.get(campo, "El formato no es válido.")
     
     @staticmethod
+    def _validar_ubicacion_geografica(direccion: str) -> str:
+        """
+        Valida si una dirección especifica CABA o Provincia, usando primero regex y luego LLM
+        Retorna: 'CABA', 'PROVINCIA', o 'UNCLEAR'
+        """
+        direccion_lower = direccion.lower()
+        
+        # Primero intentar con regex/keywords (más rápido)
+        for sinonimo in SINONIMOS_CABA:
+            if sinonimo in direccion_lower:
+                return 'CABA'
+        
+        for sinonimo in SINONIMOS_PROVINCIA:
+            if sinonimo in direccion_lower:
+                return 'PROVINCIA'
+        
+        # Si no encuentra con keywords, usar LLM como fallback
+        try:
+            from services.nlu_service import nlu_service
+            resultado_llm = nlu_service.detectar_ubicacion_geografica(direccion)
+            
+            if resultado_llm.get('confianza', 0) >= 7:
+                return resultado_llm.get('ubicacion_detectada', 'UNCLEAR')
+            else:
+                return 'UNCLEAR'
+        except Exception:
+            return 'UNCLEAR'
+    
+    @staticmethod
+    def _get_mensaje_seleccion_ubicacion() -> str:
+        return """📍 **¿Tu dirección es en:**
+
+1️⃣ **CABA** (Ciudad Autónoma de Buenos Aires / Capital Federal)
+2️⃣ **Provincia de Buenos Aires** (GBA / Interior)
+
+Por favor responde **1** para CABA o **2** para Provincia."""
+    
+    @staticmethod
+    def _procesar_seleccion_ubicacion(numero_telefono: str, mensaje: str) -> str:
+        """
+        Procesa la selección del usuario para CABA o Provincia
+        """
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        direccion_original = conversacion.datos_temporales.get('_direccion_pendiente', '')
+        
+        if mensaje in ['1', 'caba']:
+            # Actualizar la dirección con CABA
+            direccion_final = f"{direccion_original}, CABA"
+            conversation_manager.set_datos_temporales(numero_telefono, 'direccion', direccion_final)
+            conversation_manager.set_datos_temporales(numero_telefono, '_direccion_pendiente', None)
+            
+            # Continuar con el flujo normal
+            return ChatbotRules._continuar_despues_validacion_ubicacion(numero_telefono)
+            
+        elif mensaje in ['2', 'provincia']:
+            # Actualizar la dirección con Provincia
+            direccion_final = f"{direccion_original}, Provincia de Buenos Aires"
+            conversation_manager.set_datos_temporales(numero_telefono, 'direccion', direccion_final)
+            conversation_manager.set_datos_temporales(numero_telefono, '_direccion_pendiente', None)
+            
+            # Continuar con el flujo normal
+            return ChatbotRules._continuar_despues_validacion_ubicacion(numero_telefono)
+        else:
+            return "❌ Por favor responde **1** para CABA o **2** para Provincia de Buenos Aires."
+    
+    @staticmethod
+    def _continuar_despues_validacion_ubicacion(numero_telefono: str) -> str:
+        """
+        Continúa el flujo después de validar la ubicación geográfica
+        """
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        
+        # Verificar si estábamos en flujo de datos individuales
+        campos_faltantes = conversacion.datos_temporales.get('_campos_faltantes', [])
+        indice_actual = conversacion.datos_temporales.get('_campo_actual', 0)
+        
+        if campos_faltantes and indice_actual is not None:
+            # Volver al flujo de preguntas individuales
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS_INDIVIDUALES)
+            
+            if indice_actual >= len(campos_faltantes):
+                # Ya tenemos todos los campos, proceder a validación final
+                valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+                
+                if not valido:
+                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
+                    return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
+                
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+                return ChatbotRules.get_mensaje_confirmacion(conversacion)
+            else:
+                # Continuar con el siguiente campo faltante
+                siguiente_campo = campos_faltantes[indice_actual]
+                return f"✅ Perfecto!\n\n{ChatbotRules._get_pregunta_campo_individual(siguiente_campo)}"
+        else:
+            # Flujo normal, proceder a confirmación
+            valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+            
+            if not valido:
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
+                return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
+            
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+            return ChatbotRules.get_mensaje_confirmacion(conversacion)
+    
+    @staticmethod
     def _extraer_datos_con_llm(mensaje: str) -> dict:
         """
         Usa el servicio NLU para extraer datos cuando el parsing básico no es suficiente
@@ -215,6 +339,9 @@ Por favor envíame todos estos datos juntos."""
         elif conversacion.estado == EstadoConversacion.RECOLECTANDO_DATOS_INDIVIDUALES:
             return ChatbotRules._procesar_campo_individual(numero_telefono, mensaje)
         
+        elif conversacion.estado == EstadoConversacion.VALIDANDO_UBICACION:
+            return ChatbotRules._procesar_seleccion_ubicacion(numero_telefono, mensaje_limpio)
+        
         elif conversacion.estado == EstadoConversacion.CONFIRMANDO:
             return ChatbotRules._procesar_confirmacion(numero_telefono, mensaje_limpio)
         
@@ -253,31 +380,66 @@ Por favor envíame todos estos datos juntos."""
     
     @staticmethod
     def _procesar_datos_contacto(numero_telefono: str, mensaje: str) -> str:
-        datos_parseados = ChatbotRules._parsear_datos_contacto(mensaje)
+        # ENFOQUE LLM-FIRST: Usar OpenAI como parser primario
+        datos_parseados = {}
         
-        # Si el parsing básico no obtuvo buenos resultados, intentar con LLM
-        campos_encontrados_basicos = sum(1 for v in datos_parseados.values() if v)
-        if campos_encontrados_basicos < 2 and len(mensaje) > 50:
+        # Intentar extracción LLM primero (más potente para casos complejos)
+        if len(mensaje) > 20:
             datos_llm = ChatbotRules._extraer_datos_con_llm(mensaje)
             if datos_llm:
-                # Combinar resultados, dando prioridad al LLM para campos que no encontró el parser básico
-                for key, value in datos_llm.items():
-                    if key != 'tipo_consulta' and value and not datos_parseados.get(key):
-                        datos_parseados[key] = value
+                datos_parseados = datos_llm.copy()
+        
+        # Fallback: Si LLM no extrajo suficientes campos, usar parser básico
+        campos_encontrados_llm = sum(1 for v in datos_parseados.values() if v and v != "")
+        if campos_encontrados_llm < 2:
+            datos_basicos = ChatbotRules._parsear_datos_contacto_basico(mensaje)
+            # Combinar resultados, dando prioridad a LLM pero completando con parsing básico
+            for key, value in datos_basicos.items():
+                if value and not datos_parseados.get(key):
+                    datos_parseados[key] = value
+        
+        # Limpiar el campo tipo_consulta que no necesitamos aquí
+        if 'tipo_consulta' in datos_parseados:
+            del datos_parseados['tipo_consulta']
         
         # Guardar los datos que sí se pudieron extraer
         campos_encontrados = []
         for key, value in datos_parseados.items():
-            if value:
-                conversation_manager.set_datos_temporales(numero_telefono, key, value)
+            if value and value.strip():
+                conversation_manager.set_datos_temporales(numero_telefono, key, value.strip())
                 campos_encontrados.append(key)
+        
+        # VALIDACIÓN GEOGRÁFICA: Si tenemos dirección, validar ubicación
+        if 'direccion' in campos_encontrados:
+            direccion = datos_parseados['direccion']
+            ubicacion = ChatbotRules._validar_ubicacion_geografica(direccion)
+            
+            if ubicacion == 'UNCLEAR':
+                # Necesita validación manual - guardar dirección pendiente y cambiar estado
+                conversation_manager.set_datos_temporales(numero_telefono, '_direccion_pendiente', direccion)
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.VALIDANDO_UBICACION)
+                
+                # Mostrar campos encontrados y preguntar ubicación
+                mensaje_encontrados = ""
+                if len(campos_encontrados) > 1:  # Más campos además de dirección
+                    nombres_campos = {
+                        'email': '📧 Email',
+                        'direccion': '📍 Dirección', 
+                        'horario_visita': '🕒 Horario',
+                        'descripcion': '📝 Descripción'
+                    }
+                    campos_texto = [nombres_campos[campo] for campo in campos_encontrados if campo != 'direccion']
+                    if campos_texto:
+                        mensaje_encontrados = f"✅ Ya tengo: {', '.join(campos_texto)}\n\n"
+                
+                return mensaje_encontrados + f"📍 Dirección detectada: **{direccion}**\n\n" + ChatbotRules._get_mensaje_seleccion_ubicacion()
         
         # Determinar qué campos faltan
         campos_requeridos = ['email', 'direccion', 'horario_visita', 'descripcion']
-        campos_faltantes = [campo for campo in campos_requeridos if not datos_parseados.get(campo)]
+        campos_faltantes = [campo for campo in campos_requeridos if not datos_parseados.get(campo) or not datos_parseados.get(campo).strip()]
         
         if not campos_faltantes:
-            # Todos los campos están presentes, proceder con validación
+            # Todos los campos están presentes, proceder con validación final
             valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
             
             if not valido:
@@ -320,7 +482,7 @@ Por favor envíame todos estos datos juntos."""
             return "🤔 Por favor responde **SI** para confirmar o **NO** para corregir la información."
     
     @staticmethod
-    def _parsear_datos_contacto(mensaje: str) -> dict:
+    def _parsear_datos_contacto_basico(mensaje: str) -> dict:
         import re
         import dateparser
         from datetime import datetime

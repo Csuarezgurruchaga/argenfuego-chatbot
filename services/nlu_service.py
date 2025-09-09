@@ -60,25 +60,36 @@ Si no puedes determinar la intención con certeza, responde: UNCLEAR
     
     def extraer_datos_estructurados(self, mensaje_usuario: str) -> Dict[str, Any]:
         """
-        Extrae datos de contacto de un mensaje usando LLM cuando el usuario envía todo junto
+        Extrae datos de contacto de un mensaje usando LLM con enfoque semántico LLM-first
         """
         try:
             prompt = f"""
-Extrae la información de contacto del siguiente mensaje de un usuario que solicita servicios de equipos contra incendios:
+Eres un experto en parsing de datos para servicios contra incendios en Argentina.
 
+Analiza este mensaje y extrae la información de contacto:
 "{mensaje_usuario}"
 
-Devuelve un JSON con estos campos (si no encuentras algún dato, usa cadena vacía):
-- "email": dirección de correo electrónico
-- "direccion": dirección física completa
-- "horario_visita": horario o disponibilidad para visita
-- "descripcion": descripción de lo que necesita
+INSTRUCCIONES ESPECÍFICAS:
+1. **Direcciones**: Pueden incluir múltiples campos en una línea (ej: "Del valle centenera 3222 piso 4D, pueden pasar de 15-17h")
+2. **Horarios**: Busca patrones como "15-17h", "pueden pasar de X a Y", "disponible mañana", "lunes a viernes"
+3. **Context clues**: "pueden pasar", "disponible", "vengan" indican horarios
+4. **Separación inteligente**: Una línea puede contener dirección Y horario separados por comas/conjunciones
+
+Devuelve JSON con estos campos (cadena vacía si no encuentras):
+- "email": email válido
+- "direccion": dirección física (SIN el horario si están juntos)
+- "horario_visita": horario/disponibilidad (extraído de la misma línea si está con dirección)
+- "descripcion": qué necesita específicamente
 - "tipo_consulta": PRESUPUESTO, VISITA_TECNICA, URGENCIA, o OTRAS
 
-Ejemplo de respuesta:
-{{"email": "juan@empresa.com", "direccion": "Av. Corrientes 1234", "horario_visita": "lunes a viernes 9-17", "descripcion": "necesito matafuegos para oficina", "tipo_consulta": "PRESUPUESTO"}}
+EJEMPLOS:
+Input: "Del valle centenera 3222 piso 4D, pueden pasar de 15-17h"
+Output: {{"direccion": "Del valle centenera 3222 piso 4D", "horario_visita": "15-17h", "email": "", "descripcion": "", "tipo_consulta": ""}}
 
-Responde ÚNICAMENTE con el JSON, sin texto adicional.
+Input: "juan@empresa.com, Palermo cerca del shopping, necesito extintores clase ABC"
+Output: {{"email": "juan@empresa.com", "direccion": "Palermo cerca del shopping", "descripcion": "necesito extintores clase ABC", "horario_visita": "", "tipo_consulta": ""}}
+
+Responde ÚNICAMENTE con JSON válido, sin texto adicional.
 """
 
             response = self.client.chat.completions.create(
@@ -144,6 +155,54 @@ Responde ÚNICAMENTE con el JSON, sin texto adicional.
         except Exception as e:
             logger.error(f"Error validando campo {campo}: {str(e)}")
             return {'valido': True, 'sugerencia': valor}
+    
+    def detectar_ubicacion_geografica(self, direccion: str) -> Dict[str, Any]:
+        """
+        Detecta si una dirección especifica CABA o Provincia usando LLM
+        """
+        try:
+            prompt = f"""
+Analiza esta dirección en Argentina: "{direccion}"
+
+¿La dirección especifica claramente si es CABA o Provincia de Buenos Aires?
+
+SINÓNIMOS CABA: CABA, Ciudad Autónoma, Capital, Capital Federal, C.A.B.A, Microcentro, Palermo, Recoleta, San Telmo, etc.
+SINÓNIMOS PROVINCIA: Provincia, Prov, Buenos Aires, Bs As, GBA, Gran Buenos Aires, Zona Norte, Zona Oeste, Zona Sur, La Plata, etc.
+
+Responde JSON:
+- "ubicacion_detectada": "CABA", "PROVINCIA", o "UNCLEAR"
+- "confianza": número del 1 al 10
+- "razon": explicación breve
+
+Ejemplos:
+"Av. Corrientes 1234 CABA" → {{"ubicacion_detectada": "CABA", "confianza": 10, "razon": "menciona CABA explícitamente"}}
+"Del valle centenera 3222" → {{"ubicacion_detectada": "UNCLEAR", "confianza": 2, "razon": "no especifica CABA o Provincia"}}
+"La Plata centro" → {{"ubicacion_detectada": "PROVINCIA", "confianza": 9, "razon": "La Plata es ciudad de Provincia de Buenos Aires"}}
+
+Responde solo JSON.
+"""
+
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "Eres un experto en geografía de Buenos Aires, Argentina."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0,
+                max_tokens=150
+            )
+            
+            resultado_text = response.choices[0].message.content.strip()
+            logger.info(f"Detección ubicación: '{direccion}' -> '{resultado_text}'")
+            
+            try:
+                return json.loads(resultado_text)
+            except json.JSONDecodeError:
+                return {"ubicacion_detectada": "UNCLEAR", "confianza": 1, "razon": "error parsing JSON"}
+                
+        except Exception as e:
+            logger.error(f"Error detectando ubicación: {str(e)}")
+            return {"ubicacion_detectada": "UNCLEAR", "confianza": 1, "razon": "error LLM"}
 
 # Instancia global del servicio
 nlu_service = NLUService()
