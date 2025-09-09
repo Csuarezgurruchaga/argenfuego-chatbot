@@ -38,14 +38,17 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def get_mensaje_inicial_personalizado(nombre_usuario: str = "") -> str:
         """
-        Genera saludo personalizado usando NLU o fallback estático
+        Genera saludo personalizado estático con nombre si está disponible
         """
-        try:
-            from services.nlu_service import nlu_service
-            saludo = nlu_service.generar_saludo_personalizado(nombre_usuario, es_primera_vez=True)
-            
-            # Agregar menú de opciones
-            menu = """
+        # Saludo personalizado simple sin OpenAI
+        if nombre_usuario:
+            saludo = f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva 👩🏻‍🦱, soy la asistente virtual de Argenfuego."
+        else:
+            saludo = "¡Hola! 👋🏻 Mi nombre es Eva 👩🏻‍🦱, soy la asistente virtual de Argenfuego."
+        
+        # Menú de opciones
+        menu = """
+
 ¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
 
 1️⃣ Solicitar un presupuesto
@@ -54,15 +57,8 @@ Responde con el número de la opción que necesitas 📱"""
 4️⃣ Otras consultas
 
 Responde con el número de la opción que necesitas 📱"""
-            
-            return saludo + menu
-            
-        except Exception as e:
-            # Fallback estático si falla el NLU
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error generando saludo personalizado: {str(e)}")
-            return ChatbotRules.get_mensaje_inicial()
+        
+        return saludo + menu
     
     @staticmethod
     def get_mensaje_recoleccion_datos(tipo_consulta: TipoConsulta) -> str:
