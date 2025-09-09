@@ -193,12 +193,12 @@ class NLUService:
             
             # Agregar parámetros de teléfono según el formato
             if isinstance(company_profile['phone'], dict):
-                template_params['company_landline_phone'] = company_profile['phone'].get('landline_phone', '')
+                template_params['company_public_phone'] = company_profile['phone'].get('public_phone', '')
                 template_params['company_mobile_phone'] = company_profile['phone'].get('mobile_phone', '')
                 template_params['company_phone'] = ''
             else:
                 template_params['company_phone'] = company_profile['phone']
-                template_params['company_landline_phone'] = ''
+                template_params['company_public_phone'] = ''
                 template_params['company_mobile_phone'] = ''
             
             prompt = CONTACT_INFO_RESPONSE_PROMPT.render(**template_params)

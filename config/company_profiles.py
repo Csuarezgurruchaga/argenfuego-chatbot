@@ -44,8 +44,8 @@ def get_company_info_text() -> str:
     phone_text = ""
     if isinstance(profile['phone'], dict):
         phone_parts = []
-        if profile['phone'].get('landline_phone'):
-            phone_parts.append(f"📞 {profile['phone']['landline_phone']}")
+        if profile['phone'].get('public_phone'):
+            phone_parts.append(f"📞 {profile['phone']['public_phone']}")
         if profile['phone'].get('mobile_phone'):
             phone_parts.append(f"📱 {profile['phone']['mobile_phone']}")
         phone_text = " | ".join(phone_parts)
@@ -87,7 +87,7 @@ def get_urgency_redirect_message() -> str:
 
 Para atención inmediata de urgencias, por favor comunícate directamente por teléfono:
 
-📞 *Teléfono fijo:* {profile['phone']['landline_phone']}
+📞 *Teléfono fijo:* {profile['phone']['public_phone']}
 📱 *Celular de emergencias:* {profile['phone']['emergency_phone']}
 
 🕒 *Horarios:* {profile['hours']}
