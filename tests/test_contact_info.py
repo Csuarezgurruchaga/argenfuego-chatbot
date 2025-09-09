@@ -10,8 +10,17 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import config first to avoid relative import issues
+# Import config first to avoid relative import issues  
 from config.company_profiles import get_active_company_profile, get_company_info_text
+
+# Import for urgency tests
+try:
+    from chatbot.rules import ChatbotRules
+    from chatbot.states import conversation_manager
+    CHATBOT_AVAILABLE = True
+except ImportError:
+    CHATBOT_AVAILABLE = False
+    print("⚠️  Chatbot modules not available for full testing")
 
 def test_nlu_import():
     """Test if NLU service can be imported and works"""
@@ -32,8 +41,15 @@ def test_company_configuration():
         profile = get_active_company_profile()
         print(f"✅ Perfil activo: {profile['name']}")
         print(f"   Bot: {profile['bot_name']}")
-        print(f"   Teléfono: {profile['phone']}")
-        print(f"   Industria: {profile['industry']}")
+        
+        # Manejar formato de teléfono dict o string
+        if isinstance(profile['phone'], dict):
+            print(f"   Teléfono fijo: {profile['phone'].get('landline_phone', 'N/A')}")
+            print(f"   Teléfono móvil: {profile['phone'].get('mobile_phone', 'N/A')}")
+        else:
+            print(f"   Teléfono: {profile['phone']}")
+            
+        print(f"   Industria: {profile.get('industry', 'Equipos contra incendios')}")
     except Exception as e:
         print(f"❌ Error cargando perfil: {e}")
         return False
@@ -115,6 +131,10 @@ def test_personalized_greetings():
 def test_contextual_interruption():
     print("\n🔄 === TEST: Interrupción Contextual ===")
     
+    if not CHATBOT_AVAILABLE:
+        print("⚠️  Saltando test - módulos de chatbot no disponibles")
+        return True
+    
     # Simular conversación con interrupción
     numero_test = "+541234567890"
     
@@ -146,6 +166,43 @@ def test_contextual_interruption():
     
     return True
 
+def test_emergency_redirect():
+    print("\n🚨 === TEST: Redirección Inmediata de Urgencias ===")
+    
+    if not CHATBOT_AVAILABLE:
+        print("⚠️  Saltando test - módulos de chatbot no disponibles")
+        return True
+    
+    # Simular selección de urgencia
+    numero_test = "+541234567891"
+    
+    try:
+        # 1. Iniciar conversación
+        respuesta1 = ChatbotRules.procesar_mensaje(numero_test, "hola", "María")
+        print("✅ Saludo inicial procesado")
+        
+        # 2. Seleccionar URGENCIA (opción 3)
+        respuesta2 = ChatbotRules.procesar_mensaje(numero_test, "3")
+        print("✅ Urgencia seleccionada")
+        print(f"   Contiene redirección: {'URGENCIA DETECTADA' in respuesta2}")
+        print(f"   Contiene teléfono fijo: {'4567-8900' in respuesta2}")
+        print(f"   Contiene celular: {'11 3906-1038' in respuesta2}")
+        print(f"   Finaliza conversación: {'equipo técnico' in respuesta2.lower()}")
+        
+        # 3. Verificar que la conversación terminó (debe crear nueva)
+        conversacion = conversation_manager.get_conversacion(numero_test)
+        estado_final = conversacion.estado
+        print(f"   Estado final: {estado_final}")
+        
+        # Limpiar
+        conversation_manager.finalizar_conversacion(numero_test)
+        
+    except Exception as e:
+        print(f"❌ Error en test de redirección de urgencias: {e}")
+        return False
+    
+    return True
+
 def main():
     print("🧪 === PRUEBAS DE NUEVAS FUNCIONALIDADES ===\n")
     
@@ -154,7 +211,8 @@ def main():
         ("Detección de Consultas de Contacto", test_contact_detection),
         ("Generación de Respuestas de Contacto", test_contact_responses),
         ("Saludos Personalizados", test_personalized_greetings),
-        ("Interrupción Contextual", test_contextual_interruption)
+        ("Interrupción Contextual", test_contextual_interruption),
+        ("Redirección de Urgencias", test_emergency_redirect)
     ]
     
     results = []

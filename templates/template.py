@@ -99,7 +99,12 @@ Pregunta del usuario: "{{mensaje_usuario}}"
 
 Información de la empresa {{company_name}}:
 - Nombre: {{company_name}}
-- Teléfono: {{company_phone}}  
+{% if company_landline_phone and company_mobile_phone %}
+- Teléfono fijo: {{company_landline_phone}}
+- Celular: {{company_mobile_phone}}
+{% elif company_phone %}
+- Teléfono: {{company_phone}}
+{% endif %}
 - Dirección: {{company_address}}
 - Horarios: {{company_hours}}
 - Email: {{company_email}}

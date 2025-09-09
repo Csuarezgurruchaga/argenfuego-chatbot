@@ -1,6 +1,6 @@
-from typing import Tuple
 from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
+from config.company_profiles import get_urgency_redirect_message
 
 # Mapeo de sinónimos para validación geográfica
 SINONIMOS_CABA = [
@@ -414,6 +414,13 @@ Por favor envíame todos estos datos juntos."""
         tipo_consulta = opciones.get(mensaje)
         if tipo_consulta:
             conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta)
+            
+            # REDIRECCIÓN INMEDIATA PARA URGENCIAS
+            if tipo_consulta == TipoConsulta.URGENCIA:
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.FINALIZADO)
+                return get_urgency_redirect_message()
+            
+            # Para otras consultas, continuar flujo normal
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
             return ChatbotRules.get_mensaje_recoleccion_datos(tipo_consulta)
         else:
@@ -423,6 +430,13 @@ Por favor envíame todos estos datos juntos."""
             
             if tipo_consulta_nlu:
                 conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta_nlu)
+                
+                # REDIRECCIÓN INMEDIATA PARA URGENCIAS (NLU)
+                if tipo_consulta_nlu == TipoConsulta.URGENCIA:
+                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.FINALIZADO)
+                    return f"✅ Entendí que tienes una urgencia.\n\n{get_urgency_redirect_message()}"
+                
+                # Para otras consultas, continuar flujo normal
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
                 return f"✅ Entendí que necesitas {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}.\n\n{ChatbotRules.get_mensaje_recoleccion_datos(tipo_consulta_nlu)}"
             else:

@@ -182,15 +182,27 @@ class NLUService:
         try:
             company_profile = get_active_company_profile()
             
-            prompt = CONTACT_INFO_RESPONSE_PROMPT.render(
-                mensaje_usuario=mensaje_usuario,
-                company_name=company_profile['name'],
-                company_phone=company_profile['phone'],
-                company_address=company_profile['address'],
-                company_hours=company_profile['hours'],
-                company_email=company_profile['email'],
-                company_website=company_profile.get('website', '')
-            )
+            # Manejar tanto formato de teléfono dict como string para compatibilidad
+            template_params = {
+                'mensaje_usuario': mensaje_usuario,
+                'company_name': company_profile['name'],
+                'company_address': company_profile['address'],
+                'company_hours': company_profile['hours'],
+                'company_email': company_profile['email'],
+                'company_website': company_profile.get('website', '')
+            }
+            
+            # Agregar parámetros de teléfono según el formato
+            if isinstance(company_profile['phone'], dict):
+                template_params['company_landline_phone'] = company_profile['phone'].get('landline_phone', '')
+                template_params['company_mobile_phone'] = company_profile['phone'].get('mobile_phone', '')
+                template_params['company_phone'] = ''
+            else:
+                template_params['company_phone'] = company_profile['phone']
+                template_params['company_landline_phone'] = ''
+                template_params['company_mobile_phone'] = ''
+            
+            prompt = CONTACT_INFO_RESPONSE_PROMPT.render(**template_params)
 
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",

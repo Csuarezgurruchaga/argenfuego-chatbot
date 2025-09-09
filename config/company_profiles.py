@@ -6,7 +6,7 @@ COMPANY_PROFILES = {
     "argenfuego": {
         "name": "Argenfuego",
         "bot_name": "Eva",
-        "phone": ["4567-8900", "11 3906-1038"],
+        "phone": {"public_phone":"4567-8900", "mobile_phone":"11-3906-1038", "emergency_phone":"11-3906-1038"},
         "address": "Av. Hipólito Yrigoyen 2020, El Talar, Provincia de Buenos Aires",
         "hours": "Lunes a Viernes de 8 a 17hs y Sábados de 9 a 13hs",
         "email": "argenfuego@yahoo.com.ar",
@@ -41,10 +41,22 @@ def get_company_info_text() -> str:
     """
     profile = get_active_company_profile()
     
+    # Manejar tanto formato de teléfono dict como string para compatibilidad
+    phone_text = ""
+    if isinstance(profile['phone'], dict):
+        phone_parts = []
+        if profile['phone'].get('landline_phone'):
+            phone_parts.append(f"📞 {profile['phone']['landline_phone']}")
+        if profile['phone'].get('mobile_phone'):
+            phone_parts.append(f"📱 {profile['phone']['mobile_phone']}")
+        phone_text = " | ".join(phone_parts)
+    else:
+        phone_text = f"📱 {profile['phone']}"
+    
     info_text = f"""📞 *{profile['name']}* - Información de Contacto
 
 🏢 *Empresa:* {profile['name']}
-📱 *Teléfono:* {profile['phone']}
+{phone_text}
 📍 *Dirección:* {profile['address']}
 🕒 *Horarios:* {profile['hours']}
 📧 *Email:* {profile['email']}"""
@@ -65,3 +77,26 @@ def get_company_services_text() -> str:
         services_text += f"{i}. {service}\n"
     
     return services_text.strip()
+
+def get_urgency_redirect_message() -> str:
+    """
+    Genera mensaje de redirección inmediata para urgencias con números de teléfono
+    """
+    profile = get_active_company_profile()
+    
+    urgency_text = f"""🚨 *URGENCIA DETECTADA* 🚨
+
+Para atención inmediata de urgencias, por favor comunícate directamente por teléfono:
+
+📞 *Teléfono fijo:* {profile['phone']['landline_phone']}
+📱 *Celular de emergencias:* {profile['phone']['emergency_phone']}
+
+🕒 *Horarios:* {profile['hours']}
+
+⚡ *Para urgencias fuera de horario, llama al celular.*
+
+Nuestro equipo técnico te atenderá de inmediato para resolver tu problema.
+
+_Gracias por contactar a {profile['name']}_ 🔥"""
+    
+    return urgency_text
