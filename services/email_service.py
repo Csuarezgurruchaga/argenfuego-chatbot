@@ -15,8 +15,8 @@ class EmailService:
         # Obtener configuración de empresa activa
         company_profile = get_active_company_profile()
         
-        self.from_email = os.getenv('SENDGRID_FROM_EMAIL', company_profile['email'])
-        self.to_email = os.getenv('LEAD_RECIPIENT', company_profile['email'])
+        self.from_email = company_profile['email_bot']
+        self.to_email = company_profile['email']
         self.company_name = company_profile['name']
         self.bot_name = company_profile['bot_name']
         

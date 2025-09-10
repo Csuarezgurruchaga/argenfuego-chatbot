@@ -842,7 +842,7 @@ Responde con el número del campo que deseas modificar."""
     def _procesar_confirmacion(numero_telefono: str, mensaje: str) -> str:
         if mensaje in ['si', 'sí', 'yes', 'confirmo', 'ok', 'correcto']:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ENVIANDO)
-            return "📤 Procesando tu solicitud..."
+            return "⏳ Procesando tu solicitud..."
         elif mensaje in ['no', 'nope', 'incorrecto', 'error']:
             # Cambiar a estado de corrección y preguntar qué campo modificar
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)
@@ -853,8 +853,6 @@ Responde con el número del campo que deseas modificar."""
     @staticmethod
     def _parsear_datos_contacto_basico(mensaje: str) -> dict:
         import re
-        import dateparser
-        from datetime import datetime
         
         # Buscar email con regex mejorado
         email_pattern = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"

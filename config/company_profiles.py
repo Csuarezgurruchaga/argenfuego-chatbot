@@ -9,7 +9,8 @@ COMPANY_PROFILES = {
         "phone": {"public_phone":"4567-8900", "mobile_phone":"11-3906-1038", "emergency_phone":"11-3906-1038"},
         "address": "Av. Hipólito Yrigoyen 2020, El Talar, Provincia de Buenos Aires",
         "hours": "Lunes a Viernes de 8 a 17hs y Sábados de 9 a 13hs",
-        "email": "argenfuego@yahoo.com.ar",
+        "email": "csuarezgurruchaga@gmail.com",#"argenfuego@yahoo.com.ar",
+        "email_bot": "notificaciones.chatbot@gmail.com",
         "website": "www.argenfuego.com.ar"
     },
     "empresa_ejemplo": {
@@ -19,6 +20,7 @@ COMPANY_PROFILES = {
         "address": "Dirección ejemplo",
         "hours": "Horarios ejemplo",
         "email": "info@ejemplo.com",
+        "email_bot": "bot@ejemplo.com",
         "website": "www.ejemplo.com"
     }
 }
