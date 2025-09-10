@@ -384,7 +384,7 @@ Responde con el número del campo que deseas modificar."""
             conversation_manager.set_datos_temporales(numero_telefono, '_campo_a_corregir', campo)
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO_CAMPO)
             return f"✅ Perfecto. Por favor envía el nuevo valor para: {ChatbotRules._get_pregunta_campo_individual(campo)}"
-    
+        
     @staticmethod
     def _procesar_correccion_campo_especifico(numero_telefono: str, mensaje: str) -> str:
         conversacion = conversation_manager.get_conversacion(numero_telefono)
@@ -399,11 +399,20 @@ Responde con el número del campo que deseas modificar."""
         if ChatbotRules._validar_campo_individual(campo, mensaje.strip()):
             conversation_manager.set_datos_temporales(numero_telefono, campo, mensaje.strip())
             
+            # Actualizar también el objeto datos_contacto para que se refleje en la confirmación
+            valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+            
+            if not valido:
+                # Esto no debería pasar porque acabamos de validar el campo individualmente
+                return f"❌ Error al actualizar: {error}"
+            
             # Limpiar campo temporal y volver a confirmación
             conversation_manager.set_datos_temporales(numero_telefono, '_campo_a_corregir', None)
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
             
-            return f"✅ Campo actualizado correctamente.\n\n{ChatbotRules.get_mensaje_confirmacion(conversacion)}"
+            # Obtener la conversación actualizada
+            conversacion_actualizada = conversation_manager.get_conversacion(numero_telefono)
+            return f"✅ Campo actualizado correctamente.\n\n{ChatbotRules.get_mensaje_confirmacion(conversacion_actualizada)}"
         else:
             # Campo inválido, pedir de nuevo
             error_msg = ChatbotRules._get_error_campo_individual(campo)
@@ -565,7 +574,9 @@ Responde con el número del campo que deseas modificar."""
                     }
                     campos_texto = [nombres_campos[campo] for campo in campos_encontrados if campo != 'direccion']
                     if campos_texto:
-                        mensaje_encontrados = f"✅ Ya tengo: {', '.join(campos_texto)}\n\n"
+                        mensaje_encontrados = "Ya tengo:\n"
+                        for campo in campos_texto:
+                            mensaje_encontrados += f"{campo} ✅\n"
                 
                 return mensaje_encontrados + f"📍 Dirección detectada: *{direccion}*\n\n" + ChatbotRules._get_mensaje_seleccion_ubicacion()
         
