@@ -610,7 +610,9 @@ Responde con el número del campo que deseas modificar."""
                     'descripcion': '📝 Descripción'
                 }
                 campos_texto = [nombres_campos[campo] for campo in campos_encontrados]
-                mensaje_encontrados = f"✅ Ya tengo: {', '.join(campos_texto)}\n\n"
+                mensaje_encontrados = "Ya tengo:\n"
+                for campo in campos_texto:
+                    mensaje_encontrados += f"{campo} ✅\n"
             
             return mensaje_encontrados + ChatbotRules._get_pregunta_campo_individual(campos_faltantes[0])
     
