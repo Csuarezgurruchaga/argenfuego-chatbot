@@ -5,7 +5,7 @@ import re
 from typing import Optional, Dict, Any
 from openai import OpenAI
 from chatbot.models import TipoConsulta
-from templates.template import NLU_INTENT_PROMPT, NLU_MESSAGE_PARSING_PROMPT, NLU_LOCATION_PROMPT, CONTACT_INFO_DETECTION_PROMPT, CONTACT_INFO_RESPONSE_PROMPT, PERSONALIZED_GREETING_PROMPT
+from templates.template import NLU_INTENT_PROMPT, NLU_MESSAGE_PARSING_PROMPT, CONTACT_INFO_DETECTION_PROMPT, CONTACT_INFO_RESPONSE_PROMPT, PERSONALIZED_GREETING_PROMPT
 from config.company_profiles import get_active_company_profile, get_company_info_text
 
 logger = logging.getLogger(__name__)
@@ -149,34 +149,6 @@ class NLUService:
             logger.error(f"Error validando campo {campo}: {str(e)}")
             return {'valido': True, 'sugerencia': valor}
     
-    def detectar_ubicacion_geografica(self, direccion: str) -> Dict[str, Any]:
-        """
-        Detecta si una dirección especifica CABA o Provincia usando LLM
-        """
-        try:
-            prompt = NLU_LOCATION_PROMPT.render(direccion=direccion)
-
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "Eres un experto en geografía de Buenos Aires, Argentina."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0,
-                max_tokens=150
-            )
-            
-            resultado_text = response.choices[0].message.content.strip()
-            logger.info(f"Detección ubicación: '{direccion}' -> '{resultado_text}'")
-            
-            try:
-                return json.loads(resultado_text)
-            except json.JSONDecodeError:
-                return {"ubicacion_detectada": "UNCLEAR", "confianza": 1, "razon": "error parsing JSON"}
-                
-        except Exception as e:
-            logger.error(f"Error detectando ubicación: {str(e)}")
-            return {"ubicacion_detectada": "UNCLEAR", "confianza": 1, "razon": "error LLM"}
     
     def detectar_consulta_contacto(self, mensaje_usuario: str) -> bool:
         """

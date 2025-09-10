@@ -29,7 +29,8 @@ SINONIMOS_PROVINCIA = [
     'zona sur', 'la plata', 'quilmes', 'lomas de zamora',
     'san isidro', 'tigre', 'pilar', 'escobar', 'moreno',
     'merlo', 'moron', 'tres de febrero', 'vicente lopez',
-    'avellaneda', 'lanus', 'berazategui', 'florencio varela'
+    'avellaneda', 'lanus', 'berazategui', 'florencio varela',
+    'ramos mejia'
 ]
 
 # Sets pre-computados normalizados para búsqueda O(1)
@@ -359,12 +360,12 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
     @staticmethod
     def _validar_ubicacion_geografica(direccion: str) -> str:
         """
-        Valida si una dirección especifica CABA o Provincia, usando primero regex y luego LLM
+        Valida si una dirección especifica CABA o Provincia usando comparación de keywords
         Retorna: 'CABA', 'PROVINCIA', o 'UNCLEAR'
         """
         direccion_lower = direccion.lower()
         
-        # Primero intentar con regex/keywords (más rápido)
+        # Buscar keywords en la dirección
         try:
             for sinonimo in SINONIMOS_CABA:
                 if sinonimo in direccion_lower:
@@ -377,17 +378,8 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             print('LOCATION ERROR: NO SE PUDO VALIDAR CON KEYWORDS SI ES CABA O PROVINCIA')
             return 'UNCLEAR'
             
-        # # Si no encuentra con keywords, usar LLM como fallback
-        # try:
-        #     from services.nlu_service import nlu_service
-        #     resultado_llm = nlu_service.detectar_ubicacion_geografica(direccion)
-            
-        #     if resultado_llm.get('confianza', 0) >= 7:
-        #         return resultado_llm.get('ubicacion_detectada', 'UNCLEAR')
-        #     else:
-        #         return 'UNCLEAR'
-        # except Exception:
-        #     return 'UNCLEAR'
+        # Si no encuentra keywords, retornar UNCLEAR para que el usuario seleccione manualmente
+        return 'UNCLEAR'
     
     @staticmethod
     def _get_mensaje_seleccion_ubicacion() -> str:
