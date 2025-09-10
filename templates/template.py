@@ -21,11 +21,20 @@ Eres un experto en parsing de datos para servicios contra incendios en Argentina
 Analiza este mensaje y extrae la información de contacto:
 "{{mensaje_usuario}}"
 
-INSTRUCCIONES ESPECÍFICAS:
-1. **Direcciones**: Pueden incluir múltiples campos en una línea (ej: "Del valle centenera 3222 piso 4D, pueden pasar de 15-17h")
-2. **Horarios**: Busca patrones como "15-17h", "pueden pasar de X a Y", "disponible mañana", "lunes a viernes"
-3. **Context clues**: "pueden pasar", "disponible", "vengan" indican horarios
-4. **Separación inteligente**: Una línea puede contener dirección Y horario separados por comas/conjunciones
+REGLAS CRÍTICAS DE EXTRACCIÓN:
+
+**DIRECCIONES** - Solo extraer ubicaciones físicas reales:
+✅ EXTRAER: "Av. Corrientes 1234", "Del Valle Centenera 322 piso 4", "Palermo Norte", "Rivadavia 4500"
+❌ NO EXTRAER: "Mi mail es...", "email:", "correo:", cualquier línea que mencione email/mail/correo
+
+**EMAILS** - Solo direcciones de correo válidas:
+✅ EXTRAER: "juan@empresa.com", "info@local.com.ar"
+❌ NO EXTRAER: "por email", "envíen email", "manden correo" (menciones de email, no emails)
+
+**CONSERVADURISMO**: Es mejor dejar un campo vacío ("") que extraer información incorrecta.
+
+**SEPARACIÓN INTELIGENTE**: Una línea puede contener dirección Y horario separados por comas:
+- "Del valle centenera 3222 piso 4D, pueden pasar de 15-17h" → direccion + horario_visita
 
 Devuelve JSON con estos campos (cadena vacía si no encuentras):
 - "email": email válido
@@ -34,15 +43,39 @@ Devuelve JSON con estos campos (cadena vacía si no encuentras):
 - "descripcion": qué necesita específicamente
 - "tipo_consulta": PRESUPUESTO, VISITA_TECNICA, URGENCIA, o OTRAS
 
-EJEMPLOS:
+EJEMPLOS CRÍTICOS:
+
+# EJEMPLO 1: Dirección + horario en una línea
 Input: "Del valle centenera 3222 piso 4D, pueden pasar de 15-17h"
 Output: {{ "{" }}"direccion": "Del valle centenera 3222 piso 4D", "horario_visita": "15-17h", "email": "", "descripcion": "", "tipo_consulta": ""{{ "}" }}
 
+# EJEMPLO 2: Email + dirección + descripción completa
 Input: "juan@empresa.com, Luis Viale 2020, necesito 4 extintores clase ABC 5kg"
 Output: {{ "{" }}"email": "juan@empresa.com", "direccion": "Luis Viale 2020", "descripcion": "necesito 4 extintores clase ABC 5kg", "horario_visita": "", "tipo_consulta": ""{{ "}" }}
 
-Input: "pinturerias_rex@rex.com.ar, Av del barco centenera 322, necesito que vengan a ver que matafuegos y elementos necesito para mi local, estamos disponibles de lunes a viernes de 8 a 18hs"
-Output: {{ "{" }}"email": "pinturerias_rex@rex.com.ar", "direccion": "Av del barco centenera 322", "descripcion": "necesito que vengan a ver que matafuegos y elementos necesito para mi local", "horario_visita": "lunes a viernes de 8 a 18hs", "tipo_consulta": ""{{ "}" }}
+# EJEMPLO 3: Solo email (NO extraer como dirección)
+Input: "Mi Mail es carlos@hotmail.com"
+Output: {{ "{" }}"email": "carlos@hotmail.com", "direccion": "", "descripcion": "", "horario_visita": "", "tipo_consulta": ""{{ "}" }}
+
+# EJEMPLO 4: Solo descripción de necesidad
+Input: "Quiero comprar 5 matafuegos para mi local gastronómico"
+Output: {{ "{" }}"email": "", "direccion": "", "descripcion": "Quiero comprar 5 matafuegos para mi local gastronómico", "horario_visita": "", "tipo_consulta": ""{{ "}" }}
+
+# EJEMPLO 5: Email mencionado como texto (NO extraer)
+Input: "necesito que me envíen por email la cotización"
+Output: {{ "{" }}"email": "", "direccion": "", "descripcion": "necesito que me envíen por email la cotización", "horario_visita": "", "tipo_consulta": ""{{ "}" }}
+
+# EJEMPLO 6: Formato "mi X es Y" - extraer correctamente
+Input: "mi dirección es Rivadavia 4500 y mi email es jose@empresa.com"
+Output: {{ "{" }}"email": "jose@empresa.com", "direccion": "Rivadavia 4500", "descripcion": "", "horario_visita": "", "tipo_consulta": ""{{ "}" }}
+
+# EJEMPLO 7: Solo horario disponible
+Input: "Estoy disponible mañanas de 9 a 12"
+Output: {{ "{" }}"email": "", "direccion": "", "descripcion": "", "horario_visita": "mañanas de 9 a 12", "tipo_consulta": ""{{ "}" }}
+
+# EJEMPLO 8: Dirección informal pero válida
+Input: "Estoy en Palermo cerca del shopping, necesito extintores"
+Output: {{ "{" }}"email": "", "direccion": "Palermo cerca del shopping", "descripcion": "necesito extintores", "horario_visita": "", "tipo_consulta": ""{{ "}" }}
 
 Responde ÚNICAMENTE con JSON válido, sin texto adicional.
 """)
