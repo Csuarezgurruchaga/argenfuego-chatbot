@@ -727,7 +727,10 @@ Responde con el número del campo que deseas modificar."""
                 
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
                 
-                return f"¡Listo! 📝 Entendí que necesitás {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}.\n\n{ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta_nlu)}"
+                if tipo_consulta_nlu == TipoConsulta.OTRAS:
+                    return ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta_nlu)
+                else:
+                    return f"¡Listo! 📝 Entendí que necesitás {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}.\n\n{ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta_nlu)}"
             else:
                 return ChatbotRules.get_mensaje_error_opcion()
     
@@ -839,7 +842,7 @@ Responde con el número del campo que deseas modificar."""
     def _procesar_confirmacion(numero_telefono: str, mensaje: str) -> str:
         if mensaje in ['si', 'sí', 'yes', 'confirmo', 'ok', 'correcto']:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ENVIANDO)
-            return ChatbotRules.get_mensaje_final_exito()
+            return "📤 Procesando tu solicitud..."
         elif mensaje in ['no', 'nope', 'incorrecto', 'error']:
             # Cambiar a estado de corrección y preguntar qué campo modificar
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)
