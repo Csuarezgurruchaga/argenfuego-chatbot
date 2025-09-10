@@ -117,7 +117,12 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
             'email': "📧 ¿Cuál es tu email de contacto?",
             'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio?(aclarar CABA o Provincia)",
             'horario_visita': "🕒 ¿Cuál es tu horario disponible para la visita? (ej: lunes a viernes 9-17h)",
-            'descripcion': "📝 ¿Podrías describir qué necesitas específicamente? (ej: tipo de equipo <polvo quimico, CO2>, capacidad <5kg, 10kg> y Cantidad)"
+            'descripcion': """📝 Por favor, describe tu necesidad para que podamos preparar un presupuesto preciso. Puedes incluir:
+• Tipo de servicio (ej. mantenimiento anual, compra de equipo nuevo)
+• Tipo de equipo (ej. polvo químico, CO2)
+• Capacidad (ej. 5 kg, 10 kg)
+• Cantidad (ej. 2 equipos)
+"""
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     

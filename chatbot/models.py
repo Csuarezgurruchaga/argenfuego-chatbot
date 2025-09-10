@@ -18,6 +18,8 @@ class EstadoConversacion(str, Enum):
     CONFIRMANDO = "confirmando"
     ENVIANDO = "enviando"
     FINALIZADO = "finalizado"
+    CORRIGIENDO = "corrigiendo"  # Para preguntar qué campo corregir
+    CORRIGIENDO_CAMPO = "corrigiendo_campo"  # Para recibir el nuevo valor del campo
 
 class DatosContacto(BaseModel):
     email: EmailStr
