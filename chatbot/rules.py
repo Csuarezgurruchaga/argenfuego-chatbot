@@ -71,10 +71,10 @@ Responde con el número de la opción que necesitas 📱"""
         
         return f"""Perfecto! Para poder ayudarte con {consulta_texto[tipo_consulta]}, necesito que me proporciones la siguiente información:
 
-📧 **Email de contacto**
-📍 **Dirección** 
-🕒 **Horario en que se puede visitar el lugar**
-📝 **Cuéntanos más sobre lo que necesitas**
+📧 *Email de contacto*
+📍 *Dirección* 
+🕒 *Horario en que se puede visitar el lugar*
+📝 *Cuéntanos más sobre lo que necesitas*
 
 Por favor envíame toda esta información en un solo mensaje para poder proceder."""
     
@@ -88,18 +88,18 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
             TipoConsulta.OTRAS: "Consulta general"
         }
         
-        return f"""📋 **Resumen de tu solicitud:**
+        return f"""📋 *Resumen de tu solicitud:*
 
-🏷️ **Tipo de consulta:** {tipo_texto[conversacion.tipo_consulta]}
-📧 **Email:** {datos.email}
-📍 **Dirección:** {datos.direccion}
-🕒 **Horario de visita:** {datos.horario_visita}
-📝 **Descripción:** {datos.descripcion}
+🏷️ *Tipo de consulta:* {tipo_texto[conversacion.tipo_consulta]}
+📧 *Email:* {datos.email}
+📍 *Dirección:* {datos.direccion}
+🕒 *Horario de visita:* {datos.horario_visita}
+📝 *Descripción:* {datos.descripcion}
 
 ¿Es correcta toda la información? 
 
-✅ Responde **"SI"** para confirmar y enviar la solicitud
-✏️ Responde **"NO"** si hay algo que corregir"""
+✅ Responde *"SI"* para confirmar y enviar la solicitud
+❌ Responde *"NO"* si hay algo que corregir ✏️"""
     
     @staticmethod
     def _get_texto_tipo_consulta(tipo_consulta: TipoConsulta) -> str:
@@ -117,7 +117,7 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
             'email': "📧 ¿Cuál es tu email de contacto?",
             'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio?(aclarar CABA o Provincia)",
             'horario_visita': "🕒 ¿Cuál es tu horario disponible para la visita? (ej: lunes a viernes 9-17h)",
-            'descripcion': "📝 ¿Podrías describir qué necesitas específicamente? (ej: tipo de equipo (polvo quimico, CO2), capacidad (5kg, 10kg) y Cantidad)"
+            'descripcion': "📝 ¿Podrías describir qué necesitas específicamente? (ej: tipo de equipo <polvo quimico, CO2>, capacidad <5kg, 10kg> y Cantidad)"
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     
@@ -219,12 +219,12 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
     
     @staticmethod
     def _get_mensaje_seleccion_ubicacion() -> str:
-        return """📍 **¿Tu dirección es en:**
+        return """📍 *¿Tu dirección es en:*
 
-1️⃣ **CABA** (Ciudad Autónoma de Buenos Aires / Capital Federal)
-2️⃣ **Provincia de Buenos Aires**
+1️⃣ *CABA* (Ciudad Autónoma de Buenos Aires / Capital Federal)
+2️⃣ *Provincia de Buenos Aires*
 
-Por favor responde **1** para CABA o **2** para Provincia."""
+Por favor responde *1* para CABA o *2* para Provincia."""
     
     @staticmethod
     def _procesar_seleccion_ubicacion(numero_telefono: str, mensaje: str) -> str:
@@ -252,7 +252,7 @@ Por favor responde **1** para CABA o **2** para Provincia."""
             # Continuar con el flujo normal
             return ChatbotRules._continuar_despues_validacion_ubicacion(numero_telefono)
         else:
-            return "❌ Por favor responde **1** para CABA o **2** para Provincia de Buenos Aires."
+            return "❌ Por favor responde *1* para CABA o *2* para Provincia de Buenos Aires."
     
     @staticmethod
     def _continuar_despues_validacion_ubicacion(numero_telefono: str) -> str:
@@ -323,10 +323,10 @@ _Para una nueva consulta, puedes escribir "hola" en cualquier momento._"""
         return """❌ No entendí tu selección. 
 
 Por favor responde con:
-• **1** para Solicitar un presupuesto
-• **2** para Visita técnica  
-• **3** para Reportar urgencia
-• **4** para Otras consultas"""
+• *1* para Solicitar un presupuesto
+• *2* para Visita técnica  
+• *3* para Reportar urgencia
+• *4* para Otras consultas"""
     
     @staticmethod
     def get_mensaje_datos_incompletos() -> str:
@@ -339,6 +339,70 @@ Necesito que me envíes en un mensaje:
 📝 Descripción de lo que necesitas
 
 Por favor envíame todos estos datos juntos."""
+    
+    @staticmethod
+    def _get_mensaje_pregunta_campo_a_corregir() -> str:
+        return """❌ Entendido que hay información incorrecta.
+
+¿Qué campo deseas corregir?
+1️⃣ Email
+2️⃣ Dirección
+3️⃣ Horario de visita
+4️⃣ Descripción
+5️⃣ Todo (reiniciar todos los datos)
+
+Responde con el número del campo que deseas modificar."""
+    
+    @staticmethod
+    def _procesar_correccion_campo(numero_telefono: str, mensaje: str) -> str:
+        opciones_correccion = {
+            '1': 'email',
+            '2': 'direccion', 
+            '3': 'horario_visita',
+            '4': 'descripcion',
+            '5': 'todo'
+        }
+        
+        campo = opciones_correccion.get(mensaje)
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        
+        if not campo:
+            return "❌ No entendí tu selección. " + ChatbotRules._get_mensaje_pregunta_campo_a_corregir()
+        
+        if campo == 'todo':
+            # Reiniciar todos los datos
+            conversation_manager.clear_datos_temporales(numero_telefono)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
+            return f"✏️ Entendido. {ChatbotRules.get_mensaje_recoleccion_datos(conversacion.tipo_consulta)}"
+        else:
+            # Preparar para corregir solo un campo específico
+            conversation_manager.set_datos_temporales(numero_telefono, '_campo_a_corregir', campo)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO_CAMPO)
+            return f"✅ Perfecto. Por favor envía el nuevo valor para: {ChatbotRules._get_pregunta_campo_individual(campo)}"
+    
+    @staticmethod
+    def _procesar_correccion_campo_especifico(numero_telefono: str, mensaje: str) -> str:
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        campo = conversacion.datos_temporales.get('_campo_a_corregir')
+        
+        if not campo:
+            # Error, volver al inicio
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+            return "🤖 Hubo un error. Escribe 'hola' para comenzar de nuevo."
+        
+        # Validar y actualizar el campo específico
+        if ChatbotRules._validar_campo_individual(campo, mensaje.strip()):
+            conversation_manager.set_datos_temporales(numero_telefono, campo, mensaje.strip())
+            
+            # Limpiar campo temporal y volver a confirmación
+            conversation_manager.set_datos_temporales(numero_telefono, '_campo_a_corregir', None)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+            
+            return f"✅ Campo actualizado correctamente.\n\n{ChatbotRules.get_mensaje_confirmacion(conversacion)}"
+        else:
+            # Campo inválido, pedir de nuevo
+            error_msg = ChatbotRules._get_error_campo_individual(campo)
+            return f"❌ {error_msg}\n\nPor favor envía un valor válido para: {ChatbotRules._get_pregunta_campo_individual(campo)}"
     
     @staticmethod
     def procesar_mensaje(numero_telefono: str, mensaje: str, nombre_usuario: str = "") -> str:
@@ -390,6 +454,12 @@ Por favor envíame todos estos datos juntos."""
         
         elif conversacion.estado == EstadoConversacion.CONFIRMANDO:
             return ChatbotRules._procesar_confirmacion(numero_telefono, mensaje_limpio)
+        
+        elif conversacion.estado == EstadoConversacion.CORRIGIENDO:
+            return ChatbotRules._procesar_correccion_campo(numero_telefono, mensaje_limpio)
+        
+        elif conversacion.estado == EstadoConversacion.CORRIGIENDO_CAMPO:
+            return ChatbotRules._procesar_correccion_campo_especifico(numero_telefono, mensaje)
         
         else:
             return "🤖 Hubo un error. Escribe 'hola' para comenzar de nuevo."
@@ -492,7 +562,7 @@ Por favor envíame todos estos datos juntos."""
                     if campos_texto:
                         mensaje_encontrados = f"✅ Ya tengo: {', '.join(campos_texto)}\n\n"
                 
-                return mensaje_encontrados + f"📍 Dirección detectada: **{direccion}**\n\n" + ChatbotRules._get_mensaje_seleccion_ubicacion()
+                return mensaje_encontrados + f"📍 Dirección detectada: *{direccion}*\n\n" + ChatbotRules._get_mensaje_seleccion_ubicacion()
         
         # Determinar qué campos faltan
         campos_requeridos = ['email', 'direccion', 'horario_visita', 'descripcion']
@@ -534,12 +604,11 @@ Por favor envíame todos estos datos juntos."""
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ENVIANDO)
             return "📤 Enviando tu solicitud..."
         elif mensaje in ['no', 'nope', 'incorrecto', 'error']:
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
-            conversation_manager.clear_datos_temporales(numero_telefono)
-            conversacion = conversation_manager.get_conversacion(numero_telefono)
-            return f"✏️ Entendido. {ChatbotRules.get_mensaje_recoleccion_datos(conversacion.tipo_consulta)}"
+            # Cambiar a estado de corrección y preguntar qué campo modificar
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)
+            return ChatbotRules._get_mensaje_pregunta_campo_a_corregir()
         else:
-            return "🤔 Por favor responde **SI** para confirmar o **NO** para corregir la información."
+            return "🤔 Por favor responde *SI* para confirmar o *NO* para corregir la información."
     
     @staticmethod
     def _parsear_datos_contacto_basico(mensaje: str) -> dict:
