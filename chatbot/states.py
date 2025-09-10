@@ -1,5 +1,5 @@
 from typing import Dict, Optional
-from .models import ConversacionData, EstadoConversacion, TipoConsulta, DatosContacto
+from .models import ConversacionData, EstadoConversacion, TipoConsulta, DatosContacto, DatosConsultaGeneral
 from pydantic import ValidationError
 
 class ConversationManager:
@@ -35,12 +35,21 @@ class ConversationManager:
         datos_temp = conversacion.datos_temporales
         
         try:
-            datos_contacto = DatosContacto(
-                email=datos_temp.get('email', ''),
-                direccion=datos_temp.get('direccion', ''),
-                horario_visita=datos_temp.get('horario_visita', ''),
-                descripcion=datos_temp.get('descripcion', '')
-            )
+            # Para "Otras consultas" usar modelo simplificado
+            if conversacion.tipo_consulta == TipoConsulta.OTRAS:
+                datos_contacto = DatosConsultaGeneral(
+                    email=datos_temp.get('email', ''),
+                    descripcion=datos_temp.get('descripcion', '')
+                )
+            else:
+                # Para presupuestos y visitas técnicas usar modelo completo
+                datos_contacto = DatosContacto(
+                    email=datos_temp.get('email', ''),
+                    direccion=datos_temp.get('direccion', ''),
+                    horario_visita=datos_temp.get('horario_visita', ''),
+                    descripcion=datos_temp.get('descripcion', '')
+                )
+            
             conversacion.datos_contacto = datos_contacto
             return True, None
         except ValidationError as e:
@@ -79,7 +88,12 @@ class ConversationManager:
         conversacion = self.get_conversacion(numero_telefono)
         datos_temp = conversacion.datos_temporales
         
-        campos_orden = ['email', 'direccion', 'horario_visita', 'descripcion']
+        # Para "Otras consultas" solo pedimos descripción y email
+        if conversacion.tipo_consulta == TipoConsulta.OTRAS:
+            campos_orden = ['descripcion', 'email']
+        else:
+            # Para presupuestos y visitas técnicas pedimos todos los campos
+            campos_orden = ['email', 'direccion', 'horario_visita', 'descripcion']
         
         for campo in campos_orden:
             if not datos_temp.get(campo) or not datos_temp.get(campo).strip():
@@ -93,14 +107,27 @@ class ConversationManager:
     
     def es_ultimo_campo(self, numero_telefono: str, campo_actual: str) -> bool:
         """Verifica si el campo actual es el último que necesitamos"""
-        return campo_actual == 'descripcion'
+        conversacion = self.get_conversacion(numero_telefono)
+        
+        if conversacion.tipo_consulta == TipoConsulta.OTRAS:
+            # Para OTRAS: el email es el último campo (descripción -> email)
+            return campo_actual == 'email'
+        else:
+            # Para otros tipos: la descripción es el último campo
+            return campo_actual == 'descripcion'
     
     def get_progreso_campos(self, numero_telefono: str) -> tuple[int, int]:
         """Retorna (campos_completados, total_campos) para mostrar progreso"""
         conversacion = self.get_conversacion(numero_telefono)
         datos_temp = conversacion.datos_temporales
         
-        campos_orden = ['email', 'direccion', 'horario_visita', 'descripcion']
+        # Para "Otras consultas" solo pedimos descripción y email
+        if conversacion.tipo_consulta == TipoConsulta.OTRAS:
+            campos_orden = ['descripcion', 'email']
+        else:
+            # Para presupuestos y visitas técnicas pedimos todos los campos
+            campos_orden = ['email', 'direccion', 'horario_visita', 'descripcion']
+            
         completados = sum(1 for campo in campos_orden if datos_temp.get(campo) and datos_temp.get(campo).strip())
         
         return completados, len(campos_orden)

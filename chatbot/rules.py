@@ -1,10 +1,22 @@
+import unicodedata
 from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
 from config.company_profiles import get_urgency_redirect_message
 
-# Mapeo de sinónimos para validación geográfica
+def normalizar_texto(texto: str) -> str:
+    """
+    Normaliza texto: lowercase + sin acentos + sin espacios + sin puntos
+    """
+    texto = texto.lower().strip()
+    # Remover acentos
+    sin_acentos = ''.join(c for c in unicodedata.normalize('NFD', texto) 
+                          if unicodedata.category(c) != 'Mn')
+    # Remover espacios y puntos para mejor matching (bsas = bs as = bs. as.)
+    return sin_acentos.replace(' ', '').replace('.', '')
+
+# Mapeo de sinónimos para validación geográfica (solo minúsculas, se normalizan automáticamente)
 SINONIMOS_CABA = [
-    'caba', 'c.a.b.a', 'ciudad autonoma', 'ciudad autónoma', 
+    'caba', 'c.a.b.a', 'ciudad autonoma', 
     'capital', 'capital federal', 'microcentro', 'palermo', 
     'recoleta', 'san telmo', 'puerto madero', 'belgrano',
     'barracas', 'boca', 'caballito', 'flores', 'once',
@@ -19,6 +31,10 @@ SINONIMOS_PROVINCIA = [
     'merlo', 'moron', 'tres de febrero', 'vicente lopez',
     'avellaneda', 'lanus', 'berazategui', 'florencio varela'
 ]
+
+# Sets pre-computados normalizados para búsqueda O(1)
+SINONIMOS_CABA_NORM = {normalizar_texto(s) for s in SINONIMOS_CABA}
+SINONIMOS_PROVINCIA_NORM = {normalizar_texto(s) for s in SINONIMOS_PROVINCIA}
 
 class ChatbotRules:
     
@@ -87,11 +103,15 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def get_mensaje_inicio_secuencial(tipo_consulta: TipoConsulta) -> str:
         """Mensaje inicial para el flujo secuencial conversacional"""
+        if tipo_consulta == TipoConsulta.OTRAS:
+            return """Perfecto 👌🏻 Para poder ayudarte con tu consulta necesito que me cuentes más detalles.
+
+📝 Contános más sobre tu consulta (ej: información sobre productos, horarios de atención, servicios, etc.)"""
+        
         consulta_texto = {
             TipoConsulta.PRESUPUESTO: "presupuesto",
             TipoConsulta.VISITA_TECNICA: "visita técnica",
-            TipoConsulta.URGENCIA: "urgencia",
-            TipoConsulta.OTRAS: "consulta"
+            TipoConsulta.URGENCIA: "urgencia"
         }
         
         return f"""Perfecto 👌🏻 Para poder armar tu {consulta_texto[tipo_consulta]} necesito algunos datos.
@@ -127,12 +147,18 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             TipoConsulta.OTRAS: "Consulta general"
         }
         
-        return f"""📋 *Resumen de tu solicitud:*
+        mensaje_confirmacion = f"""📋 *Resumen de tu solicitud:*
 
 🏷️ *Tipo de consulta:* {tipo_texto[conversacion.tipo_consulta]}
-📧 *Email:* {datos.email}
+📧 *Email:* {datos.email}"""
+
+        # Para consultas que no sean OTRAS, mostrar campos adicionales
+        if conversacion.tipo_consulta != TipoConsulta.OTRAS:
+            mensaje_confirmacion += f"""
 📍 *Dirección:* {datos.direccion}
-🕒 *Horario de visita:* {datos.horario_visita}
+🕒 *Horario de visita:* {datos.horario_visita}"""
+
+        mensaje_confirmacion += f"""
 📝 *Descripción:* {datos.descripcion}
 
 ¿Es correcta toda la información? 
@@ -140,6 +166,8 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
 ✅ Responde *"SI"* para confirmar y enviar la solicitud
 ❌ Responde *"NO"* si hay algo que corregir ✏️
 ↩️ Responde *"MENU"* para volver al menú principal"""
+
+        return mensaje_confirmacion
     
     @staticmethod
     def _get_texto_tipo_consulta(tipo_consulta: TipoConsulta) -> str:
@@ -167,8 +195,11 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         return preguntas.get(campo, "Por favor proporciona más información.")
     
     @staticmethod
-    def _get_pregunta_campo_secuencial(campo: str) -> str:
+    def _get_pregunta_campo_secuencial(campo: str, tipo_consulta: TipoConsulta = None) -> str:
         """Preguntas específicas para el flujo secuencial"""
+        if tipo_consulta == TipoConsulta.OTRAS and campo == 'email':
+            return "📧 ¿Cuál es tu email para poder responderte?"
+        
         preguntas = {
             'email': "📧 ¿Cuál es tu email de contacto?",
             'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio?",
@@ -200,7 +231,8 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             
             if not valido:
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
-                return f"❌ Hay algunos errores en los datos:\n{error}\n\n{ChatbotRules._get_pregunta_campo_secuencial('email')}"
+                primer_campo = 'descripcion' if conversacion.tipo_consulta == TipoConsulta.OTRAS else 'email'
+                return f"❌ Hay algunos errores en los datos:\n{error}\n\n{ChatbotRules._get_pregunta_campo_secuencial(primer_campo, conversacion.tipo_consulta)}"
             
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
             return ChatbotRules.get_mensaje_confirmacion(conversacion)
@@ -208,7 +240,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         # Validar campo actual
         if not ChatbotRules._validar_campo_individual(campo_actual, mensaje.strip()):
             error_msg = ChatbotRules._get_error_campo_individual(campo_actual)
-            return f"❌ {error_msg}\n{ChatbotRules._get_pregunta_campo_secuencial(campo_actual)}"
+            return f"❌ {error_msg}\n{ChatbotRules._get_pregunta_campo_secuencial(campo_actual, conversacion.tipo_consulta)}"
         
         # Guardar campo válido
         conversation_manager.marcar_campo_completado(numero_telefono, campo_actual, mensaje.strip())
@@ -254,7 +286,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         else:
             # Pedir siguiente campo
             siguiente_campo = conversation_manager.get_campo_siguiente(numero_telefono)
-            siguiente_pregunta = ChatbotRules._get_pregunta_campo_secuencial(siguiente_campo)
+            siguiente_pregunta = ChatbotRules._get_pregunta_campo_secuencial(siguiente_campo, conversacion.tipo_consulta)
             return f"{confirmacion}\n{siguiente_pregunta}"
     
     @staticmethod
@@ -360,17 +392,24 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
 1️⃣ *CABA* (Ciudad Autónoma de Buenos Aires / Capital Federal)
 2️⃣ *Provincia de Buenos Aires*
 
-Por favor responde *1* para CABA o *2* para Provincia."""
+Puedes responder con *números* (1 o 2) o *escribir* el nombre de tu ubicación:
+• CABA, Capital Federal, Capital, etc.
+• Provincia, Buenos Aires, BS AS, etc."""
     
     @staticmethod
     def _procesar_seleccion_ubicacion(numero_telefono: str, mensaje: str) -> str:
         """
         Procesa la selección del usuario para CABA o Provincia
+        Acepta números (1, 2) y texto (caba, provincia, capital federal, bs as, etc.)
         """
         conversacion = conversation_manager.get_conversacion(numero_telefono)
         direccion_original = conversacion.datos_temporales.get('_direccion_pendiente', '')
         
-        if mensaje in ['1', 'caba']:
+        # Normalizar entrada del usuario (con acentos y mayúsculas)
+        texto_normalizado = normalizar_texto(mensaje)
+        
+        # Verificar si es CABA (opción 1 o sinónimos normalizados)
+        if texto_normalizado == '1' or texto_normalizado in SINONIMOS_CABA_NORM:
             # Actualizar la dirección con CABA
             direccion_final = f"{direccion_original}, CABA"
             conversation_manager.set_datos_temporales(numero_telefono, 'direccion', direccion_final)
@@ -379,7 +418,8 @@ Por favor responde *1* para CABA o *2* para Provincia."""
             # Continuar con el flujo normal
             return ChatbotRules._continuar_despues_validacion_ubicacion(numero_telefono)
             
-        elif mensaje in ['2', 'provincia']:
+        # Verificar si es Provincia (opción 2 o sinónimos normalizados)
+        elif texto_normalizado == '2' or texto_normalizado in SINONIMOS_PROVINCIA_NORM:
             # Actualizar la dirección con Provincia
             direccion_final = f"{direccion_original}, Provincia de Buenos Aires"
             conversation_manager.set_datos_temporales(numero_telefono, 'direccion', direccion_final)
@@ -388,7 +428,7 @@ Por favor responde *1* para CABA o *2* para Provincia."""
             # Continuar con el flujo normal
             return ChatbotRules._continuar_despues_validacion_ubicacion(numero_telefono)
         else:
-            return "❌ Por favor responde *1* para CABA o *2* para Provincia de Buenos Aires."
+            return "❌ Por favor responde *1* para CABA, *2* para Provincia, o escribe el nombre de tu ubicación (ej: CABA, Provincia, Capital Federal, Buenos Aires)."
     
     @staticmethod
     def _continuar_despues_validacion_ubicacion(numero_telefono: str) -> str:
@@ -427,7 +467,8 @@ Por favor responde *1* para CABA o *2* para Provincia."""
                 siguiente_campo = conversation_manager.get_campo_siguiente(numero_telefono)
                 
                 if siguiente_campo:
-                    return ChatbotRules._get_pregunta_campo_secuencial(siguiente_campo)
+                    conversacion_actualizada = conversation_manager.get_conversacion(numero_telefono)
+                    return ChatbotRules._get_pregunta_campo_secuencial(siguiente_campo, conversacion_actualizada.tipo_consulta)
                 else:
                     # Todos los campos están completos
                     valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)

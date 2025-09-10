@@ -109,7 +109,11 @@ class EmailService:
                                     {conversacion.datos_contacto.email}
                                 </a>
                             </td>
-                        </tr>
+                        </tr>"""
+        
+        # Campos adicionales solo para presupuestos y visitas técnicas
+        if conversacion.tipo_consulta != TipoConsulta.OTRAS:
+            html_template += f"""
                         <tr style="background-color: #f9fafb;">
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">📍 Dirección:</td>
                             <td style="padding: 8px 0; color: #1f2937;">{conversacion.datos_contacto.direccion}</td>
@@ -117,7 +121,9 @@ class EmailService:
                         <tr>
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">🕒 Horario de visita:</td>
                             <td style="padding: 8px 0; color: #1f2937;">{conversacion.datos_contacto.horario_visita}</td>
-                        </tr>
+                        </tr>"""
+        
+        html_template += f"""
                         <tr style="background-color: #f9fafb;">
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">📱 WhatsApp:</td>
                             <td style="padding: 8px 0; color: #1f2937;">

@@ -29,6 +29,11 @@ class DatosContacto(BaseModel):
     horario_visita: str = Field(..., min_length=3, max_length=100, strip_whitespace=True)
     descripcion: str = Field(..., min_length=10, max_length=500, strip_whitespace=True)
 
+class DatosConsultaGeneral(BaseModel):
+    """Modelo simplificado para consultas generales (TipoConsulta.OTRAS)"""
+    email: EmailStr
+    descripcion: str = Field(..., min_length=10, max_length=500, strip_whitespace=True)
+
 class ConversacionData(BaseModel):
     numero_telefono: str
     estado: EstadoConversacion
