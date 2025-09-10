@@ -247,7 +247,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         
         # VALIDACIÓN GEOGRÁFICA para direcciones
         if campo_actual == 'direccion':
-            ubicacion = ChatbotRules._validar_ubicacion_geografica(mensaje.strip())
+            ubicacion = ChatbotRules._validar_ubicacion_geografica(mensaje.strip()) #todo revisar
             
             if ubicacion == 'UNCLEAR':
                 # Necesita validación manual - guardar dirección pendiente
@@ -365,36 +365,36 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         direccion_lower = direccion.lower()
         
         # Primero intentar con regex/keywords (más rápido)
-        for sinonimo in SINONIMOS_CABA:
-            if sinonimo in direccion_lower:
-                return 'CABA'
-        
-        for sinonimo in SINONIMOS_PROVINCIA:
-            if sinonimo in direccion_lower:
-                return 'PROVINCIA'
-        
-        # Si no encuentra con keywords, usar LLM como fallback
         try:
-            from services.nlu_service import nlu_service
-            resultado_llm = nlu_service.detectar_ubicacion_geografica(direccion)
+            for sinonimo in SINONIMOS_CABA:
+                if sinonimo in direccion_lower:
+                    return 'CABA'
             
-            if resultado_llm.get('confianza', 0) >= 7:
-                return resultado_llm.get('ubicacion_detectada', 'UNCLEAR')
-            else:
-                return 'UNCLEAR'
+            for sinonimo in SINONIMOS_PROVINCIA:
+                if sinonimo in direccion_lower:
+                    return 'PROVINCIA'
         except Exception:
+            print('LOCATION ERROR: NO SE PUDO VALIDAR CON KEYWORDS SI ES CABA O PROVINCIA')
             return 'UNCLEAR'
+            
+        # # Si no encuentra con keywords, usar LLM como fallback
+        # try:
+        #     from services.nlu_service import nlu_service
+        #     resultado_llm = nlu_service.detectar_ubicacion_geografica(direccion)
+            
+        #     if resultado_llm.get('confianza', 0) >= 7:
+        #         return resultado_llm.get('ubicacion_detectada', 'UNCLEAR')
+        #     else:
+        #         return 'UNCLEAR'
+        # except Exception:
+        #     return 'UNCLEAR'
     
     @staticmethod
     def _get_mensaje_seleccion_ubicacion() -> str:
-        return """📍 *¿Tu dirección es en:*
-
-1️⃣ *CABA* (Ciudad Autónoma de Buenos Aires / Capital Federal)
+        return """📍 *¿Tu dirección es en...*
+1️⃣ *CABA*
 2️⃣ *Provincia de Buenos Aires*
-
-Puedes responder con *números* (1 o 2) o *escribir* el nombre de tu ubicación:
-• CABA, Capital Federal, Capital, etc.
-• Provincia, Buenos Aires, BS AS, etc."""
+"""
     
     @staticmethod
     def _procesar_seleccion_ubicacion(numero_telefono: str, mensaje: str) -> str:
