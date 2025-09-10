@@ -20,6 +20,7 @@ class EstadoConversacion(str, Enum):
     FINALIZADO = "finalizado"
     CORRIGIENDO = "corrigiendo"  # Para preguntar qué campo corregir
     CORRIGIENDO_CAMPO = "corrigiendo_campo"  # Para recibir el nuevo valor del campo
+    MENU_PRINCIPAL = "menu_principal"  # Para volver al menú principal
 
 class DatosContacto(BaseModel):
     email: EmailStr

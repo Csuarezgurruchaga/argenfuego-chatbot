@@ -4,10 +4,24 @@ NLU_INTENT_PROMPT=Template("""
 Usuario escribió: "{{mensaje_usuario}}"
 
 Las opciones disponibles son:
-1. PRESUPUESTO - para compras, cotizaciones, precios, solicitar matafuegos/extintores
-2. VISITA_TECNICA - para evaluación, inspección, consultoría en sitio, revisión técnica
+1. PRESUPUESTO - cuando el cliente SABE EXACTAMENTE qué necesita: equipos específicos, cantidades definidas, tipos concretos (ej: "necesito 3 matafuegos ABC 5kg", "quiero comprar 2 extintores para oficina")
+2. VISITA_TECNICA - cuando el cliente NO SABE QUÉ NECESITA: requiere evaluación, inspección, asesoramiento sobre qué equipos instalar (ej: "no sé qué equipos necesito", "evalúen mi local", "qué dotación necesita mi empresa")
 3. URGENCIA - emergencias, reparaciones inmediatas, problemas urgentes
 4. OTRAS - información general, horarios, dudas, consultas varias
+
+EJEMPLOS DE CLASIFICACIÓN:
+
+✅ PRESUPUESTO (cliente sabe exactamente qué necesita):
+- "necesito 3 matafuegos ABC de 5kg"
+- "quiero comprar 2 extintores para mi oficina"
+- "necesito que me fijen 4 matafuegos, 2 placas, 2 carteles"
+- "cotización para 10 extintores clase BC"
+
+✅ VISITA_TECNICA (cliente no sabe qué necesita):
+- "no sé qué equipos necesito para mi local"
+- "necesito que evalúen qué dotación requiere mi empresa"
+- "vengan a ver qué necesito instalar"
+- "qué tipo de matafuegos necesito?"
 
 Analiza la intención del usuario y responde ÚNICAMENTE con una de estas opciones: PRESUPUESTO, VISITA_TECNICA, URGENCIA, o OTRAS
 

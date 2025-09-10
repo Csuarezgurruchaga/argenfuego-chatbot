@@ -23,6 +23,21 @@ SINONIMOS_PROVINCIA = [
 class ChatbotRules:
     
     @staticmethod
+    def _detectar_volver_menu(mensaje: str) -> bool:
+        """
+        Detecta si el usuario quiere volver al menú principal
+        """
+        mensaje_lower = mensaje.lower().strip()
+        frases_menu = [
+            'volver', 'menu', 'menú', 'inicio', 'empezar de nuevo',
+            'me equivoqué', 'me equivoque', 'error', 'atrás', 'atras',
+            'menu principal', 'menú principal', 'opción', 'opcion',
+            'elegir otra', 'cambiar opción', 'cambiar opcion'
+        ]
+        
+        return any(frase in mensaje_lower for frase in frases_menu)
+    
+    @staticmethod
     def get_mensaje_inicial() -> str:
         return """¡Hola! 👋 Mi nombre es Eva, soy la asistente virtual de Argenfuego.
 
@@ -76,7 +91,9 @@ Responde con el número de la opción que necesitas 📱"""
 🕒 *Horario en que se puede visitar el lugar*
 📝 *Cuéntanos más sobre lo que necesitas*
 
-Por favor envíame toda esta información en un solo mensaje para poder proceder."""
+Por favor envíame toda esta información en un solo mensaje para poder proceder.
+
+_💡 También puedes escribir "menú" para volver al menú principal en cualquier momento._"""
     
     @staticmethod
     def get_mensaje_confirmacion(conversacion) -> str:
@@ -99,7 +116,8 @@ Por favor envíame toda esta información en un solo mensaje para poder proceder
 ¿Es correcta toda la información? 
 
 ✅ Responde *"SI"* para confirmar y enviar la solicitud
-❌ Responde *"NO"* si hay algo que corregir ✏️"""
+❌ Responde *"NO"* si hay algo que corregir ✏️
+↩️ Responde *"MENU"* para volver al menú principal"""
     
     @staticmethod
     def _get_texto_tipo_consulta(tipo_consulta: TipoConsulta) -> str:
@@ -315,11 +333,11 @@ Por favor responde *1* para CABA o *2* para Provincia."""
     
     @staticmethod
     def get_mensaje_final_exito() -> str:
-        return """✅ ¡Perfecto! Tu solicitud ha sido enviada exitosamente.
+        return """¡Perfecto! Tu solicitud ha sido enviada exitosamente 📤.
 
-Nuestro equipo la revisará y se pondrá en contacto contigo a la brevedad en el email proporcionado.
+Nuestro staff la revisará y se pondrá en contacto con vos a la brevedad al e-mail proporcionado.
 
-¡Gracias por contactar a Argenfuego! 🔥
+¡Gracias por contactar a Argenfuego SRL! 🤝
 
 _Para una nueva consulta, puedes escribir "hola" en cualquier momento._"""
     
@@ -331,7 +349,9 @@ Por favor responde con:
 • *1* para Solicitar un presupuesto
 • *2* para Visita técnica  
 • *3* para Reportar urgencia
-• *4* para Otras consultas"""
+• *4* para Otras consultas
+
+_💡 También puedes describir tu necesidad con tus propias palabras y yo intentaré entenderte._"""
     
     @staticmethod
     def get_mensaje_datos_incompletos() -> str:
@@ -437,6 +457,13 @@ Responde con el número del campo que deseas modificar."""
             
             return respuesta_contacto
         
+        # INTERCEPTAR SOLICITUDES DE VOLVER AL MENÚ EN CUALQUIER MOMENTO
+        if ChatbotRules._detectar_volver_menu(mensaje) and conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:
+            # Limpiar datos temporales y volver al menú
+            conversation_manager.clear_datos_temporales(numero_telefono)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+            return "↩️ *Volviendo al menú principal...*\n\n" + ChatbotRules.get_mensaje_inicial_personalizado(conversacion.nombre_usuario)
+        
         mensaje_limpio = mensaje.strip().lower()
         
         if mensaje_limpio in ['hola', 'hi', 'hello', 'inicio', 'empezar']:
@@ -511,14 +538,31 @@ Responde con el número del campo que deseas modificar."""
             if tipo_consulta_nlu:
                 conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta_nlu)
                 
+                # PRE-GUARDAR MENSAJE INICIAL COMO DESCRIPCIÓN (cuando se detectó con NLU)
+                # Solo si el mensaje tiene contenido sustancial (más de 15 caracteres)
+                if len(mensaje.strip()) > 15:
+                    conversation_manager.set_datos_temporales(numero_telefono, 'descripcion', mensaje.strip())
+                
                 # REDIRECCIÓN INMEDIATA PARA URGENCIAS (NLU)
                 if tipo_consulta_nlu == TipoConsulta.URGENCIA:
                     conversation_manager.update_estado(numero_telefono, EstadoConversacion.FINALIZADO)
                     return f"✅ Entendí que tienes una urgencia.\n\n{get_urgency_redirect_message()}"
                 
-                # Para otras consultas, continuar flujo normal
+                # Para otras consultas, continuar flujo normal con mensaje contextual
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
-                return f"✅ Entendí que necesitas {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}.\n\n{ChatbotRules.get_mensaje_recoleccion_datos(tipo_consulta_nlu)}"
+                
+                # Explicación contextual según el tipo detectado
+                explicacion = {
+                    TipoConsulta.PRESUPUESTO: "detecté que sabes exactamente qué equipos necesitas 🎯",
+                    TipoConsulta.VISITA_TECNICA: "veo que necesitas evaluación para saber qué equipos instalar 🔍",
+                    TipoConsulta.OTRAS: "clasificé tu consulta como información general 💬"
+                }
+                
+                mensaje_contextual = f"✅ Entendí que necesitas {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)} porque {explicacion.get(tipo_consulta_nlu, '')}.\n\n"
+                mensaje_contextual += f"❓ *¿Es correcta mi interpretación?* Si no, escribe 'menú' para volver a elegir.\n\n"
+                mensaje_contextual += ChatbotRules.get_mensaje_recoleccion_datos(tipo_consulta_nlu)
+                
+                return mensaje_contextual
             else:
                 return ChatbotRules.get_mensaje_error_opcion()
     
@@ -602,17 +646,27 @@ Responde con el número del campo que deseas modificar."""
             
             # Mostrar qué se encontró y preguntar por el primer campo faltante
             mensaje_encontrados = ""
-            if campos_encontrados:
+            conversacion = conversation_manager.get_conversacion(numero_telefono)
+            
+            # Incluir campos pre-guardados en datos_temporales
+            campos_temporales = conversacion.datos_temporales or {}
+            todos_los_campos = set(campos_encontrados)
+            for campo in ['email', 'direccion', 'horario_visita', 'descripcion']:
+                if campos_temporales.get(campo):
+                    todos_los_campos.add(campo)
+            
+            if todos_los_campos:
                 nombres_campos = {
                     'email': '📧 Email',
                     'direccion': '📍 Dirección', 
                     'horario_visita': '🕒 Horario',
                     'descripcion': '📝 Descripción'
                 }
-                campos_texto = [nombres_campos[campo] for campo in campos_encontrados]
+                campos_texto = [nombres_campos[campo] for campo in todos_los_campos if campo in nombres_campos]
                 mensaje_encontrados = "Ya tengo:\n"
                 for campo in campos_texto:
                     mensaje_encontrados += f"{campo} ✅\n"
+                mensaje_encontrados += "\n"
             
             return mensaje_encontrados + ChatbotRules._get_pregunta_campo_individual(campos_faltantes[0])
     
@@ -620,7 +674,7 @@ Responde con el número del campo que deseas modificar."""
     def _procesar_confirmacion(numero_telefono: str, mensaje: str) -> str:
         if mensaje in ['si', 'sí', 'yes', 'confirmo', 'ok', 'correcto']:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ENVIANDO)
-            return "📤 Enviando tu solicitud..."
+            # return "📤 Enviando tu solicitud..."
         elif mensaje in ['no', 'nope', 'incorrecto', 'error']:
             # Cambiar a estado de corrección y preguntar qué campo modificar
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)
