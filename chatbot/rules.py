@@ -85,6 +85,19 @@ Responde con el número de la opción que necesitas 📱"""
 💡 Escribe "menú" si quieres volver al inicio."""
     
     @staticmethod
+    def get_mensaje_inicio_secuencial(tipo_consulta: TipoConsulta) -> str:
+        """Mensaje inicial para el flujo secuencial conversacional"""
+        consulta_texto = {
+            TipoConsulta.PRESUPUESTO: "presupuesto",
+            TipoConsulta.VISITA_TECNICA: "visita técnica",
+            TipoConsulta.URGENCIA: "urgencia",
+            TipoConsulta.OTRAS: "consulta"
+        }
+        
+        return f"""Perfecto 👌🏻 Para poder armar tu {consulta_texto[tipo_consulta]} necesito algunos datos.
+Empecemos con tu 📧 email de contacto."""
+    
+    @staticmethod
     def get_mensaje_recoleccion_datos(tipo_consulta: TipoConsulta) -> str:
         consulta_texto = {
             TipoConsulta.PRESUPUESTO: "un presupuesto",
@@ -152,6 +165,97 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
 """
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
+    
+    @staticmethod
+    def _get_pregunta_campo_secuencial(campo: str) -> str:
+        """Preguntas específicas para el flujo secuencial"""
+        preguntas = {
+            'email': "📧 ¿Cuál es tu email de contacto?",
+            'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio?",
+            'horario_visita': "🕒 ¿En qué horario se puede visitar el lugar?",
+            'descripcion': """📝 Por último, contame un poco más sobre lo que necesitás (ej: cantidad de matafuegos, tipo y capacidad de los extintores, mantenimiento anual, etc.)."""
+        }
+        return preguntas.get(campo, "Por favor proporciona más información.")
+    
+    @staticmethod
+    def _get_mensaje_confirmacion_campo(campo: str, valor: str) -> str:
+        """Mensajes de confirmación para cada campo con emojis blancos"""
+        confirmaciones = {
+            'email': f"¡Gracias! 🙌🏻 Anoté tu email: {valor}",
+            'direccion': f"Perfecto 👌🏻 Dirección guardada: {valor}.",
+            'horario_visita': f"Genial 🙌🏻. Entonces el horario es: {valor}.",
+            'descripcion': f"¡Excelente! 🎉 Tengo toda tu información:"
+        }
+        return confirmaciones.get(campo, f"✅ {valor} guardado correctamente.")
+    
+    @staticmethod
+    def _procesar_campo_secuencial(numero_telefono: str, mensaje: str) -> str:
+        """Procesa un campo en el flujo secuencial conversacional"""
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        campo_actual = conversation_manager.get_campo_siguiente(numero_telefono)
+        
+        if not campo_actual:
+            # Todos los campos están completos, proceder a confirmación
+            valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+            
+            if not valido:
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+                return f"❌ Hay algunos errores en los datos:\n{error}\n\n{ChatbotRules._get_pregunta_campo_secuencial('email')}"
+            
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+            return ChatbotRules.get_mensaje_confirmacion(conversacion)
+        
+        # Validar campo actual
+        if not ChatbotRules._validar_campo_individual(campo_actual, mensaje.strip()):
+            error_msg = ChatbotRules._get_error_campo_individual(campo_actual)
+            return f"❌ {error_msg}\n{ChatbotRules._get_pregunta_campo_secuencial(campo_actual)}"
+        
+        # Guardar campo válido
+        conversation_manager.marcar_campo_completado(numero_telefono, campo_actual, mensaje.strip())
+        
+        # VALIDACIÓN GEOGRÁFICA para direcciones
+        if campo_actual == 'direccion':
+            ubicacion = ChatbotRules._validar_ubicacion_geografica(mensaje.strip())
+            
+            if ubicacion == 'UNCLEAR':
+                # Necesita validación manual - guardar dirección pendiente
+                conversation_manager.set_datos_temporales(numero_telefono, '_direccion_pendiente', mensaje.strip())
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.VALIDANDO_UBICACION)
+                
+                confirmacion = ChatbotRules._get_mensaje_confirmacion_campo(campo_actual, mensaje.strip())
+                return f"{confirmacion}\n{ChatbotRules._get_mensaje_seleccion_ubicacion()}"
+        
+        # Generar respuesta de confirmación + siguiente pregunta
+        confirmacion = ChatbotRules._get_mensaje_confirmacion_campo(campo_actual, mensaje.strip())
+        
+        # Verificar si es el último campo
+        if conversation_manager.es_ultimo_campo(numero_telefono, campo_actual):
+            # Si hay una descripción inicial pre-guardada y este es el campo descripción, 
+            # usar esa en lugar de pedir al usuario que escriba otra
+            conversacion_temp = conversation_manager.get_conversacion(numero_telefono)
+            descripcion_inicial = conversacion_temp.datos_temporales.get('_descripcion_inicial')
+            
+            if campo_actual == 'descripcion' and descripcion_inicial:
+                # Usar la descripción inicial en lugar de la del usuario
+                conversation_manager.marcar_campo_completado(numero_telefono, 'descripcion', descripcion_inicial)
+                # Limpiar descripción temporal
+                conversation_manager.set_datos_temporales(numero_telefono, '_descripcion_inicial', None)
+                confirmacion = ChatbotRules._get_mensaje_confirmacion_campo('descripcion', descripcion_inicial)
+            
+            # Proceder a confirmación final
+            conversacion_actualizada = conversation_manager.get_conversacion(numero_telefono)
+            valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+            
+            if not valido:
+                return f"❌ Hay algunos errores en los datos:\n{error}"
+            
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+            return f"{confirmacion}\n\n{ChatbotRules.get_mensaje_confirmacion(conversacion_actualizada)}"
+        else:
+            # Pedir siguiente campo
+            siguiente_campo = conversation_manager.get_campo_siguiente(numero_telefono)
+            siguiente_pregunta = ChatbotRules._get_pregunta_campo_secuencial(siguiente_campo)
+            return f"{confirmacion}\n{siguiente_pregunta}"
     
     @staticmethod
     def _procesar_campo_individual(numero_telefono: str, mensaje: str) -> str:
@@ -316,15 +420,33 @@ Por favor responde *1* para CABA o *2* para Provincia."""
                 siguiente_campo = campos_faltantes[indice_actual]
                 return f"✅ Perfecto!\n\n{ChatbotRules._get_pregunta_campo_individual(siguiente_campo)}"
         else:
-            # Flujo normal, proceder a confirmación
-            valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
-            
-            if not valido:
-                conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
-                return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
-            
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
-            return ChatbotRules.get_mensaje_confirmacion(conversacion)
+            # VERIFICAR SI ESTAMOS EN FLUJO SECUENCIAL
+            if conversacion.estado_anterior == EstadoConversacion.RECOLECTANDO_SECUENCIAL or len([k for k in conversacion.datos_temporales.keys() if not k.startswith('_')]) <= 2:
+                # Continuar flujo secuencial - pedir siguiente campo
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+                siguiente_campo = conversation_manager.get_campo_siguiente(numero_telefono)
+                
+                if siguiente_campo:
+                    return ChatbotRules._get_pregunta_campo_secuencial(siguiente_campo)
+                else:
+                    # Todos los campos están completos
+                    valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+                    
+                    if not valido:
+                        return f"❌ Hay algunos errores en los datos:\n{error}"
+                    
+                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+                    return ChatbotRules.get_mensaje_confirmacion(conversacion)
+            else:
+                # Flujo normal, proceder a confirmación
+                valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
+                
+                if not valido:
+                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
+                    return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
+                
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+                return ChatbotRules.get_mensaje_confirmacion(conversacion)
     
     @staticmethod
     def _extraer_datos_con_llm(mensaje: str) -> dict:
@@ -501,6 +623,9 @@ Responde con el número del campo que deseas modificar."""
         elif conversacion.estado == EstadoConversacion.RECOLECTANDO_DATOS_INDIVIDUALES:
             return ChatbotRules._procesar_campo_individual(numero_telefono, mensaje)
         
+        elif conversacion.estado == EstadoConversacion.RECOLECTANDO_SECUENCIAL:
+            return ChatbotRules._procesar_campo_secuencial(numero_telefono, mensaje)
+        
         elif conversacion.estado == EstadoConversacion.VALIDANDO_UBICACION:
             return ChatbotRules._procesar_seleccion_ubicacion(numero_telefono, mensaje_limpio)
         
@@ -538,9 +663,9 @@ Responde con el número del campo que deseas modificar."""
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.FINALIZADO)
                 return get_urgency_redirect_message()
             
-            # Para otras consultas, continuar flujo normal
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
-            return ChatbotRules.get_mensaje_recoleccion_datos(tipo_consulta)
+            # Para otras consultas, usar flujo secuencial conversacional
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+            return ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta)
         else:
             # Fallback: usar NLU para mapear mensaje a intención
             from services.nlu_service import nlu_service
@@ -549,20 +674,19 @@ Responde con el número del campo que deseas modificar."""
             if tipo_consulta_nlu:
                 conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta_nlu)
                 
-                # PRE-GUARDAR MENSAJE INICIAL COMO DESCRIPCIÓN (cuando se detectó con NLU)
-                # Solo si el mensaje tiene contenido sustancial (más de 15 caracteres)
-                if len(mensaje.strip()) > 15:
-                    conversation_manager.set_datos_temporales(numero_telefono, 'descripcion', mensaje.strip())
-                
                 # REDIRECCIÓN INMEDIATA PARA URGENCIAS (NLU)
                 if tipo_consulta_nlu == TipoConsulta.URGENCIA:
                     conversation_manager.update_estado(numero_telefono, EstadoConversacion.FINALIZADO)
                     return f"✅ Entendí que tienes una urgencia.\n\n{get_urgency_redirect_message()}"
                 
-                # Para otras consultas, continuar flujo normal con mensaje simplificado
-                conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
+                # Para otras consultas, usar flujo secuencial conversacional
+                # PRE-GUARDAR MENSAJE INICIAL COMO DESCRIPCIÓN si es sustancial
+                if len(mensaje.strip()) > 15:
+                    conversation_manager.set_datos_temporales(numero_telefono, '_descripcion_inicial', mensaje.strip())
                 
-                return f"¡Listo! 📝\nPara armar tu {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}, pásame:\n\n" + ChatbotRules.get_mensaje_recoleccion_datos_simplificado(tipo_consulta_nlu)
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+                
+                return f"¡Listo! 📝 Entendí que necesitás {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}.\n\n{ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta_nlu)}"
             else:
                 return ChatbotRules.get_mensaje_error_opcion()
     
@@ -674,7 +798,7 @@ Responde con el número del campo que deseas modificar."""
     def _procesar_confirmacion(numero_telefono: str, mensaje: str) -> str:
         if mensaje in ['si', 'sí', 'yes', 'confirmo', 'ok', 'correcto']:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ENVIANDO)
-            # return "📤 Enviando tu solicitud..."
+            return ChatbotRules.get_mensaje_final_exito()
         elif mensaje in ['no', 'nope', 'incorrecto', 'error']:
             # Cambiar a estado de corrección y preguntar qué campo modificar
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)

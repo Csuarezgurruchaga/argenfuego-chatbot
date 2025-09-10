@@ -72,5 +72,37 @@ class ConversationManager:
     def reset_conversacion(self, numero_telefono: str):
         if numero_telefono in self.conversaciones:
             del self.conversaciones[numero_telefono]
+    
+    # Métodos para manejo secuencial de campos
+    def get_campo_siguiente(self, numero_telefono: str) -> str:
+        """Retorna el próximo campo que necesita ser recolectado"""
+        conversacion = self.get_conversacion(numero_telefono)
+        datos_temp = conversacion.datos_temporales
+        
+        campos_orden = ['email', 'direccion', 'horario_visita', 'descripcion']
+        
+        for campo in campos_orden:
+            if not datos_temp.get(campo) or not datos_temp.get(campo).strip():
+                return campo
+        
+        return None  # Todos los campos están completos
+    
+    def marcar_campo_completado(self, numero_telefono: str, campo: str, valor: str):
+        """Marca un campo como completado y lo guarda"""
+        self.set_datos_temporales(numero_telefono, campo, valor)
+    
+    def es_ultimo_campo(self, numero_telefono: str, campo_actual: str) -> bool:
+        """Verifica si el campo actual es el último que necesitamos"""
+        return campo_actual == 'descripcion'
+    
+    def get_progreso_campos(self, numero_telefono: str) -> tuple[int, int]:
+        """Retorna (campos_completados, total_campos) para mostrar progreso"""
+        conversacion = self.get_conversacion(numero_telefono)
+        datos_temp = conversacion.datos_temporales
+        
+        campos_orden = ['email', 'direccion', 'horario_visita', 'descripcion']
+        completados = sum(1 for campo in campos_orden if datos_temp.get(campo) and datos_temp.get(campo).strip())
+        
+        return completados, len(campos_orden)
 
 conversation_manager = ConversationManager()
