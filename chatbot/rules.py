@@ -76,6 +76,15 @@ Responde con el número de la opción que necesitas 📱"""
         return saludo + menu
     
     @staticmethod
+    def get_mensaje_recoleccion_datos_simplificado(tipo_consulta: TipoConsulta) -> str:
+        return """📧 Email
+📍 Dirección
+🕒 Horario de visita
+📝 Qué necesitas
+
+💡 Escribe "menú" si quieres volver al inicio."""
+    
+    @staticmethod
     def get_mensaje_recoleccion_datos(tipo_consulta: TipoConsulta) -> str:
         consulta_texto = {
             TipoConsulta.PRESUPUESTO: "un presupuesto",
@@ -548,21 +557,10 @@ Responde con el número del campo que deseas modificar."""
                     conversation_manager.update_estado(numero_telefono, EstadoConversacion.FINALIZADO)
                     return f"✅ Entendí que tienes una urgencia.\n\n{get_urgency_redirect_message()}"
                 
-                # Para otras consultas, continuar flujo normal con mensaje contextual
+                # Para otras consultas, continuar flujo normal con mensaje simplificado
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_DATOS)
                 
-                # Explicación contextual según el tipo detectado
-                explicacion = {
-                    TipoConsulta.PRESUPUESTO: "detecté que sabes exactamente qué equipos necesitas 🎯",
-                    TipoConsulta.VISITA_TECNICA: "veo que necesitas evaluación para saber qué equipos instalar 🔍",
-                    TipoConsulta.OTRAS: "clasificé tu consulta como información general 💬"
-                }
-                
-                mensaje_contextual = f"✅ Entendí que necesitas {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)} porque {explicacion.get(tipo_consulta_nlu, '')}.\n\n"
-                mensaje_contextual += f"❓ *¿Es correcta mi interpretación?* Si no, escribe 'menú' para volver a elegir.\n\n"
-                mensaje_contextual += ChatbotRules.get_mensaje_recoleccion_datos(tipo_consulta_nlu)
-                
-                return mensaje_contextual
+                return f"¡Listo! 📝\nPara armar tu {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}, pásame:\n\n" + ChatbotRules.get_mensaje_recoleccion_datos_simplificado(tipo_consulta_nlu)
             else:
                 return ChatbotRules.get_mensaje_error_opcion()
     
