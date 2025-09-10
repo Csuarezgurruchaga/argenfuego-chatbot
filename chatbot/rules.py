@@ -548,7 +548,7 @@ Por favor envíame todos estos datos juntos."""
         from datetime import datetime
         
         # Buscar email con regex mejorado
-        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        email_pattern = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
         email_match = re.search(email_pattern, mensaje)
         email = email_match.group() if email_match else ""
         
@@ -562,11 +562,11 @@ Por favor envíame todos estos datos juntos."""
         # Keywords mejoradas con scoring
         keywords_direccion = [
             'dirección', 'direccion', 'domicilio', 'ubicación', 'ubicacion', 
-            'domicilio', 'calle', 'avenida', 'av.', 'av ', 'barrio'
+            'domicilio', 'ubicado', 'calle', 'avenida', 'av.', 'av ', 'barrio'
         ]
         keywords_horario = [
             'horario', 'hora', 'disponible', 'visita', 'lunes', 'martes', 
-            'miércoles', 'jueves', 'viernes', 'sábado', 'domingo', 'mañana', 
+            'miércoles', 'miercoles', 'jueves', 'viernes', 'sabado', 'sábado', 'domingo', 'mañana', 
             'tarde', 'noche', 'am', 'pm'
         ]
         keywords_descripcion = [
