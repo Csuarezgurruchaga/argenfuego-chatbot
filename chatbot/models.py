@@ -37,6 +37,7 @@ class DatosConsultaGeneral(BaseModel):
 class ConversacionData(BaseModel):
     numero_telefono: str
     estado: EstadoConversacion
+    estado_anterior: Optional[EstadoConversacion] = None
     tipo_consulta: Optional[TipoConsulta] = None
     datos_contacto: Optional[DatosContacto] = None
     datos_temporales: dict = Field(default_factory=dict)

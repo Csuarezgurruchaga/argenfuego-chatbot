@@ -16,6 +16,8 @@ class ConversationManager:
     
     def update_estado(self, numero_telefono: str, nuevo_estado: EstadoConversacion):
         conversacion = self.get_conversacion(numero_telefono)
+        # Guardar el estado anterior antes de cambiarlo
+        conversacion.estado_anterior = conversacion.estado
         conversacion.estado = nuevo_estado
     
     def set_tipo_consulta(self, numero_telefono: str, tipo: TipoConsulta):
