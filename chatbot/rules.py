@@ -346,9 +346,11 @@ Por favor responde *1* para CABA o *2* para Provincia."""
 
 Nuestro staff la revisará y se pondrá en contacto con vos a la brevedad al e-mail proporcionado.
 
-¡Gracias por contactar a Argenfuego SRL! 🤝
+¡Gracias por confiar en nosotros!, estamos para ayudarte 🤝
 
-_Para una nueva consulta, puedes escribir "hola" en cualquier momento._"""
+*Argenfuego SRL*.
+"""
+# _Para una nueva consulta, escribe "hola"._"""
     
     @staticmethod
     def get_mensaje_error_opcion() -> str:
