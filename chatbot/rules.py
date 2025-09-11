@@ -656,6 +656,23 @@ Responde con el número del campo que deseas modificar."""
         
         mensaje_limpio = mensaje.strip().lower()
         
+        # GUARDRAIL (regex-only) - Balanced
+        try:
+            from services.guardrail_service import guardrail_service
+            decision = guardrail_service.evaluate_user_input(mensaje)
+            if decision and decision.get("decision") == "hard_block":
+                sugerencia = decision.get("suggestion") or "¿Podemos ayudarte con extintores o una visita técnica?"
+                return f"⚠️ Para mantener el foco del servicio, no puedo responder eso.\n{sugerencia}"
+            elif decision and decision.get("decision") == "soft_redirect":
+                # No bloquea, solo sugiere y continúa el flujo normal
+                sugerencia = decision.get("suggestion")
+                if sugerencia:
+                    # Adjuntar una línea sutil antes de seguir
+                    mensaje_limpio = mensaje_limpio  # no cambia flujo, solo información
+                    return f"ℹ️ {sugerencia}"
+        except Exception:
+            pass
+
         if mensaje_limpio in ['hola', 'hi', 'hello', 'inicio', 'empezar']:
             conversation_manager.reset_conversacion(numero_telefono)
             conversacion = conversation_manager.get_conversacion(numero_telefono)
