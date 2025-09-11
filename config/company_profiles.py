@@ -11,21 +11,7 @@ COMPANY_PROFILES = {
         "hours": "Lunes a Viernes de 8 a 17hs y Sábados de 9 a 13hs",
         "email": "csuarezgurruchaga@gmail.com",#"argenfuego@yahoo.com.ar",
         "email_bot": "notificaciones.chatbot@gmail.com",
-        "website": "www.argenfuego.com.ar",
-        # Guardrails: tópicos permitidos (solo para argenfuego)
-        "allowed_topics": [
-            "incendios",
-            "extintores",
-            "presupuestos",
-            "visitas técnicas",
-            "urgencias",
-            "contacto"
-        ],
-        # Palabras relacionadas comerciales para soft-redirect (no hard-block)
-        "related_keywords": [
-            "epp", "elementos de proteccion personal", "guantes", "cascos", "botas",
-            "chalecos", "proteccion", "equipos de seguridad"
-        ]
+        "website": "www.argenfuego.com.ar"
     },
     "empresa_ejemplo": {
         "name": "Empresa Ejemplo",
