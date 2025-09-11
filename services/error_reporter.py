@@ -79,7 +79,8 @@ class InMemoryRateLimiter:
 
 class ErrorReporter:
     def __init__(self):
-        self.enabled = os.getenv("ENABLE_ERROR_REPORTS", "true").lower() == "true"
+        # Use only ENABLE_ERROR_EMAILS (no legacy fallback)
+        self.enabled = os.getenv("ENABLE_ERROR_EMAILS", "true").lower() == "true"
         self.error_email = os.getenv("ERROR_LOG_EMAIL", "").strip()
         self.sg_api_key = os.getenv("SENDGRID_API_KEY", "").strip()
         self.rate_limiter = InMemoryRateLimiter(window_seconds=int(os.getenv("ERROR_RATE_WINDOW_SEC", "300")))
