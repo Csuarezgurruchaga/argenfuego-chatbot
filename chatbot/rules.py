@@ -623,6 +623,13 @@ Responde con el número del campo que deseas modificar."""
             
             return respuesta_contacto
         
+        # INTERCEPTAR SOLICITUD DE HABLAR CON HUMANO EN CUALQUIER MOMENTO
+        if nlu_service.detectar_solicitud_humano(mensaje):
+            respuesta_humano = nlu_service.generar_respuesta_humano(mensaje)
+            if conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:
+                respuesta_humano += "\n\n💬 *Si querés, seguimos con tu consulta por acá...*"
+            return respuesta_humano
+        
         # INTERCEPTAR SOLICITUDES DE VOLVER AL MENÚ EN CUALQUIER MOMENTO
         if ChatbotRules._detectar_volver_menu(mensaje) and conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:
             # Limpiar datos temporales y volver al menú

@@ -39,6 +39,29 @@ CONTACT_QUERY_PATTERNS = [
     r'\b(?:cómo|como)\s+(?:los|las)\s+contacto\b'
 ]
 
+# Patrones para detectar intención de hablar con humano/agente
+HUMAN_INTENT_PATTERNS = [
+    # Palabras clave directas
+    r"\bhumano\b",
+    r"\bpersona\b",
+    r"\bagente\b",
+    r"\boperador(?:a)?\b",
+    r"\brepresentante\b",
+    r"\basesor(?:a)?\b",
+
+    # Expresiones comunes
+    r"\bquiero\s+hablar\b",
+    r"\bnecesito\s+hablar\b",
+    r"\bpuedo\s+hablar\b",
+    r"\bhablar\s+con\s+(?:alguien|una\s+persona)\b",
+    r"\bquiero\s+hablar\s+con\s+(?:alguien|una\s+persona)\b",
+    r"\bnecesito\s+hablar\s+con\s+(?:alguien|una\s+persona)\b",
+    r"\bcomunicar(?:me)?\s+con\s+(?:alguien|una\s+persona)\b",
+    r"\bnecesito\s+un\s+tel[eé]fono\b",
+    r"\btelefono\s+para\s+llamar(?:los|las)?\b",
+    r"\bquiero\s+llamar\b",
+]
+
 class NLUService:
     
     def __init__(self):
@@ -165,10 +188,78 @@ class NLUService:
             
             logger.info(f"Detección consulta contacto (regex): '{mensaje_usuario}' -> NO")
             return False
-            
         except Exception as e:
             logger.error(f"Error detectando consulta de contacto: {str(e)}")
             return False
+
+    def detectar_solicitud_humano(self, mensaje_usuario: str) -> bool:
+        """
+        Detecta si el usuario solicita hablar con un humano/agente.
+        Usa patrones regex tolerantes a acentos y variaciones comunes.
+        """
+        try:
+            # Normalización básica
+            mensaje_lower = mensaje_usuario.lower().strip()
+
+            # Negaciones simples para evitar falsos positivos
+            negaciones = [
+                r"no\s+quiero\s+hablar",
+                r"no\s+humano",
+                r"sin\s+humano",
+            ]
+            for neg in negaciones:
+                if re.search(neg, mensaje_lower, re.IGNORECASE):
+                    logger.info(f"Detección humano (regex): '{mensaje_usuario}' -> NO (negación)")
+                    return False
+
+            for pattern in HUMAN_INTENT_PATTERNS:
+                if re.search(pattern, mensaje_lower, re.IGNORECASE):
+                    logger.info(f"Detección humano (regex): '{mensaje_usuario}' -> HUMANO (pattern: {pattern})")
+                    return True
+
+            logger.info(f"Detección humano (regex): '{mensaje_usuario}' -> NO")
+            return False
+        except Exception as e:
+            logger.error(f"Error detectando solicitud humano: {str(e)}")
+            return False
+
+    def generar_respuesta_humano(self, mensaje_usuario: str = "") -> str:
+        """
+        Genera un mensaje con teléfonos para hablar con una persona.
+        Aclara que el teléfono público es solo para llamadas con una persona.
+        """
+        try:
+            profile = get_active_company_profile()
+
+            public_phone = ""
+            mobile_phone = ""
+            phone_single = ""
+
+            if isinstance(profile.get('phone'), dict):
+                public_phone = profile['phone'].get('public_phone', '')
+                mobile_phone = profile['phone'].get('mobile_phone', '')
+            else:
+                phone_single = profile.get('phone', '')
+
+            partes = [
+                "👤 Si necesitás hablar con una persona ahora mismo:",
+            ]
+
+            if public_phone:
+                partes.append(f"📞 Teléfono fijo (solo llamadas para hablar con una persona): {public_phone}")
+            if mobile_phone:
+                partes.append(f"📱 Celular / WhatsApp: {mobile_phone}")
+            if not public_phone and not mobile_phone and phone_single:
+                partes.append(f"📱 Teléfono: {phone_single}")
+
+            partes.append("")
+            partes.append("Si preferís, también puedo ayudarte por acá y luego te deriva un asesor 🙌")
+
+            return "\n".join(partes).strip()
+        except Exception as e:
+            logger.error(f"Error generando respuesta humano: {str(e)}")
+            # Fallback a info general de contacto
+            return get_company_info_text()
     
     def generar_respuesta_contacto(self, mensaje_usuario: str) -> str:
         """
