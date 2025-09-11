@@ -2,6 +2,7 @@ import unicodedata
 from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
 from config.company_profiles import get_urgency_redirect_message
+from services.error_reporter import error_reporter, ErrorTrigger
 
 def normalizar_texto(texto: str) -> str:
     """
@@ -466,6 +467,21 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
                     valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
                     
                     if not valido:
+                        # Reportar validación final fallida como fricción
+                        try:
+                            error_reporter.capture_experience_issue(
+                                ErrorTrigger.VALIDATION_REPEAT,
+                                {
+                                    "conversation_id": numero_telefono,
+                                    "numero_telefono": numero_telefono,
+                                    "estado_actual": conversacion.estado,
+                                    "estado_anterior": conversacion.estado_anterior,
+                                    "tipo_consulta": conversacion.tipo_consulta,
+                                    "validation_info": {"error": error},
+                                }
+                            )
+                        except Exception:
+                            pass
                         return f"❌ Hay algunos errores en los datos:\n{error}"
                     
                     conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
@@ -731,6 +747,21 @@ Responde con el número del campo que deseas modificar."""
                 else:
                     return f"¡Listo! 📝 Entendí que necesitás {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}.\n\n{ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta_nlu)}"
             else:
+                # Reportar intención no clara (fricción NLU)
+                try:
+                    error_reporter.capture_experience_issue(
+                        ErrorTrigger.NLU_UNCLEAR,
+                        {
+                            "conversation_id": numero_telefono,
+                            "numero_telefono": numero_telefono,
+                            "estado_actual": conversacion.estado,
+                            "estado_anterior": conversacion.estado_anterior,
+                            "nlu_snapshot": {"input": mensaje},
+                            "recommended_action": "Revisar patrones y prompt de clasificación",
+                        }
+                    )
+                except Exception:
+                    pass
                 return ChatbotRules.get_mensaje_error_opcion()
     
     @staticmethod

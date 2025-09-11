@@ -12,6 +12,7 @@ from chatbot.states import conversation_manager
 from chatbot.models import EstadoConversacion
 from services.twilio_service import twilio_service
 from services.email_service import email_service
+from services.error_reporter import error_reporter, ErrorTrigger
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -92,6 +93,25 @@ async def webhook_whatsapp(request: Request):
         
     except Exception as e:
         logger.error(f"Error en webhook: {str(e)}")
+        # Reporte estructurado de excepción
+        try:
+            form_data = await request.form()
+            form_dict = dict(form_data)
+        except Exception:
+            form_dict = {}
+        try:
+            error_reporter.capture_exception(
+                e,
+                {
+                    "conversation_id": form_dict.get('From', ''),
+                    "numero_telefono": form_dict.get('From', ''),
+                    "estado_actual": "webhook",
+                    "estado_anterior": "",
+                    "stack": "",
+                }
+            )
+        except Exception:
+            pass
         return PlainTextResponse("Error", status_code=500)
 
 @app.get("/stats")
