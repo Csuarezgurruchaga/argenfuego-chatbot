@@ -13,6 +13,7 @@ from chatbot.models import EstadoConversacion
 from services.twilio_service import twilio_service
 from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
+from services.metrics_service import metrics_service
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -75,6 +76,10 @@ async def webhook_whatsapp(request: Request):
             email_enviado = email_service.enviar_lead_email(conversacion)
             
             if email_enviado:
+                try:
+                    metrics_service.on_lead_sent()
+                except Exception:
+                    pass
                 # Enviar mensaje de confirmación
                 mensaje_final = ChatbotRules.get_mensaje_final_exito()
                 twilio_service.send_whatsapp_message(numero_telefono, mensaje_final)

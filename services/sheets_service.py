@@ -26,7 +26,10 @@ class SheetsService:
         self.enabled = os.getenv('ENABLE_SHEETS_METRICS', 'false').lower() == 'true'
         self.spreadsheet_metrics_id = os.getenv('SHEETS_METRICS_SPREADSHEET_ID', '').strip()
         self.spreadsheet_errors_id = os.getenv('SHEETS_ERRORS_SPREADSHEET_ID', '').strip() or self.spreadsheet_metrics_id
-        self.metrics_sheet_name = os.getenv('SHEETS_METRICS_SHEET_NAME', 'METRICS').strip()
+        # Backward compatibility
+        default_metrics = os.getenv('SHEETS_METRICS_SHEET_NAME', 'METRICS_TECH').strip()
+        self.business_sheet_name = os.getenv('SHEETS_BUSINESS_SHEET_NAME', 'METRICS_BUSINESS').strip()
+        self.tech_sheet_name = os.getenv('SHEETS_TECH_SHEET_NAME', default_metrics).strip()
         self.errors_sheet_name = os.getenv('SHEETS_ERRORS_SHEET_NAME', 'ERRORS').strip()
 
         self._gc = None
@@ -78,9 +81,15 @@ class SheetsService:
             if target == 'errors':
                 ss_id = self.spreadsheet_errors_id
                 sheet_name = self.errors_sheet_name
+            elif target == 'business':
+                ss_id = self.spreadsheet_metrics_id
+                sheet_name = self.business_sheet_name
+            elif target == 'tech':
+                ss_id = self.spreadsheet_metrics_id
+                sheet_name = self.tech_sheet_name
             else:
                 ss_id = self.spreadsheet_metrics_id
-                sheet_name = self.metrics_sheet_name
+                sheet_name = self.tech_sheet_name
 
             sh = gc.open_by_key(ss_id)
             ws = sh.worksheet(sheet_name)

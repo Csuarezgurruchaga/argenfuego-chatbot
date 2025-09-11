@@ -1,6 +1,7 @@
 from typing import Dict, Optional
 from .models import ConversacionData, EstadoConversacion, TipoConsulta, DatosContacto, DatosConsultaGeneral
 from pydantic import ValidationError
+from services.metrics_service import metrics_service
 
 class ConversationManager:
     def __init__(self):
@@ -79,6 +80,10 @@ class ConversationManager:
     def finalizar_conversacion(self, numero_telefono: str):
         if numero_telefono in self.conversaciones:
             del self.conversaciones[numero_telefono]
+            try:
+                metrics_service.on_conversation_finished()
+            except Exception:
+                pass
     
     def reset_conversacion(self, numero_telefono: str):
         if numero_telefono in self.conversaciones:

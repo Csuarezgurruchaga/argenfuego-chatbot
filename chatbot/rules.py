@@ -3,6 +3,7 @@ from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
 from config.company_profiles import get_urgency_redirect_message
 from services.error_reporter import error_reporter, ErrorTrigger
+from services.metrics_service import metrics_service
 
 def normalizar_texto(texto: str) -> str:
     """
@@ -664,6 +665,10 @@ Responde con el número del campo que deseas modificar."""
                 conversation_manager.set_nombre_usuario(numero_telefono, nombre_usuario)
             
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+            try:
+                metrics_service.on_conversation_started()
+            except Exception:
+                pass
             return ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
         
         if conversacion.estado == EstadoConversacion.INICIO:
@@ -713,6 +718,10 @@ Responde con el número del campo que deseas modificar."""
         tipo_consulta = opciones.get(mensaje)
         if tipo_consulta:
             conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta)
+            try:
+                metrics_service.on_intent(tipo_consulta.value)
+            except Exception:
+                pass
             
             # REDIRECCIÓN INMEDIATA PARA URGENCIAS
             if tipo_consulta == TipoConsulta.URGENCIA:
@@ -729,6 +738,10 @@ Responde con el número del campo que deseas modificar."""
             
             if tipo_consulta_nlu:
                 conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta_nlu)
+                try:
+                    metrics_service.on_intent(tipo_consulta_nlu.value)
+                except Exception:
+                    pass
                 
                 # REDIRECCIÓN INMEDIATA PARA URGENCIAS (NLU)
                 if tipo_consulta_nlu == TipoConsulta.URGENCIA:
@@ -760,6 +773,10 @@ Responde con el número del campo que deseas modificar."""
                             "recommended_action": "Revisar patrones y prompt de clasificación",
                         }
                     )
+                except Exception:
+                    pass
+                try:
+                    metrics_service.on_nlu_unclear()
                 except Exception:
                     pass
                 return ChatbotRules.get_mensaje_error_opcion()
