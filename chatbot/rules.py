@@ -95,6 +95,85 @@ Responde con el número de la opción que necesitas 📱"""
         return saludo + menu
     
     @staticmethod
+    def get_saludo_inicial(nombre_usuario: str = "") -> str:
+        """
+        Primera parte del saludo: solo el saludo y presentación de Eva
+        """
+        if nombre_usuario:
+            return f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva 👩🏻‍🦱"
+        else:
+            return "¡Hola! 👋🏻 Mi nombre es Eva 👩🏻‍🦱"
+    
+    @staticmethod
+    def get_presentacion_empresa() -> str:
+        """
+        Segunda parte del saludo: presentación de la empresa y menú
+        """
+        from config.company_profiles import get_active_company_profile
+        profile = get_active_company_profile()
+        company_name = profile['name']
+        
+        return f"""Soy la asistente virtual de {company_name}.
+
+¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
+
+1️⃣ Solicitar un presupuesto
+2️⃣ Coordinar una visita técnica para evaluar la dotación necesaria del lugar
+3️⃣ Reportar una urgencia
+4️⃣ Otras consultas
+
+Responde con el número de la opción que necesitas 📱"""
+    
+    @staticmethod
+    def _enviar_flujo_saludo_completo(numero_telefono: str, nombre_usuario: str = "") -> str:
+        """
+        Envía el flujo completo de saludo: texto + imagen + texto
+        Retorna solo el primer mensaje, los otros se envían en background
+        """
+        from services.twilio_service import twilio_service
+        from config.company_profiles import get_active_company_profile
+        import threading
+        import time
+        
+        # 1. Primer mensaje: saludo
+        primer_mensaje = ChatbotRules.get_saludo_inicial(nombre_usuario)
+        
+        # 2. Enviar imagen y tercer mensaje en background (con delay)
+        def enviar_imagen_y_presentacion():
+            try:
+                # Delay de 1 segundo para que se vea el primer mensaje
+                time.sleep(1)
+                
+                # 2. Enviar imagen
+                profile = get_active_company_profile()
+                company_name = profile['name'].lower()
+                image_url = f"https://raw.githubusercontent.com/Csuarezgurruchaga/argenfuego-chatbot/main/assets/{company_name}.png"
+                
+                twilio_service.send_whatsapp_media(numero_telefono, image_url)
+                
+                # Delay de 0.5 segundos entre imagen y texto
+                time.sleep(0.5)
+                
+                # 3. Tercer mensaje: presentación y menú
+                tercer_mensaje = ChatbotRules.get_presentacion_empresa()
+                twilio_service.send_whatsapp_message(numero_telefono, tercer_mensaje)
+                
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error enviando imagen/presentación: {str(e)}")
+                # Fallback: enviar mensaje completo si falla
+                mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
+                twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+        
+        # Ejecutar en background
+        thread = threading.Thread(target=enviar_imagen_y_presentacion)
+        thread.daemon = True
+        thread.start()
+        
+        return primer_mensaje
+    
+    @staticmethod
     def get_mensaje_recoleccion_datos_simplificado(tipo_consulta: TipoConsulta) -> str:
         return """📧 Email
 📍 Dirección
@@ -669,11 +748,13 @@ Responde con el número del campo que deseas modificar."""
                 metrics_service.on_conversation_started()
             except Exception:
                 pass
-            return ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
+            
+            # Enviar flujo de 3 mensajes: saludo + imagen + presentación
+            return ChatbotRules._enviar_flujo_saludo_completo(numero_telefono, nombre_usuario)
         
         if conversacion.estado == EstadoConversacion.INICIO:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
-            return ChatbotRules.get_mensaje_inicial_personalizado(conversacion.nombre_usuario or nombre_usuario)
+            return ChatbotRules._enviar_flujo_saludo_completo(numero_telefono, conversacion.nombre_usuario or nombre_usuario)
         
         elif conversacion.estado == EstadoConversacion.ESPERANDO_OPCION:
             return ChatbotRules._procesar_seleccion_opcion(numero_telefono, mensaje_limpio)

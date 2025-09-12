@@ -38,6 +38,29 @@ class TwilioService:
             logger.error(f"Error enviando mensaje a {to_number}: {str(e)}")
             return False
     
+    def send_whatsapp_media(self, to_number: str, media_url: str, caption: str = "") -> bool:
+        """
+        Envía una imagen/sticker a WhatsApp
+        """
+        try:
+            # Asegurar que el número tenga el prefijo whatsapp:
+            if not to_number.startswith('whatsapp:'):
+                to_number = f'whatsapp:{to_number}'
+            
+            message = self.client.messages.create(
+                body=caption,
+                from_=self.whatsapp_number,
+                to=to_number,
+                media_url=[media_url]
+            )
+            
+            logger.info(f"Media enviado exitosamente a {to_number}. SID: {message.sid}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error enviando media a {to_number}: {str(e)}")
+            return False
+    
     def extract_message_data(self, request_data: dict) -> tuple[str, str, str, str]:
         """
         Extrae los datos relevantes del webhook de Twilio
