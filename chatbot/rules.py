@@ -147,7 +147,7 @@ Responde con el número de la opción que necesitas 📱"""
                 # 2. Enviar imagen
                 profile = get_active_company_profile()
                 company_name = profile['name'].lower()
-                image_url = f"https://raw.githubusercontent.com/Csuarezgurruchaga/argenfuego-chatbot/main/assets/{company_name}.png"
+                image_url = f"https://raw.githubusercontent.com/Csuarezgurruchaga/argenfuego-chatbot/main/assets/{company_name}.webp"
                 
                 twilio_service.send_whatsapp_media(numero_telefono, image_url)
                 
