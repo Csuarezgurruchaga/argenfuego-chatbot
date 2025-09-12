@@ -138,25 +138,31 @@ Responde con el número de la opción que necesitas 📱"""
         # 1. Primer mensaje: saludo
         primer_mensaje = ChatbotRules.get_saludo_inicial(nombre_usuario)
         
-        # 2. Enviar imagen y tercer mensaje en background (con delay)
-        def enviar_imagen_y_presentacion():
+        # 2. Enviar sticker y menú en background (con delay optimizado)
+        def enviar_sticker_y_menu():
             try:
-                # Delay de 1 segundo para que se vea el primer mensaje
-                time.sleep(1)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"DEBUG: Iniciando envío de sticker y menú para {numero_telefono}")
                 
-                # 2. Enviar imagen
+                # 2. Enviar sticker inmediatamente (2do mensaje)
                 profile = get_active_company_profile()
                 company_name = profile['name'].lower()
                 image_url = f"https://raw.githubusercontent.com/Csuarezgurruchaga/argenfuego-chatbot/main/assets/{company_name}.webp"
                 
-                twilio_service.send_whatsapp_media(numero_telefono, image_url)
+                logger.info(f"DEBUG: Enviando sticker (2do mensaje): {image_url}")
+                success = twilio_service.send_whatsapp_media(numero_telefono, image_url)
+                logger.info(f"DEBUG: Sticker enviado exitosamente: {success}")
                 
-                # Delay de 0.5 segundos entre imagen y texto
-                time.sleep(0.5)
+                # 3. Delay de 1.4 segundos para asegurar que el sticker se procese
+                logger.info(f"DEBUG: Esperando 1.4s para que el sticker se procese...")
+                time.sleep(1.4)
                 
-                # 3. Tercer mensaje: presentación y menú
-                tercer_mensaje = ChatbotRules.get_presentacion_empresa()
-                twilio_service.send_whatsapp_message(numero_telefono, tercer_mensaje)
+                # 4. Enviar menú (3er mensaje)
+                menu_mensaje = ChatbotRules.get_presentacion_empresa()
+                logger.info(f"DEBUG: Enviando menú (3er mensaje)")
+                twilio_service.send_whatsapp_message(numero_telefono, menu_mensaje)
+                logger.info(f"DEBUG: Flujo de saludo completo terminado")
                 
             except Exception as e:
                 import logging
@@ -167,7 +173,7 @@ Responde con el número de la opción que necesitas 📱"""
                 twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
         
         # Ejecutar en background
-        thread = threading.Thread(target=enviar_imagen_y_presentacion)
+        thread = threading.Thread(target=enviar_sticker_y_menu)
         thread.daemon = True
         thread.start()
         
