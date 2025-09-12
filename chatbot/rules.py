@@ -167,9 +167,9 @@ Responde con el número de la opción que necesitas 📱"""
                 logger.info(f"DEBUG: Enviando saludo (2do mensaje)")
                 twilio_service.send_whatsapp_message(numero_telefono, saludo)
                 
-                # 3. Delay de 1.6 segundos para asegurar que el saludo se procese
-                logger.info(f"DEBUG: Esperando 1.6s para que el saludo se procese...")
-                time.sleep(1.6)
+                # 3. Delay de 2.5 segundos para asegurar que el saludo se procese
+                logger.info(f"DEBUG: Esperando 2.5s para que el saludo se procese...")
+                time.sleep(2.5)
                 
                 # 4. Enviar menú (3er mensaje)
                 menu_mensaje = ChatbotRules.get_presentacion_empresa()
