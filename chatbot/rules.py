@@ -100,9 +100,9 @@ Responde con el número de la opción que necesitas 📱"""
         Primera parte del saludo: solo el saludo y presentación de Eva
         """
         if nombre_usuario:
-            return f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva 👩🏻‍🦱"
+            return f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es *Eva*"
         else:
-            return "¡Hola! 👋🏻 Mi nombre es Eva 👩🏻‍🦱"
+            return "¡Hola! 👋🏻 Mi nombre es *Eva*"
     
     @staticmethod
     def get_presentacion_empresa() -> str:
