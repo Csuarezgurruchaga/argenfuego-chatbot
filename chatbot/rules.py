@@ -645,7 +645,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
 
 Nuestro staff la revisará y se pondrá en contacto con vos a la brevedad al e-mail proporcionado.
 
-¡Gracias por confiar en nosotros!, estamos para ayudarte 🤝
+¡Gracias por confiar en nosotros!, estamos para ayudarte 🤝🏻
 
 *Argenfuego SRL*.
 """
