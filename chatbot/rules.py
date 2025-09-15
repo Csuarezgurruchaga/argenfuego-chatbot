@@ -355,7 +355,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             
             if not valido:
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
-                primer_campo = 'descripcion' if conversacion.tipo_consulta == TipoConsulta.OTRAS else 'email'
+                primer_campo = conversation_manager.get_campo_siguiente(numero_telefono)
                 return f"❌ Hay algunos errores en los datos:\n{error}\n\n{ChatbotRules._get_pregunta_campo_secuencial(primer_campo, conversacion.tipo_consulta)}"
             
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)

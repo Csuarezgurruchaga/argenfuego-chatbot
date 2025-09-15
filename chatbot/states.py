@@ -113,7 +113,8 @@ class ConversationManager:
         datos_temp = conversacion.datos_temporales
         
         # Siempre empezamos con la descripción (motivo de la consulta)
-        if not datos_temp.get('descripcion') or not datos_temp.get('descripcion').strip():
+        descripcion = datos_temp.get('descripcion')
+        if descripcion is None:
             return 'descripcion'
         
         # Después de la descripción, pedimos datos de contacto como opcionales
