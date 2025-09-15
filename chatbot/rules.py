@@ -258,13 +258,21 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         
         mensaje_confirmacion = f"""📋 *Resumen de tu solicitud:*
 
-🏷️ *Tipo de consulta:* {tipo_texto[conversacion.tipo_consulta]}
+🏷️ *Tipo de consulta:* {tipo_texto[conversacion.tipo_consulta]}"""
+
+        # Solo mostrar email si fue proporcionado (no es el valor por defecto)
+        if datos.email and datos.email != "no_proporcionado@ejemplo.com":
+            mensaje_confirmacion += f"""
 📧 *Email:* {datos.email}"""
 
-        # Para consultas que no sean OTRAS, mostrar campos adicionales
+        # Para consultas que no sean OTRAS, mostrar campos adicionales solo si fueron proporcionados
         if conversacion.tipo_consulta != TipoConsulta.OTRAS:
-            mensaje_confirmacion += f"""
-📍 *Dirección:* {datos.direccion}
+            if datos.direccion and datos.direccion != "No proporcionada":
+                mensaje_confirmacion += f"""
+📍 *Dirección:* {datos.direccion}"""
+            
+            if datos.horario_visita and datos.horario_visita != "No especificado":
+                mensaje_confirmacion += f"""
 🕒 *Horario de visita:* {datos.horario_visita}"""
 
         mensaje_confirmacion += f"""
