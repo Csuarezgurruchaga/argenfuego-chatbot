@@ -63,9 +63,8 @@ class ChatbotRules:
 ¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
 
 1️⃣ Solicitar un presupuesto
-2️⃣ Coordinar una visita técnica para evaluar la dotación necesaria del lugar
-3️⃣ Reportar una urgencia
-4️⃣ Otras consultas
+2️⃣ Reportar una urgencia
+3️⃣ Otras consultas
 
 Responde con el número de la opción que necesitas 📱"""
     
@@ -86,9 +85,8 @@ Responde con el número de la opción que necesitas 📱"""
 ¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
 
 1️⃣ Solicitar un presupuesto
-2️⃣ Coordinar una visita técnica para evaluar la dotación necesaria del lugar
-3️⃣ Reportar una urgencia
-4️⃣ Otras consultas
+2️⃣ Reportar una urgencia
+3️⃣ Otras consultas
 
 Responde con el número de la opción que necesitas 📱"""
         
@@ -118,9 +116,8 @@ Responde con el número de la opción que necesitas 📱"""
 ¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
 
 1️⃣ Solicitar un presupuesto
-2️⃣ Coordinar una visita técnica para evaluar la dotación necesaria del lugar
-3️⃣ Reportar una urgencia
-4️⃣ Otras consultas
+2️⃣ Reportar una urgencia
+3️⃣ Otras consultas
 
 Responde con el número de la opción que necesitas 📱"""
     
@@ -210,18 +207,24 @@ Responde con el número de la opción que necesitas 📱"""
     def get_mensaje_inicio_secuencial(tipo_consulta: TipoConsulta) -> str:
         """Mensaje inicial para el flujo secuencial conversacional"""
         if tipo_consulta == TipoConsulta.OTRAS:
-            return """Perfecto 👌🏻 Para poder ayudarte con tu consulta necesito que me cuentes más detalles.
+            return """Perfecto 👌🏻 Para poder ayudarte de la mejor manera, me gustaría conocer más detalles sobre tu consulta.
 
-📝 Contános más sobre tu consulta (ej: información sobre productos, horarios de atención, servicios, etc.)"""
+📝 Por favor, contános qué necesitas (ej: información sobre productos, horarios de atención, servicios, etc.)"""
         
-        consulta_texto = {
-            TipoConsulta.PRESUPUESTO: "presupuesto",
-            TipoConsulta.VISITA_TECNICA: "visita técnica",
-            TipoConsulta.URGENCIA: "urgencia"
-        }
+        elif tipo_consulta == TipoConsulta.URGENCIA:
+            return """Entiendo que tienes una urgencia 🚨 Para poder asistirte de inmediato, necesito conocer los detalles.
+
+📝 Por favor, contános qué está sucediendo y cómo podemos ayudarte urgentemente."""
         
-        return f"""Perfecto 👌🏻 Para poder armar tu {consulta_texto[tipo_consulta]} necesito algunos datos.
-Empecemos con tu 📧 email de contacto."""
+        elif tipo_consulta == TipoConsulta.PRESUPUESTO:
+            return """Perfecto 👌🏻 Para poder preparar tu presupuesto de manera precisa, necesito conocer los detalles de lo que necesitas.
+
+📝 Por favor, contános qué productos o servicios requieres (ej: cantidad de extintores, tipo, ubicación, etc.)"""
+        
+        # Fallback para otros tipos
+        return """Perfecto 👌🏻 Para poder ayudarte de la mejor manera, necesito conocer más detalles.
+
+📝 Por favor, contános qué necesitas."""
     
     @staticmethod
     def get_mensaje_recoleccion_datos(tipo_consulta: TipoConsulta) -> str:
@@ -303,14 +306,21 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
     @staticmethod
     def _get_pregunta_campo_secuencial(campo: str, tipo_consulta: TipoConsulta = None) -> str:
         """Preguntas específicas para el flujo secuencial"""
-        if tipo_consulta == TipoConsulta.OTRAS and campo == 'email':
-            return "📧 ¿Cuál es tu email para poder responderte?"
+        if campo == 'descripcion':
+            if tipo_consulta == TipoConsulta.PRESUPUESTO:
+                return """📝 Por favor, contános qué productos o servicios requieres (ej: cantidad de extintores, tipo, capacidad, etc.)"""
+            elif tipo_consulta == TipoConsulta.URGENCIA:
+                return """📝 Por favor, contános qué está sucediendo y cómo podemos ayudarte urgentemente."""
+            elif tipo_consulta == TipoConsulta.OTRAS:
+                return """📝 Por favor, contános qué necesitas (ej: información sobre productos, horarios de atención, servicios, etc.)"""
+            else:
+                return """📝 Por favor, contános qué necesitas."""
         
+        # Preguntas para datos de contacto (opcionales)
         preguntas = {
-            'email': "📧 ¿Cuál es tu email de contacto?",
-            'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio?",
-            'horario_visita': "🕒 ¿En qué horario se puede visitar el lugar?",
-            'descripcion': """📝 Por último, contame un poco más sobre lo que necesitás (ej: cantidad de matafuegos, tipo y capacidad de los extintores, mantenimiento anual, etc.)."""
+            'email': "📧 ¿Cuál es tu email de contacto? (opcional, para poder ayudarte de manera más efectiva)\n\n💡 Puedes escribir 'saltar' si prefieres no proporcionarlo.",
+            'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio? (opcional)\n\n💡 Puedes escribir 'saltar' si prefieres no proporcionarlo.",
+            'horario_visita': "🕒 ¿En qué horario se puede visitar el lugar? (opcional)\n\n💡 Puedes escribir 'saltar' si prefieres no proporcionarlo."
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     
@@ -343,13 +353,20 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
             return ChatbotRules.get_mensaje_confirmacion(conversacion)
         
-        # Validar campo actual
-        if not ChatbotRules._validar_campo_individual(campo_actual, mensaje.strip()):
-            error_msg = ChatbotRules._get_error_campo_individual(campo_actual)
-            return f"❌ {error_msg}\n{ChatbotRules._get_pregunta_campo_secuencial(campo_actual, conversacion.tipo_consulta)}"
-        
-        # Guardar campo válido
-        conversation_manager.marcar_campo_completado(numero_telefono, campo_actual, mensaje.strip())
+        # Verificar si el usuario quiere saltar el campo (solo para campos opcionales)
+        if mensaje.strip().lower() in ['saltar', 'skip', 'no', 'n/a', 'na'] and campo_actual in ['email', 'direccion', 'horario_visita']:
+            # Marcar campo como saltado
+            conversation_manager.marcar_campo_completado(numero_telefono, campo_actual, "")
+            confirmacion = f"✅ Campo {campo_actual} saltado. Continuamos con el siguiente paso."
+        else:
+            # Validar campo actual
+            if not ChatbotRules._validar_campo_individual(campo_actual, mensaje.strip()):
+                error_msg = ChatbotRules._get_error_campo_individual(campo_actual)
+                return f"❌ {error_msg}\n{ChatbotRules._get_pregunta_campo_secuencial(campo_actual, conversacion.tipo_consulta)}"
+            
+            # Guardar campo válido
+            conversation_manager.marcar_campo_completado(numero_telefono, campo_actual, mensaje.strip())
+            confirmacion = ChatbotRules._get_mensaje_confirmacion_campo(campo_actual, mensaje.strip())
         
         # VALIDACIÓN GEOGRÁFICA para direcciones
         if campo_actual == 'direccion':
@@ -363,8 +380,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
                 confirmacion = ChatbotRules._get_mensaje_confirmacion_campo(campo_actual, mensaje.strip())
                 return f"{confirmacion}\n{ChatbotRules._get_mensaje_seleccion_ubicacion()}"
         
-        # Generar respuesta de confirmación + siguiente pregunta
-        confirmacion = ChatbotRules._get_mensaje_confirmacion_campo(campo_actual, mensaje.strip())
+        # La confirmación ya se generó arriba según si se saltó o se validó el campo
         
         # Verificar si es el último campo
         if conversation_manager.es_ultimo_campo(numero_telefono, campo_actual):
@@ -633,9 +649,8 @@ Nuestro staff la revisará y se pondrá en contacto con vos a la brevedad al e-m
 
 Por favor responde con:
 • *1* para Solicitar un presupuesto
-• *2* para Visita técnica  
-• *3* para Reportar urgencia
-• *4* para Otras consultas
+• *2* para Reportar una urgencia
+• *3* para Otras consultas
 
 _💡 También puedes describir tu necesidad con tus propias palabras y yo intentaré entenderte._"""
     
@@ -811,13 +826,13 @@ Responde con el número del campo que deseas modificar."""
     def _procesar_seleccion_opcion(numero_telefono: str, mensaje: str) -> str:
         opciones = {
             '1': TipoConsulta.PRESUPUESTO,
-            '2': TipoConsulta.VISITA_TECNICA,
-            '3': TipoConsulta.URGENCIA,
-            '4': TipoConsulta.OTRAS,
+            '2': TipoConsulta.URGENCIA,
+            '3': TipoConsulta.OTRAS,
             'presupuesto': TipoConsulta.PRESUPUESTO,
-            'visita': TipoConsulta.VISITA_TECNICA,
             'urgencia': TipoConsulta.URGENCIA,
-            'otras': TipoConsulta.OTRAS
+            'otras': TipoConsulta.OTRAS,
+            'visita': TipoConsulta.OTRAS,  # Visitas técnicas ahora van a OTRAS
+            'consulta': TipoConsulta.OTRAS
         }
         
         tipo_consulta = opciones.get(mensaje)

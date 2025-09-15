@@ -5,9 +5,8 @@ Usuario escribió: "{{mensaje_usuario}}"
 
 Las opciones disponibles son:
 1. PRESUPUESTO - cuando el cliente SABE EXACTAMENTE qué necesita: equipos específicos, cantidades definidas, tipos concretos (ej: "necesito 3 matafuegos ABC 5kg", "quiero comprar 2 extintores para oficina")
-2. VISITA_TECNICA - cuando el cliente NO SABE QUÉ NECESITA: requiere evaluación, inspección, asesoramiento sobre qué equipos instalar (ej: "no sé qué equipos necesito", "evalúen mi local", "qué dotación necesita mi empresa")
-3. URGENCIA - emergencias, reparaciones inmediatas, problemas urgentes
-4. OTRAS - información general, horarios, dudas, consultas varias
+2. URGENCIA - emergencias, reparaciones inmediatas, problemas urgentes
+3. OTRAS - información general, horarios, dudas, consultas varias, visitas técnicas, asesoramiento
 
 EJEMPLOS DE CLASIFICACIÓN:
 
@@ -23,7 +22,7 @@ EJEMPLOS DE CLASIFICACIÓN:
 - "vengan a ver qué necesito instalar"
 - "qué tipo de matafuegos necesito?"
 
-Analiza la intención del usuario y responde ÚNICAMENTE con una de estas opciones: PRESUPUESTO, VISITA_TECNICA, URGENCIA, o OTRAS
+Analiza la intención del usuario y responde ÚNICAMENTE con una de estas opciones: PRESUPUESTO, URGENCIA, o OTRAS
 
 Si no puedes determinar la intención con certeza, responde: UNCLEAR
 """)

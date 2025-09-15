@@ -95,12 +95,17 @@ class ConversationManager:
         conversacion = self.get_conversacion(numero_telefono)
         datos_temp = conversacion.datos_temporales
         
-        # Para "Otras consultas" solo pedimos descripción y email
+        # Siempre empezamos con la descripción (motivo de la consulta)
+        if not datos_temp.get('descripcion') or not datos_temp.get('descripcion').strip():
+            return 'descripcion'
+        
+        # Después de la descripción, pedimos datos de contacto como opcionales
+        # Para "Otras consultas" solo pedimos email
         if conversacion.tipo_consulta == TipoConsulta.OTRAS:
-            campos_orden = ['descripcion', 'email']
+            campos_orden = ['email']
         else:
-            # Para presupuestos y visitas técnicas pedimos todos los campos
-            campos_orden = ['email', 'direccion', 'horario_visita', 'descripcion']
+            # Para presupuestos y urgencias pedimos todos los campos de contacto
+            campos_orden = ['email', 'direccion', 'horario_visita']
         
         for campo in campos_orden:
             if not datos_temp.get(campo) or not datos_temp.get(campo).strip():
@@ -120,8 +125,8 @@ class ConversationManager:
             # Para OTRAS: el email es el último campo (descripción -> email)
             return campo_actual == 'email'
         else:
-            # Para otros tipos: la descripción es el último campo
-            return campo_actual == 'descripcion'
+            # Para otros tipos: el horario_visita es el último campo (descripción -> email -> direccion -> horario_visita)
+            return campo_actual == 'horario_visita'
     
     def get_progreso_campos(self, numero_telefono: str) -> tuple[int, int]:
         """Retorna (campos_completados, total_campos) para mostrar progreso"""
@@ -132,8 +137,8 @@ class ConversationManager:
         if conversacion.tipo_consulta == TipoConsulta.OTRAS:
             campos_orden = ['descripcion', 'email']
         else:
-            # Para presupuestos y visitas técnicas pedimos todos los campos
-            campos_orden = ['email', 'direccion', 'horario_visita', 'descripcion']
+            # Para presupuestos y urgencias pedimos todos los campos
+            campos_orden = ['descripcion', 'email', 'direccion', 'horario_visita']
             
         completados = sum(1 for campo in campos_orden if datos_temp.get(campo) and datos_temp.get(campo).strip())
         
