@@ -319,8 +319,8 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         # Preguntas para datos de contacto (opcionales)
         preguntas = {
             'email': "📧 ¿Cuál es tu email de contacto? (opcional, para poder ayudarte de manera más efectiva)\n\n💡 Puedes escribir 'saltar' si prefieres no proporcionarlo.",
-            'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio? (opcional)\n\n💡 Puedes escribir 'saltar' si prefieres no proporcionarlo.",
-            'horario_visita': "🕒 ¿En qué horario se puede visitar el lugar? (opcional)\n\n💡 Puedes escribir 'saltar' si prefieres no proporcionarlo."
+            'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio? (opcional)",
+            'horario_visita': "🕒 ¿En qué horario se puede visitar el lugar? (opcional)"
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     
@@ -368,8 +368,8 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             conversation_manager.marcar_campo_completado(numero_telefono, campo_actual, mensaje.strip())
             confirmacion = ChatbotRules._get_mensaje_confirmacion_campo(campo_actual, mensaje.strip())
         
-        # VALIDACIÓN GEOGRÁFICA para direcciones
-        if campo_actual == 'direccion':
+        # VALIDACIÓN GEOGRÁFICA para direcciones (solo si no se saltó el campo)
+        if campo_actual == 'direccion' and mensaje.strip().lower() not in ['saltar', 'skip', 'no', 'n/a', 'na']:
             ubicacion = ChatbotRules._validar_ubicacion_geografica(mensaje.strip()) #todo revisar
             
             if ubicacion == 'UNCLEAR':
