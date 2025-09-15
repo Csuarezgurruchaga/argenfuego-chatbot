@@ -219,7 +219,7 @@ Responde con el número de la opción que necesitas 📱"""
         elif tipo_consulta == TipoConsulta.PRESUPUESTO:
             return """Perfecto 👌🏻 Para poder preparar tu presupuesto de manera precisa, necesito conocer los detalles de lo que necesitas.
 
-📝 Por favor, contános qué productos o servicios requieres (ej: cantidad de extintores, tipo, ubicación, etc.)"""
+📝 Por favor, contános qué productos o servicios necesitas (ej: tipo y cantidad de extintores, mantenimiento anual, mantenimiento de instalaciones fijas contra incendios, instalaciones, etc.)"""
         
         # Fallback para otros tipos
         return """Perfecto 👌🏻 Para poder ayudarte de la mejor manera, necesito conocer más detalles.
@@ -316,7 +316,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         """Preguntas específicas para el flujo secuencial"""
         if campo == 'descripcion':
             if tipo_consulta == TipoConsulta.PRESUPUESTO:
-                return """📝 Por favor, contános qué productos o servicios requieres (ej: cantidad de extintores, tipo, capacidad, etc.)"""
+                return """📝 Por favor, contános qué productos o servicios necesitas (ej: tipo y cantidad de extintores, mantenimiento anual, mantenimiento de instalaciones fijas contra incendios, instalaciones, etc.)"""
             elif tipo_consulta == TipoConsulta.URGENCIA:
                 return """📝 Por favor, contános qué está sucediendo y cómo podemos ayudarte urgentemente."""
             elif tipo_consulta == TipoConsulta.OTRAS:
