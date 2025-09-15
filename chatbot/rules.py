@@ -331,7 +331,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             'email': f"¡Gracias! 🙌🏻 Anoté tu email: {valor}",
             'direccion': f"Perfecto 👌🏻 Dirección guardada: {valor}.",
             'horario_visita': f"Genial 🙌🏻. Entonces el horario es: {valor}.",
-            'descripcion': f"¡Excelente! 🎉 Tengo toda tu información:"
+            'descripcion': f"✅ Perfecto! Descripción guardada: {valor}"
         }
         return confirmaciones.get(campo, f"✅ {valor} guardado correctamente.")
     

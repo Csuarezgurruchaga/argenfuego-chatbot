@@ -108,8 +108,11 @@ class ConversationManager:
             campos_orden = ['email', 'direccion', 'horario_visita']
         
         for campo in campos_orden:
-            if not datos_temp.get(campo) or not datos_temp.get(campo).strip():
+            valor_campo = datos_temp.get(campo)
+            # Un campo está incompleto si no existe o si existe pero está vacío (no saltado)
+            if valor_campo is None:
                 return campo
+            # Si el campo existe (incluso si es string vacío), está completado
         
         return None  # Todos los campos están completos
     
@@ -140,7 +143,7 @@ class ConversationManager:
             # Para presupuestos y urgencias pedimos todos los campos
             campos_orden = ['descripcion', 'email', 'direccion', 'horario_visita']
             
-        completados = sum(1 for campo in campos_orden if datos_temp.get(campo) and datos_temp.get(campo).strip())
+        completados = sum(1 for campo in campos_orden if datos_temp.get(campo) is not None)
         
         return completados, len(campos_orden)
 
