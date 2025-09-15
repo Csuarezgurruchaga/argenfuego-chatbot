@@ -37,37 +37,54 @@ class ConversationManager:
         conversacion = self.get_conversacion(numero_telefono)
         datos_temp = conversacion.datos_temporales
         
+        # Validar campos individualmente antes de crear el modelo
+        error_msgs = []
+        
+        # Validar email solo si tiene contenido
+        email = datos_temp.get('email', '')
+        if email and email.strip():
+            import re
+            email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            if not re.search(email_pattern, email):
+                error_msgs.append("📧 Email inválido. Ejemplo: juan@empresa.com")
+        
+        # Validar descripción (siempre requerida)
+        descripcion = datos_temp.get('descripcion', '')
+        if not descripcion or len(descripcion.strip()) < 10:
+            error_msgs.append("📝 Descripción debe tener al menos 10 caracteres")
+        
+        # Para presupuestos y urgencias, validar campos opcionales solo si tienen contenido
+        if conversacion.tipo_consulta != TipoConsulta.OTRAS:
+            direccion = datos_temp.get('direccion', '')
+            if direccion and direccion.strip() and len(direccion.strip()) < 5:
+                error_msgs.append("📍 Dirección debe tener al menos 5 caracteres")
+            
+            horario = datos_temp.get('horario_visita', '')
+            if horario and horario.strip() and len(horario.strip()) < 3:
+                error_msgs.append("🕒 Horario debe tener al menos 3 caracteres")
+        
+        if error_msgs:
+            return False, "\n".join(error_msgs)
+        
+        # Si no hay errores, crear el modelo con valores por defecto para campos vacíos
         try:
-            # Para "Otras consultas" usar modelo simplificado
             if conversacion.tipo_consulta == TipoConsulta.OTRAS:
                 datos_contacto = DatosConsultaGeneral(
-                    email=datos_temp.get('email', ''),
-                    descripcion=datos_temp.get('descripcion', '')
+                    email=email or "no_proporcionado@ejemplo.com",  # Valor por defecto
+                    descripcion=descripcion
                 )
             else:
-                # Para presupuestos y visitas técnicas usar modelo completo
                 datos_contacto = DatosContacto(
-                    email=datos_temp.get('email', ''),
-                    direccion=datos_temp.get('direccion', ''),
-                    horario_visita=datos_temp.get('horario_visita', ''),
-                    descripcion=datos_temp.get('descripcion', '')
+                    email=email or "no_proporcionado@ejemplo.com",  # Valor por defecto
+                    direccion=direccion or "No proporcionada",
+                    horario_visita=horario or "No especificado",
+                    descripcion=descripcion
                 )
             
             conversacion.datos_contacto = datos_contacto
             return True, None
         except ValidationError as e:
-            error_msgs = []
-            for error in e.errors():
-                field = error['loc'][0] if error['loc'] else 'campo'
-                if field == 'email':
-                    error_msgs.append("📧 Email inválido. Ejemplo: juan@empresa.com")
-                elif field == 'direccion':
-                    error_msgs.append("📍 Dirección debe tener al menos 5 caracteres")
-                elif field == 'horario_visita':
-                    error_msgs.append("🕒 Horario debe tener al menos 3 caracteres")
-                elif field == 'descripcion':
-                    error_msgs.append("📝 Descripción debe tener al menos 10 caracteres")
-            return False, "\n".join(error_msgs)
+            return False, f"Error interno: {str(e)}"
     
     def clear_datos_temporales(self, numero_telefono: str):
         conversacion = self.get_conversacion(numero_telefono)

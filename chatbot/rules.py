@@ -357,7 +357,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         if mensaje.strip().lower() in ['saltar', 'skip', 'no', 'n/a', 'na'] and campo_actual in ['email', 'direccion', 'horario_visita']:
             # Marcar campo como saltado
             conversation_manager.marcar_campo_completado(numero_telefono, campo_actual, "")
-            confirmacion = f"✅ Campo {campo_actual} saltado. Continuamos con el siguiente paso."
+            confirmacion = ""  # Sin mensaje de confirmación para campos saltados
         else:
             # Validar campo actual
             if not ChatbotRules._validar_campo_individual(campo_actual, mensaje.strip()):
