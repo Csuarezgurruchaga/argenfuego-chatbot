@@ -26,11 +26,14 @@ class SheetsService:
         self.enabled = os.getenv('ENABLE_SHEETS_METRICS', 'false').lower() == 'true'
         self.spreadsheet_metrics_id = os.getenv('SHEETS_METRICS_SPREADSHEET_ID', '').strip()
         self.spreadsheet_errors_id = os.getenv('SHEETS_ERRORS_SPREADSHEET_ID', '').strip() or self.spreadsheet_metrics_id
+        # Pricing (can reuse metrics spreadsheet by default)
+        self.spreadsheet_pricing_id = os.getenv('SHEETS_PRICING_SPREADSHEET_ID', '').strip() or self.spreadsheet_metrics_id
         # Backward compatibility
         default_metrics = os.getenv('SHEETS_METRICS_SHEET_NAME', 'METRICS_TECH').strip()
         self.business_sheet_name = os.getenv('SHEETS_BUSINESS_SHEET_NAME', 'METRICS_BUSINESS').strip()
         self.tech_sheet_name = os.getenv('SHEETS_TECH_SHEET_NAME', default_metrics).strip()
         self.errors_sheet_name = os.getenv('SHEETS_ERRORS_SHEET_NAME', 'ERRORS').strip()
+        self.pricing_sheet_name = os.getenv('SHEETS_PRICING_SHEET_NAME', 'PRODUCTS').strip()
 
         self._gc = None
         self._last_auth_ts = 0
@@ -98,6 +101,39 @@ class SheetsService:
         except Exception as e:
             logger.error(f'Sheets append_row error ({target}): {str(e)}')
             return False
+
+    # ---------- READ HELPERS (generic) ----------
+    def get_rows(self, spreadsheet_id: Optional[str], sheet_name: str) -> List[List[Any]]:
+        """Returns rows (list of lists). First row is headers if present."""
+        if not self.enabled:
+            return []
+        try:
+            gc = self._get_client()
+            ss_id = spreadsheet_id or self.spreadsheet_metrics_id
+            sh = gc.open_by_key(ss_id)
+            ws = sh.worksheet(sheet_name)
+            return ws.get_all_values() or []
+        except Exception as e:
+            logger.error(f'Sheets get_rows error ({sheet_name}): {str(e)}')
+            return []
+
+    def get_table(self, spreadsheet_id: Optional[str], sheet_name: str) -> List[Dict[str, Any]]:
+        """Returns list of dicts using first row as headers."""
+        rows = self.get_rows(spreadsheet_id, sheet_name)
+        if not rows:
+            return []
+        headers = [h.strip() for h in rows[0]]
+        items: List[Dict[str, Any]] = []
+        for r in rows[1:]:
+            entry: Dict[str, Any] = {}
+            for i, key in enumerate(headers):
+                entry[key] = r[i] if i < len(r) else ''
+            items.append(entry)
+        return items
+
+    # ---------- PRICING SHORTCUTS ----------
+    def get_pricing_table(self) -> List[Dict[str, Any]]:
+        return self.get_table(self.spreadsheet_pricing_id, self.pricing_sheet_name)
 
 
 sheets_service = SheetsService()
