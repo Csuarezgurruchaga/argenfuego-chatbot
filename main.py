@@ -14,6 +14,7 @@ from services.twilio_service import twilio_service
 from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
 from services.metrics_service import metrics_service
+from services.productos_service import productos_service
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -144,6 +145,42 @@ async def reset_conversation(numero_telefono: str = Form(...)):
     except Exception as e:
         logger.error(f"Error reseteando conversación: {str(e)}")
         raise HTTPException(status_code=500, detail="Error reseteando conversación")
+
+@app.post("/admin/pricing/reload")
+async def reload_pricing():
+    """Endpoint para recargar precios desde Google Sheets (útil para debugging)"""
+    try:
+        count = productos_service.reload()
+        return {
+            "message": f"Precios recargados exitosamente",
+            "productos_cargados": count,
+            "timestamp": "2024-01-01T00:00:00Z"  # Placeholder timestamp
+        }
+    except Exception as e:
+        logger.error(f"Error recargando precios: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error recargando precios")
+
+@app.get("/admin/pricing/status")
+async def pricing_status():
+    """Endpoint para verificar estado del cache de precios"""
+    try:
+        productos = productos_service.listar_productos()
+        return {
+            "productos_en_cache": len(productos),
+            "productos": [
+                {
+                    "id": p.id,
+                    "nombre": p.nombre,
+                    "precio": str(p.precio),
+                    "activo": p.activo
+                }
+                for p in productos.values()
+            ],
+            "timestamp": "2024-01-01T00:00:00Z"  # Placeholder timestamp
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo estado de precios: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estado de precios")
 
 if __name__ == "__main__":
     import uvicorn
