@@ -44,6 +44,8 @@ HUMAN_INTENT_PATTERNS = [
     # Palabras clave directas
     r"\bhumano\b",
     r"\bpersona\b",
+    r"\balguien\s+real\b",
+    r"\batenci[oó]n\s+al\s+cliente\b",
     r"\bagente\b",
     r"\boperador(?:a)?\b",
     r"\brepresentante\b",
@@ -55,11 +57,23 @@ HUMAN_INTENT_PATTERNS = [
     r"\bpuedo\s+hablar\b",
     r"\bhablar\s+con\s+(?:alguien|una\s+persona)\b",
     r"\bquiero\s+hablar\s+con\s+(?:alguien|una\s+persona)\b",
+    r"\bquiero\s+hablar\s+con\s+(?:vos|ustedes)\b",
     r"\bnecesito\s+hablar\s+con\s+(?:alguien|una\s+persona)\b",
     r"\bcomunicar(?:me)?\s+con\s+(?:alguien|una\s+persona)\b",
     r"\bnecesito\s+un\s+tel[eé]fono\b",
     r"\btelefono\s+para\s+llamar(?:los|las)?\b",
     r"\bquiero\s+llamar\b",
+
+    # Frustración / fallback
+    r"no\s+me\s+entend[eé]s?",
+    r"ninguna\s+opci[oó]n",
+    r"ninguna\s+de\s+las\s+anteriores",
+    r"quiero\s+que\s+me\s+atiendan?",
+
+    # Mayúsculas / errores comunes
+    r"HABLAR\s+CON\s+HUMANO",
+    r"humnao",
+    r"operadro",
 ]
 
 class NLUService:
@@ -178,7 +192,13 @@ class NLUService:
         Detecta si el usuario está preguntando sobre información de contacto de la empresa usando regex
         """
         try:
-            mensaje_lower = mensaje_usuario.lower().strip()
+            # Normalización básica: minúsculas y remover tildes
+            import unicodedata
+            def _normalize(s: str) -> str:
+                s = s.lower().strip()
+                return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+
+            mensaje_lower = _normalize(mensaje_usuario)
             
             # Buscar coincidencias con los patrones de consulta de contacto
             for pattern in CONTACT_QUERY_PATTERNS:
@@ -199,7 +219,12 @@ class NLUService:
         """
         try:
             # Normalización básica
-            mensaje_lower = mensaje_usuario.lower().strip()
+            import unicodedata
+            def _normalize(s: str) -> str:
+                s = s.lower().strip()
+                return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+
+            mensaje_lower = _normalize(mensaje_usuario)
 
             # Negaciones simples para evitar falsos positivos
             negaciones = [
