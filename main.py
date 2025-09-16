@@ -28,6 +28,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
+TTL_MINUTES = int(os.getenv("HANDOFF_TTL_MINUTES", "120"))
+
 @app.get("/")
 async def root():
     return {
@@ -42,6 +44,27 @@ async def health():
         "status": "healthy",
         "service": "argenfuego-chatbot"
     }
+
+@app.post("/handoff/ttl-sweep")
+async def handoff_ttl_sweep(token: str = Form(...)):
+    """Job idempotente para cerrar conversaciones en handoff por inactividad.
+    Ejecutar cada 15 minutos con cron. TTL por env (default 120 min)."""
+    if token != os.getenv("AGENT_API_TOKEN", ""):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    from datetime import datetime, timedelta
+    ahora = datetime.utcnow()
+    cerradas = 0
+    for conv in list(conversation_manager.conversaciones.values()):
+        if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
+            last_ts = conv.last_client_message_at or conv.handoff_started_at
+            if last_ts and (ahora - last_ts) > timedelta(minutes=TTL_MINUTES):
+                try:
+                    twilio_service.send_whatsapp_message(conv.numero_telefono, "Esta conversación se finalizará por inactividad. ¡Muchas gracias por contactarnos! 🕒")
+                except Exception:
+                    pass
+                conversation_manager.finalizar_conversacion(conv.numero_telefono)
+                cerradas += 1
+    return {"closed": cerradas}
 
 @app.post("/webhook")
 async def webhook_whatsapp(request: Request):
@@ -71,6 +94,11 @@ async def webhook_whatsapp(request: Request):
             if not conversacion_actual.slack_thread_ts and ts:
                 conversacion_actual.slack_thread_ts = ts
                 conversacion_actual.slack_channel_id = channel
+            try:
+                from datetime import datetime
+                conversacion_actual.last_client_message_at = datetime.utcnow()
+            except Exception:
+                pass
             return PlainTextResponse("", status_code=200)
 
         # Procesar el mensaje con el chatbot (incluyendo nombre del perfil)
