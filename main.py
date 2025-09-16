@@ -7,9 +7,11 @@ load_dotenv()
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import PlainTextResponse
 import logging
+from typing import Optional
 from chatbot.rules import ChatbotRules
 from chatbot.states import conversation_manager
 from chatbot.models import EstadoConversacion
+from services.slack_service import slack_service
 from services.twilio_service import twilio_service
 from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
@@ -59,6 +61,18 @@ async def webhook_whatsapp(request: Request):
         
         logger.info(f"Procesando mensaje de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
         
+        # Si está en handoff, reenviar a Slack y no responder con bot
+        conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
+        if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
+            # Publicar en Slack (canal configurado) en thread asociado o crear uno
+            channel = conversacion_actual.slack_channel_id or os.getenv("SLACK_CHANNEL_ID", "")
+            header = f"Nuevo mensaje del cliente {profile_name or ''} ({numero_telefono}):\n{mensaje_usuario}"
+            ts = slack_service.post_message(channel, header, thread_ts=conversacion_actual.slack_thread_ts)
+            if not conversacion_actual.slack_thread_ts and ts:
+                conversacion_actual.slack_thread_ts = ts
+                conversacion_actual.slack_channel_id = channel
+            return PlainTextResponse("", status_code=200)
+
         # Procesar el mensaje con el chatbot (incluyendo nombre del perfil)
         respuesta = ChatbotRules.procesar_mensaje(numero_telefono, mensaje_usuario, profile_name)
         
@@ -118,6 +132,34 @@ async def webhook_whatsapp(request: Request):
         except Exception:
             pass
         return PlainTextResponse("Error", status_code=500)
+
+
+@app.post("/agent/reply")
+async def agent_reply(to: str = Form(...), body: str = Form(...), token: str = Form(...)):
+    if token != os.getenv("AGENT_API_TOKEN", ""):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        sent = twilio_service.send_whatsapp_message(to, body)
+        if not sent:
+            raise HTTPException(status_code=500, detail="Failed to send message")
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"agent_reply error: {e}")
+        raise HTTPException(status_code=500, detail="Internal error")
+
+
+@app.post("/agent/close")
+async def agent_close(to: str = Form(...), token: str = Form(...)):
+    if token != os.getenv("AGENT_API_TOKEN", ""):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        conversation_manager.finalizar_conversacion(to)
+        cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
+        twilio_service.send_whatsapp_message(to, cierre_msg)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"agent_close error: {e}")
+        raise HTTPException(status_code=500, detail="Internal error")
 
 @app.get("/stats")
 async def get_stats():

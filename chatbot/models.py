@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from enum import Enum
 from typing import Optional
+from datetime import datetime
 
 class TipoConsulta(str, Enum):
     PRESUPUESTO = "presupuesto"
@@ -22,6 +23,7 @@ class EstadoConversacion(str, Enum):
     CORRIGIENDO = "corrigiendo"  # Para preguntar qué campo corregir
     CORRIGIENDO_CAMPO = "corrigiendo_campo"  # Para recibir el nuevo valor del campo
     MENU_PRINCIPAL = "menu_principal"  # Para volver al menú principal
+    ATENDIDO_POR_HUMANO = "atendido_por_humano"  # Handoff activo: bot silenciado
 
 class DatosContacto(BaseModel):
     email: EmailStr
@@ -42,6 +44,11 @@ class ConversacionData(BaseModel):
     datos_contacto: Optional[DatosContacto] = None
     datos_temporales: dict = Field(default_factory=dict)
     nombre_usuario: Optional[str] = None
+    # Campos para handoff a humano
+    atendido_por_humano: bool = False
+    slack_thread_ts: Optional[str] = None  # Thread de Slack asociado a la conversación
+    slack_channel_id: Optional[str] = None
+    handoff_started_at: Optional[datetime] = None
     
     class Config:
         use_enum_values = True
