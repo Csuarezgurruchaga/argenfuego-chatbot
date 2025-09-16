@@ -266,7 +266,82 @@ async def slack_actions(request: Request):
     payload = json.loads(form.get("payload", "{}"))
     
     try:
+        # Detectar tipo de request: block_actions (botones) o view_submission (modal)
+        request_type = payload.get("type", "")
+        logger.info(f"=== SLACK REQUEST TYPE: {request_type} ===")
         
+        if request_type == "view_submission":
+            # Manejar envío de modal
+            logger.info("=== PROCESSING MODAL SUBMISSION ===")
+            return await handle_modal_submission(payload)
+        elif request_type == "block_actions":
+            # Manejar clics de botones
+            logger.info("=== PROCESSING BUTTON CLICK ===")
+            return await handle_button_click(payload)
+        else:
+            logger.error(f"❌ Tipo de request no reconocido: {request_type}")
+            return PlainTextResponse("Tipo de request no reconocido", status_code=400)
+
+async def handle_modal_submission(payload: dict):
+    """Maneja el envío de modales"""
+    try:
+        # Procesar envío del modal
+        values = payload.get("view", {}).get("state", {}).get("values", {})
+        message = values.get("message_input", {}).get("message", {}).get("value", "")
+        private_metadata = payload.get("view", {}).get("private_metadata", "{}")
+        
+        logger.info(f"Message from modal: '{message}'")
+        logger.info(f"Private metadata: '{private_metadata}'")
+        
+        if not message.strip():
+            logger.error("❌ Mensaje vacío en modal")
+            return PlainTextResponse("Mensaje vacío", status_code=400)
+        
+        # Extraer thread_ts y channel_id del private_metadata
+        try:
+            metadata = json.loads(private_metadata)
+            thread_ts = metadata.get("thread_ts", "")
+            channel_id = metadata.get("channel_id", "")
+            logger.info(f"Extracted thread_ts: '{thread_ts}', channel_id: '{channel_id}'")
+        except Exception as e:
+            logger.error(f"❌ Error parsing private_metadata: {e}")
+            thread_ts = ""
+            channel_id = ""
+        
+        # Buscar conversación por thread_ts y channel_id
+        logger.info(f"=== SEARCHING CONVERSATION ===")
+        logger.info(f"Total conversaciones: {len(conversation_manager.conversaciones)}")
+        
+        to = None
+        for numero, conv in conversation_manager.conversaciones.items():
+            logger.info(f"Conv {numero}: slack_thread_ts='{conv.slack_thread_ts}', slack_channel_id='{conv.slack_channel_id}', atendido_por_humano={conv.atendido_por_humano}")
+            if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
+                to = conv.numero_telefono
+                logger.info(f"✅ MATCH encontrado: {to}")
+                break
+        
+        if to:
+            logger.info(f"=== ENVIANDO MENSAJE VIA TWILIO ===")
+            logger.info(f"Destino: {to}")
+            logger.info(f"Mensaje: {message}")
+            sent = twilio_service.send_whatsapp_message(to, message)
+            logger.info(f"Resultado Twilio: {sent}")
+            if sent:
+                logger.info("✅ Mensaje enviado exitosamente a WhatsApp")
+                return PlainTextResponse("")
+            else:
+                logger.error("❌ Error enviando mensaje via Twilio")
+                return PlainTextResponse("Error enviando mensaje", status_code=500)
+        else:
+            logger.error(f"❌ No se encontró conversación para thread_ts='{thread_ts}', channel_id='{channel_id}'")
+            return PlainTextResponse("No se encontró conversación activa", status_code=400)
+    except Exception as e:
+        logger.error(f"Error en handle_modal_submission: {e}")
+        return PlainTextResponse("Error interno", status_code=500)
+
+async def handle_button_click(payload: dict):
+    """Maneja los clics de botones"""
+    try:
         action_id = payload.get("actions", [{}])[0].get("action_id", "")
         trigger_id = payload.get("trigger_id", "")
         response_url = payload.get("response_url", "")
@@ -338,87 +413,10 @@ async def slack_actions(request: Request):
         
         return PlainTextResponse("Acción no reconocida")
     except Exception as e:
-        logger.error(f"/slack/actions error: {e}")
-        raise HTTPException(status_code=500, detail="Internal error")
+        logger.error(f"Error en handle_button_click: {e}")
+        return PlainTextResponse("Error interno", status_code=500)
 
 
-@app.post("/slack/views")
-async def slack_views(request: Request):
-    logger.info("=== SLACK VIEWS ENDPOINT CALLED ===")
-    
-    # Verificar firma Slack
-    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
-    signature = request.headers.get("X-Slack-Signature", "")
-    body = await request.body()
-    body_text = body.decode("utf-8")
-    if not slack_service.verify_signature(timestamp, signature, body_text):
-        logger.error("❌ Invalid Slack signature in /slack/views")
-        raise HTTPException(status_code=401, detail="Invalid Slack signature")
-
-    form = await request.form()
-    payload = json.loads(form.get("payload", "{}"))
-    logger.info(f"Payload recibido en /slack/views: {json.dumps(payload, indent=2)}")
-    
-    try:
-        callback_id = payload.get("view", {}).get("callback_id", "")
-        
-        if callback_id == "respond_modal":
-            logger.info("=== PROCESSING RESPOND MODAL ===")
-            # Procesar envío del modal
-            values = payload.get("view", {}).get("state", {}).get("values", {})
-            message = values.get("message_input", {}).get("message", {}).get("value", "")
-            private_metadata = payload.get("view", {}).get("private_metadata", "{}")
-            
-            logger.info(f"Message from modal: '{message}'")
-            logger.info(f"Private metadata: '{private_metadata}'")
-            
-            if not message.strip():
-                logger.error("❌ Mensaje vacío en modal")
-                return PlainTextResponse("Mensaje vacío", status_code=400)
-            
-            # Extraer thread_ts y channel_id del private_metadata
-            try:
-                metadata = json.loads(private_metadata)
-                thread_ts = metadata.get("thread_ts", "")
-                channel_id = metadata.get("channel_id", "")
-                logger.info(f"Extracted thread_ts: '{thread_ts}', channel_id: '{channel_id}'")
-            except Exception as e:
-                logger.error(f"❌ Error parsing private_metadata: {e}")
-                thread_ts = ""
-                channel_id = ""
-            
-            # Buscar conversación por thread_ts y channel_id
-            logger.info(f"=== SEARCHING CONVERSATION ===")
-            logger.info(f"Total conversaciones: {len(conversation_manager.conversaciones)}")
-            
-            to = None
-            for numero, conv in conversation_manager.conversaciones.items():
-                logger.info(f"Conv {numero}: slack_thread_ts='{conv.slack_thread_ts}', slack_channel_id='{conv.slack_channel_id}', atendido_por_humano={conv.atendido_por_humano}")
-                if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
-                    to = conv.numero_telefono
-                    logger.info(f"✅ MATCH encontrado: {to}")
-                    break
-            
-            if to:
-                logger.info(f"=== ENVIANDO MENSAJE VIA TWILIO ===")
-                logger.info(f"Destino: {to}")
-                logger.info(f"Mensaje: {message}")
-                sent = twilio_service.send_whatsapp_message(to, message)
-                logger.info(f"Resultado Twilio: {sent}")
-                if sent:
-                    logger.info("✅ Mensaje enviado exitosamente a WhatsApp")
-                    return PlainTextResponse("")
-                else:
-                    logger.error("❌ Error enviando mensaje via Twilio")
-                    return PlainTextResponse("Error enviando mensaje", status_code=500)
-            else:
-                logger.error(f"❌ No se encontró conversación para thread_ts='{thread_ts}', channel_id='{channel_id}'")
-                return PlainTextResponse("No se encontró conversación activa", status_code=400)
-        
-        return PlainTextResponse("Modal no reconocido")
-    except Exception as e:
-        logger.error(f"/slack/views error: {e}")
-        raise HTTPException(status_code=500, detail="Internal error")
 
 @app.post("/agent/reply")
 async def agent_reply(to: str = Form(...), body: str = Form(...), token: str = Form(...)):
