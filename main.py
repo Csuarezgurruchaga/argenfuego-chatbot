@@ -281,6 +281,9 @@ async def slack_actions(request: Request):
         )
         
         if action_id == "respond_to_client":
+            logger.info("=== OPENING RESPOND MODAL ===")
+            logger.info(f"thread_ts: {thread_ts}")
+            logger.info(f"channel_id: {channel_id}")
             # Abrir modal para responder
             modal_view = {
                 "type": "modal",
@@ -307,9 +310,12 @@ async def slack_actions(request: Request):
                 ]
             }
             
+            logger.info(f"Opening modal with trigger_id: {trigger_id}")
             if slack_service.open_modal(trigger_id, modal_view):
+                logger.info("✅ Modal abierto exitosamente")
                 return PlainTextResponse("")
             else:
+                logger.error("❌ Error abriendo modal")
                 return PlainTextResponse("Error abriendo modal", status_code=500)
                 
         elif action_id == "mark_resolved":
@@ -338,27 +344,36 @@ async def slack_actions(request: Request):
 
 @app.post("/slack/views")
 async def slack_views(request: Request):
+    logger.info("=== SLACK VIEWS ENDPOINT CALLED ===")
+    
     # Verificar firma Slack
     timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
     body = await request.body()
     body_text = body.decode("utf-8")
     if not slack_service.verify_signature(timestamp, signature, body_text):
+        logger.error("❌ Invalid Slack signature in /slack/views")
         raise HTTPException(status_code=401, detail="Invalid Slack signature")
 
     form = await request.form()
     payload = json.loads(form.get("payload", "{}"))
+    logger.info(f"Payload recibido en /slack/views: {json.dumps(payload, indent=2)}")
     
     try:
         callback_id = payload.get("view", {}).get("callback_id", "")
         
         if callback_id == "respond_modal":
+            logger.info("=== PROCESSING RESPOND MODAL ===")
             # Procesar envío del modal
             values = payload.get("view", {}).get("state", {}).get("values", {})
             message = values.get("message_input", {}).get("message", {}).get("value", "")
             private_metadata = payload.get("view", {}).get("private_metadata", "{}")
             
+            logger.info(f"Message from modal: '{message}'")
+            logger.info(f"Private metadata: '{private_metadata}'")
+            
             if not message.strip():
+                logger.error("❌ Mensaje vacío en modal")
                 return PlainTextResponse("Mensaje vacío", status_code=400)
             
             # Extraer thread_ts y channel_id del private_metadata
@@ -366,15 +381,22 @@ async def slack_views(request: Request):
                 metadata = json.loads(private_metadata)
                 thread_ts = metadata.get("thread_ts", "")
                 channel_id = metadata.get("channel_id", "")
-            except:
+                logger.info(f"Extracted thread_ts: '{thread_ts}', channel_id: '{channel_id}'")
+            except Exception as e:
+                logger.error(f"❌ Error parsing private_metadata: {e}")
                 thread_ts = ""
                 channel_id = ""
             
             # Buscar conversación por thread_ts y channel_id
+            logger.info(f"=== SEARCHING CONVERSATION ===")
+            logger.info(f"Total conversaciones: {len(conversation_manager.conversaciones)}")
+            
             to = None
-            for conv in conversation_manager.conversaciones.values():
+            for numero, conv in conversation_manager.conversaciones.items():
+                logger.info(f"Conv {numero}: slack_thread_ts='{conv.slack_thread_ts}', slack_channel_id='{conv.slack_channel_id}', atendido_por_humano={conv.atendido_por_humano}")
                 if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
                     to = conv.numero_telefono
+                    logger.info(f"✅ MATCH encontrado: {to}")
                     break
             
             if to:
@@ -390,7 +412,7 @@ async def slack_views(request: Request):
                     logger.error("❌ Error enviando mensaje via Twilio")
                     return PlainTextResponse("Error enviando mensaje", status_code=500)
             else:
-                logger.error(f"❌ No se encontró conversación para thread_ts={thread_ts}, channel_id={channel_id}")
+                logger.error(f"❌ No se encontró conversación para thread_ts='{thread_ts}', channel_id='{channel_id}'")
                 return PlainTextResponse("No se encontró conversación activa", status_code=400)
         
         return PlainTextResponse("Modal no reconocido")
