@@ -378,12 +378,19 @@ async def slack_views(request: Request):
                     break
             
             if to:
+                logger.info(f"=== ENVIANDO MENSAJE VIA TWILIO ===")
+                logger.info(f"Destino: {to}")
+                logger.info(f"Mensaje: {message}")
                 sent = twilio_service.send_whatsapp_message(to, message)
+                logger.info(f"Resultado Twilio: {sent}")
                 if sent:
+                    logger.info("✅ Mensaje enviado exitosamente a WhatsApp")
                     return PlainTextResponse("")
                 else:
+                    logger.error("❌ Error enviando mensaje via Twilio")
                     return PlainTextResponse("Error enviando mensaje", status_code=500)
             else:
+                logger.error(f"❌ No se encontró conversación para thread_ts={thread_ts}, channel_id={channel_id}")
                 return PlainTextResponse("No se encontró conversación activa", status_code=400)
         
         return PlainTextResponse("Modal no reconocido")

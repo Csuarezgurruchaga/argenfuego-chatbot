@@ -21,21 +21,29 @@ class TwilioService:
     
     def send_whatsapp_message(self, to_number: str, message: str) -> bool:
         try:
+            logger.info(f"=== TWILIO SEND DEBUG ===")
+            logger.info(f"to_number original: {to_number}")
+            logger.info(f"message: {message}")
+            logger.info(f"whatsapp_number: {self.whatsapp_number}")
+            
             # Asegurar que el número tenga el prefijo whatsapp:
             if not to_number.startswith('whatsapp:'):
                 to_number = f'whatsapp:{to_number}'
             
-            message = self.client.messages.create(
+            logger.info(f"to_number final: {to_number}")
+            
+            message_obj = self.client.messages.create(
                 body=message,
                 from_=self.whatsapp_number,
                 to=to_number
             )
             
-            logger.info(f"Mensaje enviado exitosamente a {to_number}. SID: {message.sid}")
+            logger.info(f"✅ Mensaje enviado exitosamente a {to_number}. SID: {message_obj.sid}")
             return True
             
         except Exception as e:
-            logger.error(f"Error enviando mensaje a {to_number}: {str(e)}")
+            logger.error(f"❌ Error enviando mensaje a {to_number}: {str(e)}")
+            logger.error(f"Tipo de error: {type(e).__name__}")
             return False
     
     def send_whatsapp_media(self, to_number: str, media_url: str, caption: str = "") -> bool:
