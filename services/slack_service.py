@@ -82,7 +82,7 @@ class SlackService:
         headers = {"Content-Type": "application/json; charset=utf-8"}
         payload = {"text": text, "replace_original": replace_original}
         resp = requests.post(response_url, headers=headers, data=json.dumps(payload), timeout=10)
-            return resp.status_code == 200
+        return resp.status_code == 200
 
     def _get_bot_user_id(self) -> str:
         """Obtiene el bot user ID automáticamente desde la API de Slack"""
