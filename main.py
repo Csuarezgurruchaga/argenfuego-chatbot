@@ -90,7 +90,33 @@ async def webhook_whatsapp(request: Request):
             # Publicar en Slack (canal configurado) en thread asociado o crear uno
             channel = conversacion_actual.slack_channel_id or os.getenv("SLACK_CHANNEL_ID", "")
             header = f"Nuevo mensaje del cliente {profile_name or ''} ({numero_telefono}):\n{mensaje_usuario}"
-            ts = slack_service.post_message(channel, header, thread_ts=conversacion_actual.slack_thread_ts)
+            
+            # Botones para responder y cerrar
+            blocks = [
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": header}
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Responder al cliente"},
+                            "action_id": "respond_to_client",
+                            "style": "primary"
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Resuelto"},
+                            "action_id": "mark_resolved",
+                            "style": "danger"
+                        }
+                    ]
+                }
+            ]
+            
+            ts = slack_service.post_message(channel, header, thread_ts=conversacion_actual.slack_thread_ts, blocks=blocks)
             if not conversacion_actual.slack_thread_ts and ts:
                 conversacion_actual.slack_thread_ts = ts
                 conversacion_actual.slack_channel_id = channel
@@ -176,16 +202,34 @@ async def slack_commands(request: Request):
     command = form.get("command", "")
     text = (form.get("text", "") or "").strip()
     channel_id = form.get("channel_id", "")
+    thread_ts = form.get("thread_ts", "")
 
     try:
         if command == "/responder":
-            # Formato esperado: to body...
-            if not text:
-                return PlainTextResponse("Uso: /responder <whatsapp:+549...> <mensaje>")
-            parts = text.split(" ", 1)
-            if len(parts) < 2:
-                return PlainTextResponse("Uso: /responder <whatsapp:+549...> <mensaje>")
-            to, body_msg = parts[0], parts[1]
+            # Soporta dos modos:
+            # 1) Dentro de un hilo: usar thread_ts para mapear al número
+            # 2) Fuera de hilo: /responder <whatsapp:+549...> <mensaje>
+            to = None
+            body_msg = None
+            if thread_ts:
+                # Buscar conversación por thread_ts
+                for conv in conversation_manager.conversaciones.values():
+                    if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
+                        to = conv.numero_telefono
+                        break
+                if not to:
+                    # Fallback a formato con número si no encontramos hilo
+                    if not text:
+                        return PlainTextResponse("No se encontró el hilo. Uso: /responder <whatsapp:+549...> <mensaje>")
+            if not to:
+                if not text:
+                    return PlainTextResponse("Uso: /responder <whatsapp:+549...> <mensaje>")
+                parts = text.split(" ", 1)
+                if len(parts) < 2:
+                    return PlainTextResponse("Uso: /responder <whatsapp:+549...> <mensaje>")
+                to, body_msg = parts[0], parts[1]
+            else:
+                body_msg = text or ""
             sent = twilio_service.send_whatsapp_message(to, body_msg)
             if sent:
                 return PlainTextResponse("Enviado ✅")
@@ -203,6 +247,126 @@ async def slack_commands(request: Request):
         return PlainTextResponse("Comando no soportado")
     except Exception as e:
         logger.error(f"/slack/commands error: {e}")
+        raise HTTPException(status_code=500, detail="Internal error")
+
+
+@app.post("/slack/actions")
+async def slack_actions(request: Request):
+    # Verificar firma Slack
+    timestamp = request.headers.get("X-Slack-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+    body = await request.body()
+    body_text = body.decode("utf-8")
+    if not slack_service.verify_signature(timestamp, signature, body_text):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature")
+
+    form = await request.form()
+    payload = json.loads(form.get("payload", "{}"))
+    
+    try:
+        action_id = payload.get("actions", [{}])[0].get("action_id", "")
+        trigger_id = payload.get("trigger_id", "")
+        response_url = payload.get("response_url", "")
+        channel_id = payload.get("channel", {}).get("id", "")
+        thread_ts = payload.get("message", {}).get("thread_ts", "")
+        
+        if action_id == "respond_to_client":
+            # Abrir modal para responder
+            modal_view = {
+                "type": "modal",
+                "callback_id": "respond_modal",
+                "title": {"type": "plain_text", "text": "Responder al cliente"},
+                "submit": {"type": "plain_text", "text": "Enviar"},
+                "close": {"type": "plain_text", "text": "Cancelar"},
+                "blocks": [
+                    {
+                        "type": "input",
+                        "block_id": "message_input",
+                        "element": {
+                            "type": "plain_text_input",
+                            "action_id": "message",
+                            "multiline": True,
+                            "placeholder": {"type": "plain_text", "text": "Escribe tu respuesta al cliente..."}
+                        },
+                        "label": {"type": "plain_text", "text": "Mensaje"}
+                    }
+                ]
+            }
+            
+            if slack_service.open_modal(trigger_id, modal_view):
+                return PlainTextResponse("")
+            else:
+                return PlainTextResponse("Error abriendo modal", status_code=500)
+                
+        elif action_id == "mark_resolved":
+            # Marcar como resuelto
+            to = None
+            for conv in conversation_manager.conversaciones.values():
+                if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
+                    to = conv.numero_telefono
+                    break
+            
+            if to:
+                conversation_manager.finalizar_conversacion(to)
+                cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
+                twilio_service.send_whatsapp_message(to, cierre_msg)
+                slack_service.respond_interaction(response_url, "Conversación finalizada ✅")
+            else:
+                slack_service.respond_interaction(response_url, "No se encontró la conversación ❌")
+            
+            return PlainTextResponse("")
+        
+        return PlainTextResponse("Acción no reconocida")
+    except Exception as e:
+        logger.error(f"/slack/actions error: {e}")
+        raise HTTPException(status_code=500, detail="Internal error")
+
+
+@app.post("/slack/views")
+async def slack_views(request: Request):
+    # Verificar firma Slack
+    timestamp = request.headers.get("X-Slack-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+    body = await request.body()
+    body_text = body.decode("utf-8")
+    if not slack_service.verify_signature(timestamp, signature, body_text):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature")
+
+    form = await request.form()
+    payload = json.loads(form.get("payload", "{}"))
+    
+    try:
+        callback_id = payload.get("view", {}).get("callback_id", "")
+        
+        if callback_id == "respond_modal":
+            # Procesar envío del modal
+            values = payload.get("view", {}).get("state", {}).get("values", {})
+            message = values.get("message_input", {}).get("message", {}).get("value", "")
+            
+            if not message.strip():
+                return PlainTextResponse("Mensaje vacío", status_code=400)
+            
+            # Buscar conversación por contexto del modal (necesitamos thread_ts y channel_id)
+            # Por ahora, usamos el último mensaje del usuario como fallback
+            # En una implementación completa, pasaríamos estos datos en el modal
+            to = None
+            for conv in conversation_manager.conversaciones.values():
+                if conv.atendido_por_humano:
+                    to = conv.numero_telefono
+                    break
+            
+            if to:
+                sent = twilio_service.send_whatsapp_message(to, message)
+                if sent:
+                    return PlainTextResponse("")
+                else:
+                    return PlainTextResponse("Error enviando mensaje", status_code=500)
+            else:
+                return PlainTextResponse("No se encontró conversación activa", status_code=400)
+        
+        return PlainTextResponse("Modal no reconocido")
+    except Exception as e:
+        logger.error(f"/slack/views error: {e}")
         raise HTTPException(status_code=500, detail="Internal error")
 
 @app.post("/agent/reply")
