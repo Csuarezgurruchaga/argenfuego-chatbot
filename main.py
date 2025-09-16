@@ -191,14 +191,14 @@ async def slack_commands(request: Request):
                 return PlainTextResponse("Enviado ✅")
             return PlainTextResponse("Error enviando ❌")
 
-        if command == "/cerrar":
+        if command in ["/resuelto", "/finalizar", "/cerrar"]:
             if not text:
-                return PlainTextResponse("Uso: /cerrar <whatsapp:+549...>")
+                return PlainTextResponse("Uso: /resuelto <whatsapp:+549...>")
             to = text.split()[0]
             conversation_manager.finalizar_conversacion(to)
             cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
             twilio_service.send_whatsapp_message(to, cierre_msg)
-            return PlainTextResponse("Conversación cerrada ✅")
+            return PlainTextResponse("Conversación finalizada ✅")
 
         return PlainTextResponse("Comando no soportado")
     except Exception as e:
