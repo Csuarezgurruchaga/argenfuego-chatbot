@@ -22,10 +22,19 @@ class SlackService:
     # --------------- Firma de Slack ---------------
     def verify_signature(self, timestamp: str, signature: str, body: str) -> bool:
         try:
+            if not self.signing_secret:
+                logger.error("SLACK_SIGNING_SECRET no configurado")
+                return False
+            if not timestamp or not signature:
+                logger.error("Faltan headers de firma de Slack")
+                return False
             sig_basestring = f"v0:{timestamp}:{body}".encode("utf-8")
             digest = hmac.new(self.signing_secret.encode("utf-8"), sig_basestring, hashlib.sha256).hexdigest()
             expected = f"v0={digest}"
-            return hmac.compare_digest(expected, signature)
+            ok = hmac.compare_digest(expected, signature)
+            if not ok:
+                logger.error("Firma Slack inválida (mismatch)")
+            return ok
         except Exception:
             return False
 
