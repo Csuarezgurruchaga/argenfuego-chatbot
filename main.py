@@ -359,55 +359,51 @@ async def handle_button_click(payload: dict):
         )
         
         if action_id == "respond_to_client":
-            logger.info("=== OPENING RESPOND MODAL ===")
+            logger.info("=== ACTIVATING CONVERSATION MODE ===")
             logger.info(f"thread_ts: {thread_ts}")
             logger.info(f"channel_id: {channel_id}")
-            # Abrir modal para responder
-            modal_view = {
-                "type": "modal",
-                "callback_id": "respond_modal",
-                "title": {"type": "plain_text", "text": "Responder al cliente"},
-                "submit": {"type": "plain_text", "text": "Enviar"},
-                "close": {"type": "plain_text", "text": "Cancelar"},
-                "private_metadata": json.dumps({
-                    "thread_ts": thread_ts,
-                    "channel_id": channel_id
-                }),
-                "blocks": [
-                    {
-                        "type": "input",
-                        "block_id": "message_input",
-                        "element": {
-                            "type": "plain_text_input",
-                            "action_id": "message",
-                            "multiline": True,
-                            "placeholder": {"type": "plain_text", "text": "Escribe tu respuesta al cliente..."}
-                        },
-                        "label": {"type": "plain_text", "text": "Mensaje"}
-                    }
-                ]
-            }
             
-            logger.info(f"Opening modal with trigger_id: {trigger_id}")
-            if slack_service.open_modal(trigger_id, modal_view):
-                logger.info("✅ Modal abierto exitosamente")
-                return PlainTextResponse("")
-            else:
-                logger.error("❌ Error abriendo modal")
-                return PlainTextResponse("Error abriendo modal", status_code=500)
-                
-        elif action_id == "mark_resolved":
-            # Marcar como resuelto
+            # Buscar conversación y activar modo conversación activa
             to = None
             for conv in conversation_manager.conversaciones.values():
                 if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
                     to = conv.numero_telefono
+                    conv.modo_conversacion_activa = True
+                    logger.info(f"✅ Modo conversación activa activado para {to}")
+                    break
+            
+            if to:
+                # Enviar mensaje de confirmación al hilo
+                confirmation_msg = "🎯 *Modo conversación activa* - Ahora puedes responder directamente en este hilo. El bot enviará automáticamente tus mensajes al cliente."
+                slack_service.post_message(channel_id, confirmation_msg, thread_ts=thread_ts)
+                
+                # Responder al botón
+                slack_service.respond_interaction(response_url, "✅ Modo conversación activa activado. Responde directamente en el hilo.")
+                return PlainTextResponse("")
+            else:
+                logger.error(f"❌ No se encontró conversación para thread_ts={thread_ts}, channel_id={channel_id}")
+                slack_service.respond_interaction(response_url, "❌ No se encontró la conversación")
+                return PlainTextResponse("No se encontró conversación", status_code=400)
+                
+        elif action_id == "mark_resolved":
+            # Marcar como resuelto y cerrar modo conversación activa
+            to = None
+            for conv in conversation_manager.conversaciones.values():
+                if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
+                    to = conv.numero_telefono
+                    conv.modo_conversacion_activa = False  # Cerrar modo conversación activa
+                    logger.info(f"✅ Modo conversación activa cerrado para {to}")
                     break
             
             if to:
                 conversation_manager.finalizar_conversacion(to)
                 cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
                 twilio_service.send_whatsapp_message(to, cierre_msg)
+                
+                # Enviar mensaje de confirmación al hilo
+                confirmation_msg = "🔒 *Conversación finalizada* - El modo conversación activa ha sido cerrado."
+                slack_service.post_message(channel_id, confirmation_msg, thread_ts=thread_ts)
+                
                 slack_service.respond_interaction(response_url, "Conversación finalizada ✅")
             else:
                 slack_service.respond_interaction(response_url, "No se encontró la conversación ❌")
@@ -434,6 +430,73 @@ async def agent_reply(to: str = Form(...), body: str = Form(...), token: str = F
         logger.error(f"agent_reply error: {e}")
         raise HTTPException(status_code=500, detail="Internal error")
 
+
+@app.post("/slack/events")
+async def slack_events(request: Request):
+    """Maneja eventos de Slack (mensajes del canal)"""
+    try:
+        body = await request.body()
+        data = json.loads(body.decode())
+        
+        # Verificar challenge de Slack
+        if data.get("type") == "url_verification":
+            return PlainTextResponse(data.get("challenge", ""))
+        
+        # Verificar firma de Slack
+        timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+        signature = request.headers.get("X-Slack-Signature", "")
+        if not slack_service.verify_signature(timestamp, signature, body.decode()):
+            logger.error("❌ Invalid Slack signature in /slack/events")
+            raise HTTPException(status_code=401, detail="Invalid Slack signature")
+        
+        # Procesar evento
+        event = data.get("event", {})
+        if event.get("type") == "message":
+            await handle_slack_message(event)
+        
+        return PlainTextResponse("OK")
+    except Exception as e:
+        logger.error(f"/slack/events error: {e}")
+        raise HTTPException(status_code=500, detail="Internal error")
+
+async def handle_slack_message(event: dict):
+    """Maneja mensajes de Slack en hilos con modo conversación activa"""
+    try:
+        channel = event.get("channel", "")
+        thread_ts = event.get("thread_ts", "")
+        user = event.get("user", "")
+        text = event.get("text", "").strip()
+        
+        # Solo procesar mensajes en hilos
+        if not thread_ts:
+            return
+        
+        # Buscar conversación con modo conversación activa
+        for conv in conversation_manager.conversaciones.values():
+            if (conv.slack_thread_ts == thread_ts and 
+                conv.slack_channel_id == channel and 
+                conv.modo_conversacion_activa):
+                
+                # Verificar que no sea un mensaje del bot
+                bot_user_id = os.getenv("SLACK_BOT_USER_ID", "")
+                if user == bot_user_id:
+                    continue
+                
+                logger.info(f"=== AGENT MESSAGE DETECTED ===")
+                logger.info(f"Channel: {channel}, Thread: {thread_ts}")
+                logger.info(f"User: {user}, Message: {text}")
+                logger.info(f"Target WhatsApp: {conv.numero_telefono}")
+                
+                # Enviar mensaje a WhatsApp
+                sent = twilio_service.send_whatsapp_message(conv.numero_telefono, text)
+                if sent:
+                    logger.info("✅ Mensaje del agente enviado a WhatsApp")
+                else:
+                    logger.error("❌ Error enviando mensaje del agente a WhatsApp")
+                break
+                
+    except Exception as e:
+        logger.error(f"Error en handle_slack_message: {e}")
 
 @app.post("/agent/close")
 async def agent_close(to: str = Form(...), token: str = Form(...)):
