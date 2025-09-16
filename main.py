@@ -134,6 +134,49 @@ async def webhook_whatsapp(request: Request):
         return PlainTextResponse("Error", status_code=500)
 
 
+@app.post("/slack/commands")
+async def slack_commands(request: Request):
+    # Verificar firma Slack
+    timestamp = request.headers.get("X-Slack-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+    body = await request.body()
+    body_text = body.decode("utf-8")
+    if not slack_service.verify_signature(timestamp, signature, body_text):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature")
+
+    form = await request.form()
+    command = form.get("command", "")
+    text = (form.get("text", "") or "").strip()
+    channel_id = form.get("channel_id", "")
+
+    try:
+        if command == "/responder":
+            # Formato esperado: to body...
+            if not text:
+                return PlainTextResponse("Uso: /responder <whatsapp:+549...> <mensaje>")
+            parts = text.split(" ", 1)
+            if len(parts) < 2:
+                return PlainTextResponse("Uso: /responder <whatsapp:+549...> <mensaje>")
+            to, body_msg = parts[0], parts[1]
+            sent = twilio_service.send_whatsapp_message(to, body_msg)
+            if sent:
+                return PlainTextResponse("Enviado ✅")
+            return PlainTextResponse("Error enviando ❌")
+
+        if command == "/cerrar":
+            if not text:
+                return PlainTextResponse("Uso: /cerrar <whatsapp:+549...>")
+            to = text.split()[0]
+            conversation_manager.finalizar_conversacion(to)
+            cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
+            twilio_service.send_whatsapp_message(to, cierre_msg)
+            return PlainTextResponse("Conversación cerrada ✅")
+
+        return PlainTextResponse("Comando no soportado")
+    except Exception as e:
+        logger.error(f"/slack/commands error: {e}")
+        raise HTTPException(status_code=500, detail="Internal error")
+
 @app.post("/agent/reply")
 async def agent_reply(to: str = Form(...), body: str = Form(...), token: str = Form(...)):
     if token != os.getenv("AGENT_API_TOKEN", ""):
