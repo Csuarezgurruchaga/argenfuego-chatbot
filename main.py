@@ -280,6 +280,10 @@ async def slack_actions(request: Request):
                 "title": {"type": "plain_text", "text": "Responder al cliente"},
                 "submit": {"type": "plain_text", "text": "Enviar"},
                 "close": {"type": "plain_text", "text": "Cancelar"},
+                "private_metadata": json.dumps({
+                    "thread_ts": thread_ts,
+                    "channel_id": channel_id
+                }),
                 "blocks": [
                     {
                         "type": "input",
@@ -327,7 +331,7 @@ async def slack_actions(request: Request):
 @app.post("/slack/views")
 async def slack_views(request: Request):
     # Verificar firma Slack
-    timestamp = request.headers.get("X-Slack-Timestamp", "")
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
     body = await request.body()
     body_text = body.decode("utf-8")
@@ -344,16 +348,24 @@ async def slack_views(request: Request):
             # Procesar envío del modal
             values = payload.get("view", {}).get("state", {}).get("values", {})
             message = values.get("message_input", {}).get("message", {}).get("value", "")
+            private_metadata = payload.get("view", {}).get("private_metadata", "{}")
             
             if not message.strip():
                 return PlainTextResponse("Mensaje vacío", status_code=400)
             
-            # Buscar conversación por contexto del modal (necesitamos thread_ts y channel_id)
-            # Por ahora, usamos el último mensaje del usuario como fallback
-            # En una implementación completa, pasaríamos estos datos en el modal
+            # Extraer thread_ts y channel_id del private_metadata
+            try:
+                metadata = json.loads(private_metadata)
+                thread_ts = metadata.get("thread_ts", "")
+                channel_id = metadata.get("channel_id", "")
+            except:
+                thread_ts = ""
+                channel_id = ""
+            
+            # Buscar conversación por thread_ts y channel_id
             to = None
             for conv in conversation_manager.conversaciones.values():
-                if conv.atendido_por_humano:
+                if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
                     to = conv.numero_telefono
                     break
             
