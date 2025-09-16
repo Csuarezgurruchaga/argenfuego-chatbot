@@ -478,7 +478,7 @@ async def handle_slack_message(event: dict):
                 conv.modo_conversacion_activa):
                 
                 # Verificar que no sea un mensaje del bot
-                bot_user_id = os.getenv("SLACK_BOT_USER_ID", "")
+                bot_user_id = slack_service.get_bot_user_id()
                 if user == bot_user_id:
                     continue
                 

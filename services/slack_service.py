@@ -18,6 +18,11 @@ class SlackService:
         self.bot_token = os.getenv("SLACK_BOT_TOKEN", "")
         self.signing_secret = os.getenv("SLACK_SIGNING_SECRET", "")
         self.default_channel = os.getenv("SLACK_CHANNEL_ID", "")
+        self.bot_user_id = os.getenv("SLACK_BOT_USER_ID", "")
+        
+        # Auto-detectar bot user ID si no está configurado
+        if not self.bot_user_id and self.bot_token:
+            self.bot_user_id = self._get_bot_user_id()
 
     # --------------- Firma de Slack ---------------
     def verify_signature(self, timestamp: str, signature: str, body: str) -> bool:
@@ -77,7 +82,30 @@ class SlackService:
         headers = {"Content-Type": "application/json; charset=utf-8"}
         payload = {"text": text, "replace_original": replace_original}
         resp = requests.post(response_url, headers=headers, data=json.dumps(payload), timeout=10)
-        return resp.status_code == 200
+            return resp.status_code == 200
+
+    def _get_bot_user_id(self) -> str:
+        """Obtiene el bot user ID automáticamente desde la API de Slack"""
+        try:
+            url = "https://slack.com/api/auth.test"
+            headers = {"Authorization": f"Bearer {self.bot_token}"}
+            resp = requests.get(url, headers=headers, timeout=10)
+            data = resp.json()
+            
+            if data.get("ok"):
+                bot_user_id = data.get("user", "")
+                logger.info(f"Bot User ID auto-detectado: {bot_user_id}")
+                return bot_user_id
+            else:
+                logger.error(f"Error obteniendo bot user ID: {data}")
+                return ""
+        except Exception as e:
+            logger.error(f"Error en auto-detección de bot user ID: {e}")
+            return ""
+
+    def get_bot_user_id(self) -> str:
+        """Retorna el bot user ID"""
+        return self.bot_user_id
 
 
 slack_service = SlackService()
