@@ -281,6 +281,9 @@ async def slack_actions(request: Request):
         else:
             logger.error(f"❌ Tipo de request no reconocido: {request_type}")
             return PlainTextResponse("Tipo de request no reconocido", status_code=400)
+    except Exception as e:
+        logger.error(f"/slack/actions error: {e}")
+        raise HTTPException(status_code=500, detail="Internal error")
 
 async def handle_modal_submission(payload: dict):
     """Maneja el envío de modales"""
