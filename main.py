@@ -252,15 +252,9 @@ async def slack_commands(request: Request):
 
 @app.post("/slack/actions")
 async def slack_actions(request: Request):
-    # --- LOGS TEMPORALES PARA DEBUG ---
-    logger.info("=== SLACK ACTIONS HEADERS ===")
-    for header_name, header_value in request.headers.items():
-        logger.info(f"{header_name}: {header_value}")
-    logger.info("=== END HEADERS ===")
-    # --- FIN LOGS TEMPORALES ---
     
     # Verificar firma Slack
-    timestamp = request.headers.get("X-Slack-Timestamp", "")
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
     body = await request.body()
     body_text = body.decode("utf-8")
