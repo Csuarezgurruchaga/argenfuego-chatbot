@@ -770,6 +770,8 @@ Responde con el número del campo que deseas modificar."""
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
             conversacion.atendido_por_humano = True
             conversacion.handoff_started_at = datetime.utcnow()
+            # Guardar el mensaje que disparó el handoff como contexto
+            conversacion.mensaje_handoff_contexto = mensaje
             # Mensaje de confirmación con aviso fuera de horario simple
             profile = get_active_company_profile()
             fuera_horario = ChatbotRules._esta_fuera_de_horario(profile.get('hours', ''))

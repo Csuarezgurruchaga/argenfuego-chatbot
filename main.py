@@ -90,9 +90,33 @@ async def webhook_whatsapp(request: Request):
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
             # Publicar en Slack (canal configurado) en thread asociado o crear uno
             channel = conversacion_actual.slack_channel_id or os.getenv("SLACK_CHANNEL_ID", "")
-            header = f"Nuevo mensaje del cliente {profile_name or ''} ({numero_telefono}):\n{mensaje_usuario}"
             
-            # Botones para responder y cerrar
+            # Si es el primer mensaje del handoff, incluir contexto
+            if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.slack_thread_ts:
+                header = f"🔄 *Nueva solicitud de agente humano*\nCliente: {profile_name or ''} ({numero_telefono})\n\n📝 *Mensaje que disparó el handoff:*\n{conversacion_actual.mensaje_handoff_contexto}\n\n💬 *Último mensaje:*\n{mensaje_usuario}"
+            else:
+                header = f"Nuevo mensaje del cliente {profile_name or ''} ({numero_telefono}):\n{mensaje_usuario}"
+            
+            # Botones condicionales: "Responder al cliente" solo si no está activo
+            elements = []
+            
+            # Solo mostrar "Responder al cliente" si el modo conversación no está activo
+            if not conversacion_actual.modo_conversacion_activa:
+                elements.append({
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Responder al cliente"},
+                    "action_id": "respond_to_client",
+                    "style": "primary"
+                })
+            
+            # Botón "Resuelto" siempre visible
+            elements.append({
+                "type": "button",
+                "text": {"type": "plain_text", "text": "Resuelto"},
+                "action_id": "mark_resolved",
+                "style": "danger"
+            })
+            
             blocks = [
                 {
                     "type": "section",
@@ -100,20 +124,7 @@ async def webhook_whatsapp(request: Request):
                 },
                 {
                     "type": "actions",
-                    "elements": [
-                        {
-                            "type": "button",
-                            "text": {"type": "plain_text", "text": "Responder al cliente"},
-                            "action_id": "respond_to_client",
-                            "style": "primary"
-                        },
-                        {
-                            "type": "button",
-                            "text": {"type": "plain_text", "text": "Resuelto"},
-                            "action_id": "mark_resolved",
-                            "style": "danger"
-                        }
-                    ]
+                    "elements": elements
                 }
             ]
             
@@ -373,11 +384,7 @@ async def handle_button_click(payload: dict):
                     break
             
             if to:
-                # Enviar mensaje de confirmación al hilo
-                confirmation_msg = "🎯 *Modo conversación activa* - Ahora puedes responder directamente en este hilo. El bot enviará automáticamente tus mensajes al cliente."
-                slack_service.post_message(channel_id, confirmation_msg, thread_ts=thread_ts)
-                
-                # Responder al botón
+                # Solo responder al botón, sin mensaje de confirmación al hilo
                 slack_service.respond_interaction(response_url, "✅ Modo conversación activa activado. Responde directamente en el hilo.")
                 return PlainTextResponse("")
             else:

@@ -51,6 +51,7 @@ class ConversacionData(BaseModel):
     handoff_started_at: Optional[datetime] = None
     last_client_message_at: Optional[datetime] = None
     modo_conversacion_activa: bool = False  # Modo conversación activa para respuestas directas del agente
+    mensaje_handoff_contexto: Optional[str] = None  # Mensaje que disparó el handoff para contexto del agente
     
     class Config:
         use_enum_values = True
