@@ -270,11 +270,22 @@ async def slack_actions(request: Request):
     payload = json.loads(form.get("payload", "{}"))
     
     try:
+        # Debug: imprimir estructura completa del payload
+        logger.info(f"=== SLACK PAYLOAD DEBUG ===")
+        logger.info(f"Full payload: {json.dumps(payload, indent=2)}")
+        
         action_id = payload.get("actions", [{}])[0].get("action_id", "")
         trigger_id = payload.get("trigger_id", "")
         response_url = payload.get("response_url", "")
         channel_id = payload.get("channel", {}).get("id", "")
-        thread_ts = payload.get("message", {}).get("thread_ts", "")
+        
+        # Intentar extraer thread_ts de diferentes ubicaciones posibles
+        thread_ts = (
+            payload.get("message", {}).get("thread_ts", "") or
+            payload.get("message", {}).get("ts", "") or
+            payload.get("thread_ts", "") or
+            ""
+        )
         
         if action_id == "respond_to_client":
             # Abrir modal para responder
