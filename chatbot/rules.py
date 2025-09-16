@@ -1,7 +1,8 @@
 import unicodedata
 from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
-from config.company_profiles import get_urgency_redirect_message
+from config.company_profiles import get_urgency_redirect_message, get_active_company_profile
+from datetime import datetime, timedelta
 from services.error_reporter import error_reporter, ErrorTrigger
 from services.metrics_service import metrics_service
 
@@ -764,12 +765,18 @@ Responde con el número del campo que deseas modificar."""
             
             return respuesta_contacto
         
-        # INTERCEPTAR SOLICITUD DE HABLAR CON HUMANO EN CUALQUIER MOMENTO
+        # INTERCEPTAR SOLICITUD DE HABLAR CON HUMANO EN CUALQUIER MOMENTO -> activar handoff
         if nlu_service.detectar_solicitud_humano(mensaje):
-            respuesta_humano = nlu_service.generar_respuesta_humano(mensaje)
-            if conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:
-                respuesta_humano += "\n\n💬 *Si querés, seguimos con tu consulta por acá...*"
-            return respuesta_humano
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
+            conversacion.atendido_por_humano = True
+            conversacion.handoff_started_at = datetime.utcnow()
+            # Mensaje de confirmación con aviso fuera de horario simple
+            profile = get_active_company_profile()
+            fuera_horario = ChatbotRules._esta_fuera_de_horario(profile.get('hours', ''))
+            base = "Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼\nUn asesor continuará la conversación en este mismo chat."
+            if fuera_horario:
+                base += "\n\n🕒 En este momento estamos fuera de horario. Tomaremos tu caso y te responderemos a la brevedad."
+            return base
         
         # INTERCEPTAR SOLICITUDES DE VOLVER AL MENÚ EN CUALQUIER MOMENTO
         if ChatbotRules._detectar_volver_menu(mensaje) and conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:
@@ -827,6 +834,23 @@ Responde con el número del campo que deseas modificar."""
         
         else:
             return "🤖 Hubo un error. Escribe 'hola' para comenzar de nuevo."
+
+    @staticmethod
+    def _esta_fuera_de_horario(hours_text: str) -> bool:
+        """Heurística simple para fuera de horario. Si no se puede parsear, False.
+        Aproximación AR (UTC-3): LV 8-17, S 9-13.
+        """
+        try:
+            ahora = datetime.utcnow() - timedelta(hours=3)
+            wd = ahora.weekday()  # 0 lunes
+            h = ahora.hour
+            if wd <= 4:
+                return not (8 <= h < 17)
+            if wd == 5:
+                return not (9 <= h < 13)
+            return True
+        except Exception:
+            return False
     
     @staticmethod
     def _procesar_seleccion_opcion(numero_telefono: str, mensaje: str) -> str:
