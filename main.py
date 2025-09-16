@@ -119,10 +119,6 @@ async def webhook_whatsapp(request: Request):
             
             ts = slack_service.post_message(channel, header, thread_ts=conversacion_actual.slack_thread_ts, blocks=blocks)
             if not conversacion_actual.slack_thread_ts and ts:
-                logger.info(f"=== HANDOFF THREAD CREATED ===")
-                logger.info(f"numero_telefono: {numero_telefono}")
-                logger.info(f"slack_thread_ts: {ts}")
-                logger.info(f"slack_channel_id: {channel}")
                 conversacion_actual.slack_thread_ts = ts
                 conversacion_actual.slack_channel_id = channel
             try:
@@ -270,20 +266,17 @@ async def slack_actions(request: Request):
     payload = json.loads(form.get("payload", "{}"))
     
     try:
-        # Debug: imprimir estructura completa del payload
-        logger.info(f"=== SLACK PAYLOAD DEBUG ===")
-        logger.info(f"Full payload: {json.dumps(payload, indent=2)}")
         
         action_id = payload.get("actions", [{}])[0].get("action_id", "")
         trigger_id = payload.get("trigger_id", "")
         response_url = payload.get("response_url", "")
         channel_id = payload.get("channel", {}).get("id", "")
         
-        # Intentar extraer thread_ts de diferentes ubicaciones posibles
+        # Extraer thread_ts del payload de Slack
+        # En block_actions, el thread_ts está en message.ts o container.message_ts
         thread_ts = (
-            payload.get("message", {}).get("thread_ts", "") or
             payload.get("message", {}).get("ts", "") or
-            payload.get("thread_ts", "") or
+            payload.get("container", {}).get("message_ts", "") or
             ""
         )
         
@@ -321,17 +314,10 @@ async def slack_actions(request: Request):
                 
         elif action_id == "mark_resolved":
             # Marcar como resuelto
-            logger.info(f"=== MARK_RESOLVED DEBUG ===")
-            logger.info(f"thread_ts: {thread_ts}")
-            logger.info(f"channel_id: {channel_id}")
-            logger.info(f"Total conversaciones: {len(conversation_manager.conversaciones)}")
-            
             to = None
-            for numero, conv in conversation_manager.conversaciones.items():
-                logger.info(f"Conv {numero}: slack_thread_ts={conv.slack_thread_ts}, slack_channel_id={conv.slack_channel_id}, atendido_por_humano={conv.atendido_por_humano}")
+            for conv in conversation_manager.conversaciones.values():
                 if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
                     to = conv.numero_telefono
-                    logger.info(f"MATCH encontrado: {to}")
                     break
             
             if to:
@@ -340,7 +326,6 @@ async def slack_actions(request: Request):
                 twilio_service.send_whatsapp_message(to, cierre_msg)
                 slack_service.respond_interaction(response_url, "Conversación finalizada ✅")
             else:
-                logger.error(f"No se encontró conversación para thread_ts={thread_ts}, channel_id={channel_id}")
                 slack_service.respond_interaction(response_url, "No se encontró la conversación ❌")
             
             return PlainTextResponse("")
@@ -386,31 +371,19 @@ async def slack_views(request: Request):
                 channel_id = ""
             
             # Buscar conversación por thread_ts y channel_id
-            logger.info(f"=== MODAL RESPONSE DEBUG ===")
-            logger.info(f"thread_ts: {thread_ts}")
-            logger.info(f"channel_id: {channel_id}")
-            logger.info(f"message: {message}")
-            logger.info(f"Total conversaciones: {len(conversation_manager.conversaciones)}")
-            
             to = None
-            for numero, conv in conversation_manager.conversaciones.items():
-                logger.info(f"Conv {numero}: slack_thread_ts={conv.slack_thread_ts}, slack_channel_id={conv.slack_channel_id}, atendido_por_humano={conv.atendido_por_humano}")
+            for conv in conversation_manager.conversaciones.values():
                 if conv.slack_thread_ts == thread_ts and conv.slack_channel_id == channel_id:
                     to = conv.numero_telefono
-                    logger.info(f"MATCH encontrado: {to}")
                     break
             
             if to:
-                logger.info(f"Enviando mensaje a {to}: {message}")
                 sent = twilio_service.send_whatsapp_message(to, message)
                 if sent:
-                    logger.info("Mensaje enviado exitosamente")
                     return PlainTextResponse("")
                 else:
-                    logger.error("Error enviando mensaje via Twilio")
                     return PlainTextResponse("Error enviando mensaje", status_code=500)
             else:
-                logger.error(f"No se encontró conversación para thread_ts={thread_ts}, channel_id={channel_id}")
                 return PlainTextResponse("No se encontró conversación activa", status_code=400)
         
         return PlainTextResponse("Modal no reconocido")
