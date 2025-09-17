@@ -1,7 +1,8 @@
 import unicodedata
 from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
-from config.company_profiles import get_urgency_redirect_message
+from config.company_profiles import get_urgency_redirect_message, get_active_company_profile
+from datetime import datetime, timedelta
 from services.error_reporter import error_reporter, ErrorTrigger
 from services.metrics_service import metrics_service
 
@@ -63,8 +64,7 @@ class ChatbotRules:
 ¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
 
 1️⃣ Solicitar un presupuesto
-2️⃣ Reportar una urgencia
-3️⃣ Otras consultas
+2️⃣ Otras consultas
 
 Responde con el número de la opción que necesitas 📱"""
     
@@ -85,8 +85,7 @@ Responde con el número de la opción que necesitas 📱"""
 ¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
 
 1️⃣ Solicitar un presupuesto
-2️⃣ Reportar una urgencia
-3️⃣ Otras consultas
+2️⃣ Otras consultas
 
 Responde con el número de la opción que necesitas 📱"""
         
@@ -657,7 +656,7 @@ Nuestro staff la revisará y se pondrá en contacto con vos a la brevedad al e-m
 
 Por favor responde con:
 • *1* para Solicitar un presupuesto
-• *2* para Reportar una urgencia
+• *2* para Otras consultas
 • *3* para Otras consultas
 
 _💡 También puedes describir tu necesidad con tus propias palabras y yo intentaré entenderte._"""
@@ -766,12 +765,20 @@ Responde con el número del campo que deseas modificar."""
             
             return respuesta_contacto
         
-        # INTERCEPTAR SOLICITUD DE HABLAR CON HUMANO EN CUALQUIER MOMENTO
+        # INTERCEPTAR SOLICITUD DE HABLAR CON HUMANO EN CUALQUIER MOMENTO -> activar handoff
         if nlu_service.detectar_solicitud_humano(mensaje):
-            respuesta_humano = nlu_service.generar_respuesta_humano(mensaje)
-            if conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:
-                respuesta_humano += "\n\n💬 *Si querés, seguimos con tu consulta por acá...*"
-            return respuesta_humano
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
+            conversacion.atendido_por_humano = True
+            conversacion.handoff_started_at = datetime.utcnow()
+            # Guardar el mensaje que disparó el handoff como contexto
+            conversacion.mensaje_handoff_contexto = mensaje
+            # Mensaje de confirmación con aviso fuera de horario simple
+            profile = get_active_company_profile()
+            fuera_horario = ChatbotRules._esta_fuera_de_horario(profile.get('hours', ''))
+            base = "Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼\nUn asesor continuará la conversación en este mismo chat."
+            if fuera_horario:
+                base += "\n\n🕒 En este momento estamos fuera de horario. Tomaremos tu caso y te responderemos a la brevedad."
+            return base
         
         # INTERCEPTAR SOLICITUDES DE VOLVER AL MENÚ EN CUALQUIER MOMENTO
         if ChatbotRules._detectar_volver_menu(mensaje) and conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:
@@ -829,15 +836,30 @@ Responde con el número del campo que deseas modificar."""
         
         else:
             return "🤖 Hubo un error. Escribe 'hola' para comenzar de nuevo."
+
+    @staticmethod
+    def _esta_fuera_de_horario(hours_text: str) -> bool:
+        """Heurística simple para fuera de horario. Si no se puede parsear, False.
+        Aproximación AR (UTC-3): LV 8-17, S 9-13.
+        """
+        try:
+            ahora = datetime.utcnow() - timedelta(hours=3)
+            wd = ahora.weekday()  # 0 lunes
+            h = ahora.hour
+            if wd <= 4:
+                return not (8 <= h < 17)
+            if wd == 5:
+                return not (9 <= h < 13)
+            return True
+        except Exception:
+            return False
     
     @staticmethod
     def _procesar_seleccion_opcion(numero_telefono: str, mensaje: str) -> str:
         opciones = {
             '1': TipoConsulta.PRESUPUESTO,
-            '2': TipoConsulta.URGENCIA,
-            '3': TipoConsulta.OTRAS,
+            '2': TipoConsulta.OTRAS,
             'presupuesto': TipoConsulta.PRESUPUESTO,
-            'urgencia': TipoConsulta.URGENCIA,
             'otras': TipoConsulta.OTRAS,
             'visita': TipoConsulta.OTRAS,  # Visitas técnicas ahora van a OTRAS
             'consulta': TipoConsulta.OTRAS
@@ -851,10 +873,13 @@ Responde con el número del campo que deseas modificar."""
             except Exception:
                 pass
             
-            # REDIRECCIÓN INMEDIATA PARA URGENCIAS
+            # Si NLU detecta urgencia, iniciar handoff a humano
             if tipo_consulta == TipoConsulta.URGENCIA:
-                conversation_manager.update_estado(numero_telefono, EstadoConversacion.FINALIZADO)
-                return get_urgency_redirect_message()
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
+                conversacion = conversation_manager.get_conversacion(numero_telefono)
+                conversacion.atendido_por_humano = True
+                conversacion.handoff_started_at = __import__('datetime').datetime.utcnow()
+                return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
             
             # Para otras consultas, usar flujo secuencial conversacional
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
@@ -871,10 +896,13 @@ Responde con el número del campo que deseas modificar."""
                 except Exception:
                     pass
                 
-                # REDIRECCIÓN INMEDIATA PARA URGENCIAS (NLU)
+                # Si NLU detecta urgencia, iniciar handoff a humano
                 if tipo_consulta_nlu == TipoConsulta.URGENCIA:
-                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.FINALIZADO)
-                    return f"✅ Entendí que tienes una urgencia.\n\n{get_urgency_redirect_message()}"
+                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
+                    conversacion = conversation_manager.get_conversacion(numero_telefono)
+                    conversacion.atendido_por_humano = True
+                    conversacion.handoff_started_at = __import__('datetime').datetime.utcnow()
+                    return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
                 
                 # Para otras consultas, usar flujo secuencial conversacional
                 # PRE-GUARDAR MENSAJE INICIAL COMO DESCRIPCIÓN si es sustancial
