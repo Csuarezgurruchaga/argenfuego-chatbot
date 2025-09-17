@@ -122,6 +122,17 @@ async def webhook_whatsapp(request: Request):
                 "action_id": "mark_resolved",
                 "style": "danger"
             })
+
+            # Botón URL "Ver hilo" (si conocemos team y ts)
+            team_id = os.getenv("SLACK_TEAM_ID", "")
+            thread_ts_for_url = conversacion_actual.slack_thread_ts or ""
+            if team_id and thread_ts_for_url:
+                thread_url = f"https://app.slack.com/client/{team_id}/{channel}/thread/{channel}-{thread_ts_for_url}"
+                elements.append({
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Ver hilo"},
+                    "url": thread_url
+                })
             
             blocks = [
                 {
@@ -140,6 +151,16 @@ async def webhook_whatsapp(request: Request):
                     conversacion_actual.slack_thread_ts = ts
                     conversacion_actual.slack_channel_id = channel
             else:
+                # Recalcular URL con ts ya existente
+                if team_id and conversacion_actual.slack_thread_ts:
+                    thread_url = f"https://app.slack.com/client/{team_id}/{channel}/thread/{channel}-{conversacion_actual.slack_thread_ts}"
+                    # Asegurar botón Ver hilo presente
+                    has_view = any(b.get("type") == "actions" and any(e.get("text",{}).get("text")=="Ver hilo" for e in b.get("elements",[])) for b in blocks)
+                    if not has_view:
+                        for b in blocks:
+                            if b.get("type") == "actions":
+                                b["elements"].append({"type":"button","text":{"type":"plain_text","text":"Ver hilo"},"url":thread_url})
+                                break
                 slack_service.update_message(channel, conversacion_actual.slack_thread_ts, header, blocks=blocks)
             try:
                 from datetime import datetime
@@ -487,11 +508,23 @@ async def handle_button_click(payload: dict):
                 conversation_manager.finalizar_conversacion(to)
                 cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
                 twilio_service.send_whatsapp_message(to, cierre_msg)
-                
-                # Enviar mensaje de confirmación al hilo
-                confirmation_msg = "🔒 *Conversación finalizada* - El modo conversación activa ha sido cerrado."
-                slack_service.post_message(channel_id, confirmation_msg, thread_ts=thread_ts)
-                
+                # Actualizar la card principal a "Resuelto" sin postear mensaje adicional
+                team_id = os.getenv("SLACK_TEAM_ID", "")
+                estado = "Resuelto ✅"
+                header = (
+                    f"👤 {to}  ·  {estado}\n\n"
+                    f"💬 *Último mensaje:*\n-"
+                )
+                elements = [
+                    {"type": "button", "text": {"type": "plain_text", "text": "Ver hilo"}, "url": (
+                        f"https://app.slack.com/client/{team_id}/{channel_id}/thread/{channel_id}-{thread_ts}" if team_id else "https://app.slack.com"
+                    )}
+                ]
+                blocks = [
+                    {"type": "section", "text": {"type": "mrkdwn", "text": header}},
+                    {"type": "actions", "elements": elements}
+                ]
+                slack_service.update_message(channel_id, thread_ts, header, blocks=blocks)
                 slack_service.respond_interaction(response_url, "Conversación finalizada ✅")
             else:
                 slack_service.respond_interaction(response_url, "No se encontró la conversación ❌")
