@@ -634,6 +634,7 @@ async def handle_slack_message(event: dict):
                     # Guardar última respuesta del agente y refrescar card
                     try:
                         setattr(conv, "last_agent_message_text", text)
+                        logger.info(f"✅ Guardado last_agent_message_text: {text}")
                         estado = "" if conv.modo_conversacion_activa else "En espera ⏸️"
                         header = (
                             f"👤 {conv.numero_telefono}{f'  ·  {estado}' if estado else ''}\n\n"
@@ -641,6 +642,7 @@ async def handle_slack_message(event: dict):
                         )
                         if text:
                             header = header + f"\n\n🧑‍💼 *Yo:*\n{text}"
+                            logger.info(f"✅ Header construido con mensaje del agente: {header}")
                         elements = [
                             {"type": "button", "text": {"type": "plain_text", "text": "Responder al cliente"}, "action_id": "respond_to_client", "style": "primary"},
                             {"type": "button", "text": {"type": "plain_text", "text": "Resuelto"}, "action_id": "mark_resolved", "style": "danger"}
@@ -650,7 +652,9 @@ async def handle_slack_message(event: dict):
                             {"type": "actions", "elements": elements}
                         ]
                         slack_service.update_message(channel, thread_ts, header, blocks=blocks)
-                    except Exception as _:
+                        logger.info(f"✅ Card actualizada en Slack con mensaje del agente")
+                    except Exception as e:
+                        logger.error(f"❌ Error actualizando card: {e}")
                         pass
                 else:
                     logger.error("❌ Error enviando mensaje del agente a WhatsApp")
