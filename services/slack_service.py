@@ -64,6 +64,22 @@ class SlackService:
             return None
         return data.get("ts")
 
+    def update_message(self, channel: str, ts: str, text: str, blocks: Optional[list] = None) -> bool:
+        if not self.bot_token:
+            logger.error("SLACK_BOT_TOKEN no configurado")
+            return False
+        url = "https://slack.com/api/chat.update"
+        headers = {"Authorization": f"Bearer {self.bot_token}", "Content-Type": "application/json; charset=utf-8"}
+        payload = {"channel": channel or self.default_channel, "ts": ts, "text": text}
+        if blocks:
+            payload["blocks"] = blocks
+        resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=10)
+        data = resp.json()
+        if not data.get("ok"):
+            logger.error(f"Error actualizando mensaje en Slack: {data}")
+            return False
+        return True
+
     def open_modal(self, trigger_id: str, view: dict) -> bool:
         if not self.bot_token:
             logger.error("SLACK_BOT_TOKEN no configurado")

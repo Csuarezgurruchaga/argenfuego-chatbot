@@ -85,17 +85,26 @@ async def webhook_whatsapp(request: Request):
         
         logger.info(f"Procesando mensaje de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
         
-        # Si está en handoff, reenviar a Slack y no responder con bot
+        # Si está en handoff, actualizar la "card" en Slack y no responder con bot
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
             # Publicar en Slack (canal configurado) en thread asociado o crear uno
             channel = conversacion_actual.slack_channel_id or os.getenv("SLACK_CHANNEL_ID", "")
             
-            # Si es el primer mensaje del handoff, incluir contexto
+            # Construir "card": estado + último mensaje
+            estado = "Activo ✅" if conversacion_actual.modo_conversacion_activa else "En espera ⏸️"
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.slack_thread_ts:
-                header = f"🔄 *Nueva solicitud de agente humano*\nCliente: {profile_name or ''} ({numero_telefono})\n\n📝 *Mensaje que disparó el handoff:*\n{conversacion_actual.mensaje_handoff_contexto}\n\n💬 *Último mensaje:*\n{mensaje_usuario}"
+                header = (
+                    f"🔄 *Nueva solicitud de agente humano*  ·  {estado}\n"
+                    f"Cliente: {profile_name or ''} ({numero_telefono})\n\n"
+                    f"📝 *Mensaje que disparó el handoff:*\n{conversacion_actual.mensaje_handoff_contexto}\n\n"
+                    f"💬 *Último mensaje:*\n{mensaje_usuario}"
+                )
             else:
-                header = f"Nuevo mensaje del cliente {profile_name or ''} ({numero_telefono}):\n{mensaje_usuario}"
+                header = (
+                    f"👤 {profile_name or ''} ({numero_telefono})  ·  {estado}\n\n"
+                    f"💬 *Último mensaje:*\n{mensaje_usuario}"
+                )
             
             # Botones condicionales: "Responder al cliente" solo si no está activo
             elements = []
@@ -128,10 +137,13 @@ async def webhook_whatsapp(request: Request):
                 }
             ]
             
-            ts = slack_service.post_message(channel, header, thread_ts=conversacion_actual.slack_thread_ts, blocks=blocks)
-            if not conversacion_actual.slack_thread_ts and ts:
-                conversacion_actual.slack_thread_ts = ts
-                conversacion_actual.slack_channel_id = channel
+            if not conversacion_actual.slack_thread_ts:
+                ts = slack_service.post_message(channel, header, blocks=blocks)
+                if ts:
+                    conversacion_actual.slack_thread_ts = ts
+                    conversacion_actual.slack_channel_id = channel
+            else:
+                slack_service.update_message(channel, conversacion_actual.slack_thread_ts, header, blocks=blocks)
             try:
                 from datetime import datetime
                 conversacion_actual.last_client_message_at = datetime.utcnow()
@@ -454,7 +466,8 @@ async def handle_button_click(payload: dict):
                         ]
                     }
                     slack_service.open_modal(trigger_id, view)
-                    slack_service.respond_interaction(response_url, "✍️ Modal abierto para responder al cliente")
+                    # Responder solo efímero, sin publicar mensajes extra al canal
+                    slack_service.respond_interaction(response_url, "✍️ Modal abierto para responder")
                 except Exception as e:
                     logger.error(f"❌ Error abriendo modal: {e}")
                     slack_service.respond_interaction(response_url, "❌ No se pudo abrir el modal")
