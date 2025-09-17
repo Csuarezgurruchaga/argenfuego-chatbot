@@ -104,12 +104,12 @@ async def webhook_whatsapp(request: Request):
                     f"🔄 *Nueva solicitud de agente humano*{f'  ·  {estado}' if estado else ''}\n"
                     f"Cliente: {profile_name or ''} ({numero_telefono})\n\n"
                     f"📝 *Mensaje que disparó el handoff:*\n{conversacion_actual.mensaje_handoff_contexto}\n\n"
-                    f"💬 *Cliente:*\n{mensaje_usuario}"
+                    f"{mensaje_usuario}"
                 )
             else:
                 header = (
                     f"👤 {profile_name or ''} ({numero_telefono}){f'  ·  {estado}' if estado else ''}\n\n"
-                    f"💬 *Cliente:*\n{mensaje_usuario}"
+                    f"{mensaje_usuario}"
                 )
             # Incluir última respuesta del agente si existe
             ultima_agente = getattr(conversacion_actual, "last_agent_message_text", "")
@@ -512,10 +512,21 @@ async def handle_button_click(payload: dict):
                                     break
                         break
                 
+                # Obtener último mensaje del cliente y del agente para mostrar en la card resuelta
+                last_client_msg = ""
+                last_agent_msg = ""
+                for conv in conversation_manager.conversaciones.values():
+                    if conv.numero_telefono == to:
+                        last_client_msg = getattr(conv, 'last_client_message_text', '') or '-'
+                        last_agent_msg = getattr(conv, 'last_agent_message_text', '') or ''
+                        break
+                
                 header = (
                     f"👤 {client_name or to}  ·  {estado}\n\n"
-                    f"💬 *Cliente:*\n{''}"
+                    f"{last_client_msg}"
                 )
+                if last_agent_msg:
+                    header = header + f"\n\n🧑‍💼 *Yo:*\n{last_agent_msg}"
                 elements = []
                 blocks = [
                     {"type": "section", "text": {"type": "mrkdwn", "text": header}},
@@ -626,7 +637,7 @@ async def handle_slack_message(event: dict):
                         estado = "" if conv.modo_conversacion_activa else "En espera ⏸️"
                         header = (
                             f"👤 {conv.numero_telefono}{f'  ·  {estado}' if estado else ''}\n\n"
-                            f"💬 *Cliente:*\n{getattr(conv, 'last_client_message_text', '') or '-'}"
+                            f"{getattr(conv, 'last_client_message_text', '') or '-'}"
                         )
                         if text:
                             header = header + f"\n\n🧑‍💼 *Yo:*\n{text}"
