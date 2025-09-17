@@ -106,17 +106,14 @@ async def webhook_whatsapp(request: Request):
                     f"💬 *Último mensaje:*\n{mensaje_usuario}"
                 )
             
-            # Botones condicionales: "Responder al cliente" solo si no está activo
+            # Botones: mantener "Responder al cliente" siempre visible (abre modal)
             elements = []
-            
-            # Solo mostrar "Responder al cliente" si el modo conversación no está activo
-            if not conversacion_actual.modo_conversacion_activa:
-                elements.append({
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Responder al cliente"},
-                    "action_id": "respond_to_client",
-                    "style": "primary"
-                })
+            elements.append({
+                "type": "button",
+                "text": {"type": "plain_text", "text": "Responder al cliente"},
+                "action_id": "respond_to_client",
+                "style": "primary"
+            })
             
             # Botón "Resuelto" siempre visible
             elements.append({
@@ -466,8 +463,7 @@ async def handle_button_click(payload: dict):
                         ]
                     }
                     slack_service.open_modal(trigger_id, view)
-                    # Responder solo efímero, sin publicar mensajes extra al canal
-                    slack_service.respond_interaction(response_url, "✍️ Modal abierto para responder")
+                    # No enviamos efímero de confirmación para evitar ruido visual
                 except Exception as e:
                     logger.error(f"❌ Error abriendo modal: {e}")
                     slack_service.respond_interaction(response_url, "❌ No se pudo abrir el modal")
