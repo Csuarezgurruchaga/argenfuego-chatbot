@@ -401,11 +401,13 @@ async def handle_button_click(payload: dict):
         response_url = payload.get("response_url", "")
         channel_id = payload.get("channel", {}).get("id", "")
         
-        # Extraer thread_ts del payload de Slack
-        # En block_actions, el thread_ts está en message.ts o container.message_ts
+        # Extraer root thread_ts del payload de Slack
+        # Preferir message.thread_ts (raíz del hilo), luego container.message_ts (raíz),
+        # y por último message.ts (puede ser el ts del propio mensaje hijo)
         thread_ts = (
-            payload.get("message", {}).get("ts", "") or
+            payload.get("message", {}).get("thread_ts", "") or
             payload.get("container", {}).get("message_ts", "") or
+            payload.get("message", {}).get("ts", "") or
             ""
         )
         
@@ -542,22 +544,33 @@ async def handle_slack_message(event: dict):
         channel = event.get("channel", "")
         thread_ts = event.get("thread_ts", "")
         user = event.get("user", "")
+        bot_id = event.get("bot_id")
+        subtype = event.get("subtype")
         text = event.get("text", "").strip()
         
         # Solo procesar mensajes en hilos
         if not thread_ts:
             return
         
+        # Ignorar mensajes generados por bots (incluyendo este bot) o actualizaciones del sistema
+        # Slack envía mensajes de bots con bot_id o con subtype=bot_message
+        if bot_id or subtype in ("bot_message", "message_changed", "message_deleted"):
+            return
+
         # Buscar conversación con modo conversación activa
         for conv in conversation_manager.conversaciones.values():
             if (conv.slack_thread_ts == thread_ts and 
                 conv.slack_channel_id == channel and 
                 conv.modo_conversacion_activa):
                 
-                # Verificar que no sea un mensaje del bot
+                # Verificar que no sea un mensaje del bot por user id
                 bot_user_id = slack_service.get_bot_user_id()
                 if user == bot_user_id:
                     continue
+                
+                # Safety: no reenviar a WhatsApp los mensajes de contexto publicados por nosotros
+                if text.startswith("Nuevo mensaje del cliente") or text.startswith("🔄 *Nueva solicitud de agente humano*"):
+                    return
                 
                 logger.info(f"=== AGENT MESSAGE DETECTED ===")
                 logger.info(f"Channel: {channel}, Thread: {thread_ts}")
