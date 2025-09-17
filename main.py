@@ -624,8 +624,10 @@ async def handle_slack_message(event: dict):
                 
                 logger.info(f"=== AGENT MESSAGE DETECTED ===")
                 logger.info(f"Channel: {channel}, Thread: {thread_ts}")
-                logger.info(f"User: {user}, Message: {text}")
+                logger.info(f"User: {user}, Message: '{text}'")
                 logger.info(f"Target WhatsApp: {conv.numero_telefono}")
+                logger.info(f"Bot User ID: {slack_service.get_bot_user_id()}")
+                logger.info(f"User == Bot User ID: {user == slack_service.get_bot_user_id()}")
                 
                 # Enviar mensaje a WhatsApp
                 sent = twilio_service.send_whatsapp_message(conv.numero_telefono, text)
