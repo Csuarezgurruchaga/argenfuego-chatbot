@@ -567,8 +567,13 @@ async def slack_events(request: Request):
         body = await request.body()
         data = json.loads(body.decode())
         
+        logger.info(f"=== SLACK EVENTS ENDPOINT CALLED ===")
+        logger.info(f"Event type: {data.get('type')}")
+        logger.info(f"Event data: {data}")
+        
         # Verificar challenge de Slack
         if data.get("type") == "url_verification":
+            logger.info("🔧 URL verification challenge received")
             return PlainTextResponse(data.get("challenge", ""))
         
         # Verificar firma de Slack
@@ -580,8 +585,12 @@ async def slack_events(request: Request):
         
         # Procesar evento
         event = data.get("event", {})
+        logger.info(f"📨 Processing event: {event}")
         if event.get("type") == "message":
+            logger.info("💬 Message event detected, calling handle_slack_message")
             await handle_slack_message(event)
+        else:
+            logger.info(f"ℹ️ Non-message event: {event.get('type')}")
         
         return PlainTextResponse("OK")
     except Exception as e:
@@ -591,6 +600,9 @@ async def slack_events(request: Request):
 async def handle_slack_message(event: dict):
     """Maneja mensajes de Slack en hilos con modo conversación activa"""
     try:
+        logger.info(f"=== SLACK MESSAGE EVENT RECEIVED ===")
+        logger.info(f"Full event: {event}")
+        
         channel = event.get("channel", "")
         thread_ts = event.get("thread_ts", "")
         user = event.get("user", "")
@@ -598,28 +610,43 @@ async def handle_slack_message(event: dict):
         subtype = event.get("subtype")
         text = event.get("text", "").strip()
         
+        logger.info(f"Event details - Channel: {channel}, Thread: {thread_ts}, User: {user}")
+        logger.info(f"Bot ID: {bot_id}, Subtype: {subtype}, Text: '{text}'")
+        
         # Solo procesar mensajes en hilos
         if not thread_ts:
+            logger.info("❌ No thread_ts, ignoring message")
             return
         
         # Ignorar mensajes generados por bots (incluyendo este bot) o actualizaciones del sistema
         # Slack envía mensajes de bots con bot_id o con subtype=bot_message
         if bot_id or subtype in ("bot_message", "message_changed", "message_deleted"):
+            logger.info(f"❌ Bot message or system update, ignoring - bot_id: {bot_id}, subtype: {subtype}")
             return
 
         # Buscar conversación con modo conversación activa
+        logger.info(f"🔍 Searching for conversation with thread_ts: {thread_ts}, channel: {channel}")
+        logger.info(f"📊 Total conversations: {len(conversation_manager.conversaciones)}")
+        
         for conv in conversation_manager.conversaciones.values():
+            logger.info(f"🔍 Checking conv: thread_ts={conv.slack_thread_ts}, channel={conv.slack_channel_id}, modo_activa={conv.modo_conversacion_activa}")
+            
             if (conv.slack_thread_ts == thread_ts and 
                 conv.slack_channel_id == channel and 
                 conv.modo_conversacion_activa):
                 
+                logger.info(f"✅ Found matching conversation for {conv.numero_telefono}")
+                
                 # Verificar que no sea un mensaje del bot por user id
                 bot_user_id = slack_service.get_bot_user_id()
+                logger.info(f"🤖 Bot User ID: {bot_user_id}, Message User: {user}")
                 if user == bot_user_id:
+                    logger.info("❌ Message from bot user, ignoring")
                     continue
                 
                 # Safety: no reenviar a WhatsApp los mensajes de contexto publicados por nosotros
                 if text.startswith("Nuevo mensaje del cliente") or text.startswith("🔄 *Nueva solicitud de agente humano*"):
+                    logger.info("❌ Context message, ignoring")
                     return
                 
                 logger.info(f"=== AGENT MESSAGE DETECTED ===")
@@ -661,6 +688,8 @@ async def handle_slack_message(event: dict):
                 else:
                     logger.error("❌ Error enviando mensaje del agente a WhatsApp")
                 break
+        else:
+            logger.info("❌ No matching conversation found with modo_conversacion_activa=True")
                 
     except Exception as e:
         logger.error(f"Error en handle_slack_message: {e}")
