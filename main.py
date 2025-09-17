@@ -148,6 +148,46 @@ async def webhook_whatsapp(request: Request):
         if not mensaje_enviado:
             logger.error(f"Error enviando mensaje a {numero_telefono}")
         
+        # Si durante el procesamiento se activó el handoff, crear el hilo en Slack con el MENSAJE QUE DISPARÓ el handoff
+        try:
+            conversacion_post = conversation_manager.get_conversacion(numero_telefono)
+            if (
+                (conversacion_post.atendido_por_humano or conversacion_post.estado == EstadoConversacion.ATENDIDO_POR_HUMANO)
+                and not conversacion_post.slack_thread_ts
+            ):
+                channel = conversacion_post.slack_channel_id or os.getenv("SLACK_CHANNEL_ID", "")
+                texto_contexto = conversacion_post.mensaje_handoff_contexto or mensaje_usuario
+                header = (
+                    f"🔄 *Nueva solicitud de agente humano*\n"
+                    f"Cliente: {profile_name or ''} ({numero_telefono})\n\n"
+                    f"📝 *Mensaje que disparó el handoff:*\n{texto_contexto}"
+                )
+                elements = []
+                if not conversacion_post.modo_conversacion_activa:
+                    elements.append({
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Responder al cliente"},
+                        "action_id": "respond_to_client",
+                        "style": "primary"
+                    })
+                elements.append({
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Resuelto"},
+                    "action_id": "mark_resolved",
+                    "style": "danger"
+                })
+                blocks = [
+                    {"type": "section", "text": {"type": "mrkdwn", "text": header}},
+                    {"type": "actions", "elements": elements}
+                ]
+                ts = slack_service.post_message(channel, header, blocks=blocks)
+                if ts:
+                    conversacion_post.slack_thread_ts = ts
+                    conversacion_post.slack_channel_id = channel
+                    logger.info(f"✅ Hilo de handoff creado con contexto inicial: {ts}")
+        except Exception as e:
+            logger.error(f"Error creando hilo de handoff post-procesamiento: {e}")
+
         # Verificar si necesitamos enviar email
         conversacion = conversation_manager.get_conversacion(numero_telefono)
         
