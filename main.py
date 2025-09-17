@@ -92,19 +92,29 @@ async def webhook_whatsapp(request: Request):
             channel = conversacion_actual.slack_channel_id or os.getenv("SLACK_CHANNEL_ID", "")
             
             # Construir "card": estado + último mensaje
-            estado = "Activo ✅" if conversacion_actual.modo_conversacion_activa else "En espera ⏸️"
+            estado = "Activo 🟢" if conversacion_actual.modo_conversacion_activa else "En espera ⏸️"
+            # Guardar último mensaje del cliente para poder mostrarlo junto al del agente
+            try:
+                setattr(conversacion_actual, "last_client_message_text", mensaje_usuario)
+            except Exception:
+                pass
+
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.slack_thread_ts:
                 header = (
                     f"🔄 *Nueva solicitud de agente humano*  ·  {estado}\n"
                     f"Cliente: {profile_name or ''} ({numero_telefono})\n\n"
                     f"📝 *Mensaje que disparó el handoff:*\n{conversacion_actual.mensaje_handoff_contexto}\n\n"
-                    f"💬 *Último mensaje:*\n{mensaje_usuario}"
+                    f"💬 *Último cliente:*\n{mensaje_usuario}"
                 )
             else:
                 header = (
                     f"👤 {profile_name or ''} ({numero_telefono})  ·  {estado}\n\n"
-                    f"💬 *Último mensaje:*\n{mensaje_usuario}"
+                    f"💬 *Último cliente:*\n{mensaje_usuario}"
                 )
+            # Incluir última respuesta del agente si existe
+            ultima_agente = getattr(conversacion_actual, "last_agent_message_text", "")
+            if ultima_agente:
+                header = header + f"\n\n🧑‍💼 *Último agente:*\n{ultima_agente}"
             
             # Botones: mantener "Responder al cliente" siempre visible (abre modal)
             elements = []
@@ -122,17 +132,6 @@ async def webhook_whatsapp(request: Request):
                 "action_id": "mark_resolved",
                 "style": "danger"
             })
-
-            # Botón URL "Ver hilo" (si conocemos team y ts)
-            team_id = os.getenv("SLACK_TEAM_ID", "")
-            thread_ts_for_url = conversacion_actual.slack_thread_ts or ""
-            if team_id and thread_ts_for_url:
-                thread_url = f"https://app.slack.com/client/{team_id}/{channel}/thread/{channel}-{thread_ts_for_url}"
-                elements.append({
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Ver hilo"},
-                    "url": thread_url
-                })
             
             blocks = [
                 {
@@ -151,16 +150,6 @@ async def webhook_whatsapp(request: Request):
                     conversacion_actual.slack_thread_ts = ts
                     conversacion_actual.slack_channel_id = channel
             else:
-                # Recalcular URL con ts ya existente
-                if team_id and conversacion_actual.slack_thread_ts:
-                    thread_url = f"https://app.slack.com/client/{team_id}/{channel}/thread/{channel}-{conversacion_actual.slack_thread_ts}"
-                    # Asegurar botón Ver hilo presente
-                    has_view = any(b.get("type") == "actions" and any(e.get("text",{}).get("text")=="Ver hilo" for e in b.get("elements",[])) for b in blocks)
-                    if not has_view:
-                        for b in blocks:
-                            if b.get("type") == "actions":
-                                b["elements"].append({"type":"button","text":{"type":"plain_text","text":"Ver hilo"},"url":thread_url})
-                                break
                 slack_service.update_message(channel, conversacion_actual.slack_thread_ts, header, blocks=blocks)
             try:
                 from datetime import datetime
@@ -509,17 +498,12 @@ async def handle_button_click(payload: dict):
                 cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
                 twilio_service.send_whatsapp_message(to, cierre_msg)
                 # Actualizar la card principal a "Resuelto" sin postear mensaje adicional
-                team_id = os.getenv("SLACK_TEAM_ID", "")
                 estado = "Resuelto ✅"
                 header = (
                     f"👤 {to}  ·  {estado}\n\n"
-                    f"💬 *Último mensaje:*\n-"
+                    f"💬 *Último cliente:*\n{''}"
                 )
-                elements = [
-                    {"type": "button", "text": {"type": "plain_text", "text": "Ver hilo"}, "url": (
-                        f"https://app.slack.com/client/{team_id}/{channel_id}/thread/{channel_id}-{thread_ts}" if team_id else "https://app.slack.com"
-                    )}
-                ]
+                elements = []
                 blocks = [
                     {"type": "section", "text": {"type": "mrkdwn", "text": header}},
                     {"type": "actions", "elements": elements}
@@ -623,6 +607,27 @@ async def handle_slack_message(event: dict):
                 sent = twilio_service.send_whatsapp_message(conv.numero_telefono, text)
                 if sent:
                     logger.info("✅ Mensaje del agente enviado a WhatsApp")
+                    # Guardar última respuesta del agente y refrescar card
+                    try:
+                        setattr(conv, "last_agent_message_text", text)
+                        estado = "Activo 🟢" if conv.modo_conversacion_activa else "En espera ⏸️"
+                        header = (
+                            f"👤 {conv.numero_telefono}  ·  {estado}\n\n"
+                            f"💬 *Último cliente:*\n{getattr(conv, 'last_client_message_text', '') or '-'}"
+                        )
+                        if text:
+                            header = header + f"\n\n🧑‍💼 *Último agente:*\n{text}"
+                        elements = [
+                            {"type": "button", "text": {"type": "plain_text", "text": "Responder al cliente"}, "action_id": "respond_to_client", "style": "primary"},
+                            {"type": "button", "text": {"type": "plain_text", "text": "Resuelto"}, "action_id": "mark_resolved", "style": "danger"}
+                        ]
+                        blocks = [
+                            {"type": "section", "text": {"type": "mrkdwn", "text": header}},
+                            {"type": "actions", "elements": elements}
+                        ]
+                        slack_service.update_message(channel, thread_ts, header, blocks=blocks)
+                    except Exception as _:
+                        pass
                 else:
                     logger.error("❌ Error enviando mensaje del agente a WhatsApp")
                 break
