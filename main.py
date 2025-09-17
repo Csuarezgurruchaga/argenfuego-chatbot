@@ -92,7 +92,7 @@ async def webhook_whatsapp(request: Request):
             channel = conversacion_actual.slack_channel_id or os.getenv("SLACK_CHANNEL_ID", "")
             
             # Construir "card": estado + último mensaje
-            estado = "Activo" if conversacion_actual.modo_conversacion_activa else "En espera ⏸️"
+            estado = "" if conversacion_actual.modo_conversacion_activa else "En espera ⏸️"
             # Guardar último mensaje del cliente para poder mostrarlo junto al del agente
             try:
                 setattr(conversacion_actual, "last_client_message_text", mensaje_usuario)
@@ -101,14 +101,14 @@ async def webhook_whatsapp(request: Request):
 
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.slack_thread_ts:
                 header = (
-                    f"🔄 *Nueva solicitud de agente humano*  ·  {estado}\n"
+                    f"🔄 *Nueva solicitud de agente humano*{f'  ·  {estado}' if estado else ''}\n"
                     f"Cliente: {profile_name or ''} ({numero_telefono})\n\n"
                     f"📝 *Mensaje que disparó el handoff:*\n{conversacion_actual.mensaje_handoff_contexto}\n\n"
                     f"💬 *Cliente:*\n{mensaje_usuario}"
                 )
             else:
                 header = (
-                    f"👤 {profile_name or ''} ({numero_telefono})  ·  {estado}\n\n"
+                    f"👤 {profile_name or ''} ({numero_telefono}){f'  ·  {estado}' if estado else ''}\n\n"
                     f"💬 *Cliente:*\n{mensaje_usuario}"
                 )
             # Incluir última respuesta del agente si existe
@@ -623,9 +623,9 @@ async def handle_slack_message(event: dict):
                     # Guardar última respuesta del agente y refrescar card
                     try:
                         setattr(conv, "last_agent_message_text", text)
-                        estado = "Activo" if conv.modo_conversacion_activa else "En espera ⏸️"
+                        estado = "" if conv.modo_conversacion_activa else "En espera ⏸️"
                         header = (
-                            f"👤 {conv.numero_telefono}  ·  {estado}\n\n"
+                            f"👤 {conv.numero_telefono}{f'  ·  {estado}' if estado else ''}\n\n"
                             f"💬 *Cliente:*\n{getattr(conv, 'last_client_message_text', '') or '-'}"
                         )
                         if text:
