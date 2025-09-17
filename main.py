@@ -384,8 +384,18 @@ async def handle_button_click(payload: dict):
                     break
             
             if to:
-                # Solo responder al botón, sin mensaje de confirmación al hilo
-                slack_service.respond_interaction(response_url, "✅ Modo conversación activa activado. Responde directamente en el hilo.")
+                # Ephemeral con link directo para abrir el hilo en nueva pestaña/ventana
+                team_id = (payload.get("team", {}) or {}).get("id", "")
+                # Link web (cliente web de Slack)
+                web_link = f"https://app.slack.com/client/{team_id}/{channel_id}/thread/{channel_id}-{thread_ts}"
+                # Deep link para app nativa (fallback si soportado)
+                deep_link = f"slack://channel?team={team_id}&id={channel_id}"
+                ephemeral_text = (
+                    "✅ Modo conversación activa activado. "
+                    f"Abrí el hilo acá: {web_link} \n"
+                    f"(App nativa: {deep_link})"
+                )
+                slack_service.respond_interaction(response_url, ephemeral_text)
                 return PlainTextResponse("")
             else:
                 logger.error(f"❌ No se encontró conversación para thread_ts={thread_ts}, channel_id={channel_id}")
