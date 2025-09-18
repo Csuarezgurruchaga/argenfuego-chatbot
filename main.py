@@ -56,16 +56,38 @@ async def handoff_ttl_sweep(token: str = Form(...)):
     from datetime import datetime, timedelta
     ahora = datetime.utcnow()
     cerradas = 0
+    resolution_timeout_minutes = 10  # Timeout para preguntas de resolución
+    
     for conv in list(conversation_manager.conversaciones.values()):
         if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
-            last_ts = conv.last_client_message_at or conv.handoff_started_at
-            if last_ts and (ahora - last_ts) > timedelta(minutes=TTL_MINUTES):
+            should_close = False
+            close_reason = ""
+            
+            # Verificar timeout de pregunta de resolución (10 minutos)
+            if conv.resolution_question_sent and conv.resolution_question_sent_at:
+                if (ahora - conv.resolution_question_sent_at) > timedelta(minutes=resolution_timeout_minutes):
+                    should_close = True
+                    close_reason = "Pregunta de resolución sin respuesta"
+            
+            # Verificar TTL general (120 minutos)
+            elif conv.last_client_message_at or conv.handoff_started_at:
+                last_ts = conv.last_client_message_at or conv.handoff_started_at
+                if last_ts and (ahora - last_ts) > timedelta(minutes=TTL_MINUTES):
+                    should_close = True
+                    close_reason = "Inactividad general"
+            
+            if should_close:
                 try:
-                    twilio_service.send_whatsapp_message(conv.numero_telefono, "Esta conversación se finalizará por inactividad. ¡Muchas gracias por contactarnos! 🕒")
+                    if close_reason == "Pregunta de resolución sin respuesta":
+                        twilio_service.send_whatsapp_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
+                    else:
+                        twilio_service.send_whatsapp_message(conv.numero_telefono, "Esta conversación se finalizará por inactividad. ¡Muchas gracias por contactarnos! 🕒")
                 except Exception:
                     pass
                 conversation_manager.finalizar_conversacion(conv.numero_telefono)
                 cerradas += 1
+                logger.info(f"Conversación {conv.numero_telefono} cerrada por: {close_reason}")
+    
     return {"closed": cerradas}
 
 @app.post("/webhook")
@@ -97,8 +119,8 @@ async def webhook_whatsapp(request: Request):
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
             # Notificar al agente vía WhatsApp
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:
-                # Es el primer mensaje del handoff, incluir contexto completo
-                success = whatsapp_handoff_service.notify_agent_new_handoff(
+                # Es el primer mensaje del handoff, incluir contexto completo con botones
+                success = whatsapp_handoff_service.send_agent_buttons(
                     numero_telefono,
                     profile_name or '',
                     conversacion_actual.mensaje_handoff_contexto,
@@ -596,23 +618,28 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
             resolved_count = 0
             for phone, conv in conversation_manager.conversaciones.items():
                 if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
-                    # Finalizar conversación
-                    conversation_manager.finalizar_conversacion(phone)
-                    
-                    # Enviar mensaje de cierre al cliente
-                    cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
-                    twilio_service.send_whatsapp_message(phone, cierre_msg)
-                    
-                    # Notificar al agente
-                    whatsapp_handoff_service.notify_handoff_resolved(phone, conv.nombre_usuario or "")
-                    resolved_count += 1
+                    # En lugar de cerrar inmediatamente, enviar pregunta de resolución
+                    if not conv.resolution_question_sent:
+                        success = whatsapp_handoff_service.send_resolution_question_to_client(phone)
+                        if success:
+                            conv.resolution_question_sent = True
+                            conv.resolution_question_sent_at = datetime.utcnow()
+                            resolved_count += 1
+                            
+                            # Notificar al agente
+                            confirmation_msg = f"✅ Pregunta de resolución enviada al cliente {phone}. Se cerrará automáticamente si no responde en 10 minutos."
+                            twilio_service.send_whatsapp_message(agent_phone, confirmation_msg)
+                    else:
+                        # Si ya se envió la pregunta, finalizar directamente
+                        conversation_manager.finalizar_conversacion(phone)
+                        cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
+                        twilio_service.send_whatsapp_message(phone, cierre_msg)
+                        whatsapp_handoff_service.notify_handoff_resolved(phone, conv.nombre_usuario or "")
+                        resolved_count += 1
             
-            if resolved_count > 0:
-                confirmation_msg = f"✅ Se finalizaron {resolved_count} conversación(es) en handoff."
-            else:
-                confirmation_msg = "ℹ️ No hay conversaciones activas en handoff para finalizar."
-            
-            twilio_service.send_whatsapp_message(agent_phone, confirmation_msg)
+            if resolved_count == 0:
+                no_handoff_msg = "ℹ️ No hay conversaciones activas en handoff para finalizar."
+                twilio_service.send_whatsapp_message(agent_phone, no_handoff_msg)
             return
         
         # Si no es comando de resolución, buscar conversaciones en handoff para responder

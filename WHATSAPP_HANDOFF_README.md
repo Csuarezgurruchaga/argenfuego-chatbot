@@ -37,21 +37,25 @@ TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886  # Número de Twilio WhatsApp
 - Sus mensajes se envían al cliente con el prefijo "👨‍💼 *Agente:*"
 - El agente recibe confirmación de que su mensaje fue enviado
 
-### 4. Resolution
-- Para finalizar la conversación, el agente envía: `/resuelto`
-- Se envía mensaje de cierre al cliente
-- Se notifica al agente que la conversación fue resuelta
+### 4. Resolution (Mejorado)
+- Para finalizar la conversación, el agente envía: `ok`, `listo`, `/r`, etc.
+- Se envía pregunta al cliente: "¿Hay algo más en lo que pueda ayudarte?"
+- Si el cliente no responde en 10 minutos, se cierra automáticamente
+- Si el cliente responde, continúa la conversación
 
 ## Agent Commands
 
 | Command | Description |
 |---------|-------------|
-| `/resuelto` | Finaliza todas las conversaciones activas en handoff |
-| `/resolved` | Alias para `/resuelto` |
-| `/cerrar` | Alias para `/resuelto` |
-| `/close` | Alias para `/resuelto` |
-| `/fin` | Alias para `/resuelto` |
-| `/end` | Alias para `/resuelto` |
+| `/resuelto`, `/r` | Envía pregunta de resolución al cliente |
+| `ok`, `listo`, `done` | Comandos naturales para resolución |
+| `/resolved`, `/cerrar`, `/close`, `/fin`, `/end` | Alias para resolución |
+
+### Comandos Cortos y Naturales
+- **`/r`** - Resolución rápida
+- **`ok`** - Comando natural más usado
+- **`listo`** - Comando en español
+- **`done`** - Comando en inglés
 
 ## Message Flow
 
@@ -67,9 +71,16 @@ Agent → Bot: "Hola Juan, ¿en qué puedo ayudarte?"
 Bot → Client: "👨‍💼 Agente: Hola Juan, ¿en qué puedo ayudarte?"
 Bot → Agent: "✅ Mensaje enviado al cliente +5491123456789"
 
-Agent → Bot: "/resuelto"
+Agent → Bot: "ok"
+Bot → Client: "👨‍💼 Agente: ¿Hay algo más en lo que pueda ayudarte?"
+Bot → Agent: "✅ Pregunta de resolución enviada al cliente +5491123456789. Se cerrará automáticamente si no responde en 10 minutos."
+
+# Si cliente no responde en 10 minutos:
 Bot → Client: "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
-Bot → Agent: "✅ Se finalizaron 1 conversación(es) en handoff."
+
+# Si cliente responde:
+Client → Bot: "Sí, tengo otra pregunta"
+Bot → Agent: "💬 Nuevo mensaje del cliente\nCliente: Juan (+5491123456789)\nMensaje: Sí, tengo otra pregunta"
 ```
 
 ## Technical Implementation
@@ -82,9 +93,11 @@ Bot → Agent: "✅ Se finalizaron 1 conversación(es) en handoff."
 ### Key Features
 - **Agent Detection**: Automatically detects messages from the agent's WhatsApp number
 - **Bidirectional Communication**: Agent can respond to clients directly
-- **Resolution Commands**: Multiple command aliases for ending conversations
+- **Smart Resolution**: Natural commands (ok, listo, /r) with client confirmation
+- **Auto Timeout**: Conversations close automatically after 10 minutes of no response
 - **Error Handling**: Comprehensive error handling and logging
 - **Confirmation Messages**: Agent receives confirmation of sent messages
+- **Improved UX**: Short commands and natural language support
 
 ## Migration from Slack
 

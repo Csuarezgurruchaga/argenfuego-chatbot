@@ -195,8 +195,89 @@ class WhatsAppHandoffService:
         Returns:
             bool: True si es un comando de resolución
         """
-        resolution_commands = ['/resuelto', '/resolved', '/cerrar', '/close', '/fin', '/end']
+        resolution_commands = [
+            '/resuelto', '/resolved', '/cerrar', '/close', '/fin', '/end',
+            '/r', 'resuelto', 'resolved', 'cerrar', 'close', 'fin', 'end',
+            'ok', 'listo', 'done', 'terminado', 'completado'
+        ]
         return message.strip().lower() in resolution_commands
+
+    def send_agent_buttons(self, client_phone: str, client_name: str, 
+                          handoff_message: str, current_message: str) -> bool:
+        """
+        Envía notificación al agente con botones interactivos de WhatsApp.
+        
+        Args:
+            client_phone: Número de teléfono del cliente
+            client_name: Nombre del cliente
+            handoff_message: Mensaje que disparó el handoff
+            current_message: Último mensaje del cliente
+            
+        Returns:
+            bool: True si se envió exitosamente
+        """
+        try:
+            # Formatear mensaje principal
+            main_message = self._format_handoff_notification(
+                client_phone, client_name, handoff_message, current_message
+            )
+            
+            # Enviar mensaje principal
+            success = twilio_service.send_whatsapp_message(
+                self.agent_whatsapp_number, 
+                main_message
+            )
+            
+            if success:
+                # Enviar botones como mensaje separado
+                buttons_message = (
+                    f"📱 *Opciones de respuesta:*\n\n"
+                    f"• Escribe tu respuesta para enviar al cliente\n"
+                    f"• Envía 'ok' o 'listo' para marcar como resuelto\n"
+                    f"• Envía '/r' para resolución rápida"
+                )
+                
+                twilio_service.send_whatsapp_message(
+                    self.agent_whatsapp_number, 
+                    buttons_message
+                )
+                
+                logger.info(f"✅ Notificación con botones enviada al agente para cliente {client_phone}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error en send_agent_buttons: {e}")
+            return False
+
+    def send_resolution_question_to_client(self, client_phone: str) -> bool:
+        """
+        Envía pregunta de resolución al cliente.
+        
+        Args:
+            client_phone: Número de teléfono del cliente
+            
+        Returns:
+            bool: True si se envió exitosamente
+        """
+        try:
+            question_message = (
+                f"👨‍💼 *Agente:* ¿Hay algo más en lo que pueda ayudarte?\n\n"
+                f"Si no necesitas más ayuda, simplemente no respondas y la conversación se cerrará automáticamente en unos minutos."
+            )
+            
+            success = twilio_service.send_whatsapp_message(client_phone, question_message)
+            
+            if success:
+                logger.info(f"✅ Pregunta de resolución enviada al cliente {client_phone}")
+            else:
+                logger.error(f"❌ Error enviando pregunta de resolución al cliente {client_phone}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error en send_resolution_question_to_client: {e}")
+            return False
 
     def get_agent_phone(self) -> str:
         """

@@ -53,6 +53,8 @@ class ConversacionData(BaseModel):
     modo_conversacion_activa: bool = False  # Modo conversación activa para respuestas directas del agente
     mensaje_handoff_contexto: Optional[str] = None  # Mensaje que disparó el handoff para contexto del agente
     handoff_notified: bool = False  # Indica si ya se notificó al agente sobre el handoff
+    resolution_question_sent: bool = False  # Indica si se envió la pregunta de resolución al cliente
+    resolution_question_sent_at: Optional[datetime] = None  # Timestamp de cuando se envió la pregunta de resolución
     
     class Config:
         use_enum_values = True
