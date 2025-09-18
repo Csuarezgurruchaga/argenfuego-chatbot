@@ -14,6 +14,7 @@ from chatbot.states import conversation_manager
 from chatbot.models import EstadoConversacion
 from services.slack_service import slack_service
 from services.twilio_service import twilio_service
+from services.whatsapp_handoff_service import whatsapp_handoff_service
 from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
 from services.metrics_service import metrics_service
@@ -85,53 +86,33 @@ async def webhook_whatsapp(request: Request):
         
         logger.info(f"Procesando mensaje de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
         
-        # Si está en handoff, reenviar a Slack y no responder con bot
+        # Verificar si el mensaje viene del agente
+        if whatsapp_handoff_service.is_agent_message(numero_telefono):
+            # Procesar mensaje del agente
+            await handle_agent_message(numero_telefono, mensaje_usuario, profile_name)
+            return PlainTextResponse("", status_code=200)
+        
+        # Si está en handoff, reenviar a WhatsApp del agente y no responder con bot
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
-            # Publicar en Slack (canal configurado) en thread asociado o crear uno
-            channel = conversacion_actual.slack_channel_id or os.getenv("SLACK_CHANNEL_ID", "")
-            
-            # Si es el primer mensaje del handoff, incluir contexto
-            if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.slack_thread_ts:
-                header = f"🔄 *Nueva solicitud de agente humano*\nCliente: {profile_name or ''} ({numero_telefono})\n\n📝 *Mensaje que disparó el handoff:*\n{conversacion_actual.mensaje_handoff_contexto}\n\n💬 *Último mensaje:*\n{mensaje_usuario}"
+            # Notificar al agente vía WhatsApp
+            if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:
+                # Es el primer mensaje del handoff, incluir contexto completo
+                success = whatsapp_handoff_service.notify_agent_new_handoff(
+                    numero_telefono,
+                    profile_name or '',
+                    conversacion_actual.mensaje_handoff_contexto,
+                    mensaje_usuario
+                )
+                if success:
+                    conversacion_actual.handoff_notified = True
             else:
-                header = f"Nuevo mensaje del cliente {profile_name or ''} ({numero_telefono}):\n{mensaje_usuario}"
-            
-            # Botones condicionales: "Responder al cliente" solo si no está activo
-            elements = []
-            
-            # Solo mostrar "Responder al cliente" si el modo conversación no está activo
-            if not conversacion_actual.modo_conversacion_activa:
-                elements.append({
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Responder al cliente"},
-                    "action_id": "respond_to_client",
-                    "style": "primary"
-                })
-            
-            # Botón "Resuelto" siempre visible
-            elements.append({
-                "type": "button",
-                "text": {"type": "plain_text", "text": "Resuelto"},
-                "action_id": "mark_resolved",
-                "style": "danger"
-            })
-            
-            blocks = [
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": header}
-                },
-                {
-                    "type": "actions",
-                    "elements": elements
-                }
-            ]
-            
-            ts = slack_service.post_message(channel, header, thread_ts=conversacion_actual.slack_thread_ts, blocks=blocks)
-            if not conversacion_actual.slack_thread_ts and ts:
-                conversacion_actual.slack_thread_ts = ts
-                conversacion_actual.slack_channel_id = channel
+                # Es un mensaje posterior durante el handoff
+                whatsapp_handoff_service.notify_agent_new_message(
+                    numero_telefono,
+                    profile_name or '',
+                    mensaje_usuario
+                )
             try:
                 from datetime import datetime
                 conversacion_actual.last_client_message_at = datetime.utcnow()
@@ -148,45 +129,25 @@ async def webhook_whatsapp(request: Request):
         if not mensaje_enviado:
             logger.error(f"Error enviando mensaje a {numero_telefono}")
         
-        # Si durante el procesamiento se activó el handoff, crear el hilo en Slack con el MENSAJE QUE DISPARÓ el handoff
+        # Si durante el procesamiento se activó el handoff, notificar al agente vía WhatsApp
         try:
             conversacion_post = conversation_manager.get_conversacion(numero_telefono)
             if (
                 (conversacion_post.atendido_por_humano or conversacion_post.estado == EstadoConversacion.ATENDIDO_POR_HUMANO)
-                and not conversacion_post.slack_thread_ts
+                and not conversacion_post.handoff_notified
             ):
-                channel = conversacion_post.slack_channel_id or os.getenv("SLACK_CHANNEL_ID", "")
-                texto_contexto = conversacion_post.mensaje_handoff_contexto or mensaje_usuario
-                header = (
-                    f"🔄 *Nueva solicitud de agente humano*\n"
-                    f"Cliente: {profile_name or ''} ({numero_telefono})\n\n"
-                    f"📝 *Mensaje que disparó el handoff:*\n{texto_contexto}"
+                # Notificar al agente sobre el nuevo handoff
+                success = whatsapp_handoff_service.notify_agent_new_handoff(
+                    numero_telefono,
+                    profile_name or '',
+                    conversacion_post.mensaje_handoff_contexto or mensaje_usuario,
+                    mensaje_usuario
                 )
-                elements = []
-                if not conversacion_post.modo_conversacion_activa:
-                    elements.append({
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": "Responder al cliente"},
-                        "action_id": "respond_to_client",
-                        "style": "primary"
-                    })
-                elements.append({
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Resuelto"},
-                    "action_id": "mark_resolved",
-                    "style": "danger"
-                })
-                blocks = [
-                    {"type": "section", "text": {"type": "mrkdwn", "text": header}},
-                    {"type": "actions", "elements": elements}
-                ]
-                ts = slack_service.post_message(channel, header, blocks=blocks)
-                if ts:
-                    conversacion_post.slack_thread_ts = ts
-                    conversacion_post.slack_channel_id = channel
-                    logger.info(f"✅ Hilo de handoff creado con contexto inicial: {ts}")
+                if success:
+                    conversacion_post.handoff_notified = True
+                    logger.info(f"✅ Handoff notificado al agente para cliente {numero_telefono}")
         except Exception as e:
-            logger.error(f"Error creando hilo de handoff post-procesamiento: {e}")
+            logger.error(f"Error notificando handoff al agente: {e}")
 
         # Verificar si necesitamos enviar email
         conversacion = conversation_manager.get_conversacion(numero_telefono)
@@ -616,6 +577,86 @@ async def get_stats():
         "conversaciones_por_estado": conversaciones_por_estado,
         "timestamp": "2024-01-01T00:00:00Z"  # Placeholder timestamp
     }
+
+async def handle_agent_message(agent_phone: str, message: str, profile_name: str = ""):
+    """
+    Maneja mensajes del agente humano.
+    
+    Args:
+        agent_phone: Número de teléfono del agente
+        message: Mensaje del agente
+        profile_name: Nombre del perfil del agente (si está disponible)
+    """
+    try:
+        logger.info(f"Procesando mensaje del agente {agent_phone}: {message}")
+        
+        # Verificar si es un comando de resolución
+        if whatsapp_handoff_service.is_resolution_command(message):
+            # Buscar conversaciones activas en handoff
+            resolved_count = 0
+            for phone, conv in conversation_manager.conversaciones.items():
+                if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
+                    # Finalizar conversación
+                    conversation_manager.finalizar_conversacion(phone)
+                    
+                    # Enviar mensaje de cierre al cliente
+                    cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
+                    twilio_service.send_whatsapp_message(phone, cierre_msg)
+                    
+                    # Notificar al agente
+                    whatsapp_handoff_service.notify_handoff_resolved(phone, conv.nombre_usuario or "")
+                    resolved_count += 1
+            
+            if resolved_count > 0:
+                confirmation_msg = f"✅ Se finalizaron {resolved_count} conversación(es) en handoff."
+            else:
+                confirmation_msg = "ℹ️ No hay conversaciones activas en handoff para finalizar."
+            
+            twilio_service.send_whatsapp_message(agent_phone, confirmation_msg)
+            return
+        
+        # Si no es comando de resolución, buscar conversaciones en handoff para responder
+        # El agente debe especificar a qué cliente responder
+        # Por ahora, asumimos que el agente está respondiendo a la conversación más reciente en handoff
+        
+        # Buscar la conversación más reciente en handoff
+        latest_handoff_conv = None
+        latest_timestamp = None
+        
+        for phone, conv in conversation_manager.conversaciones.items():
+            if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
+                if conv.handoff_started_at and (latest_timestamp is None or conv.handoff_started_at > latest_timestamp):
+                    latest_handoff_conv = conv
+                    latest_timestamp = conv.handoff_started_at
+        
+        if latest_handoff_conv:
+            # Enviar respuesta del agente al cliente
+            success = whatsapp_handoff_service.send_agent_response_to_client(
+                latest_handoff_conv.numero_telefono, 
+                message
+            )
+            
+            if success:
+                # Confirmar al agente que el mensaje se envió
+                confirmation_msg = f"✅ Mensaje enviado al cliente {latest_handoff_conv.numero_telefono}"
+                twilio_service.send_whatsapp_message(agent_phone, confirmation_msg)
+            else:
+                # Notificar error al agente
+                error_msg = f"❌ Error enviando mensaje al cliente {latest_handoff_conv.numero_telefono}"
+                twilio_service.send_whatsapp_message(agent_phone, error_msg)
+        else:
+            # No hay conversaciones en handoff
+            no_handoff_msg = "ℹ️ No hay conversaciones activas en handoff. Para finalizar conversaciones, usa: /resuelto"
+            twilio_service.send_whatsapp_message(agent_phone, no_handoff_msg)
+            
+    except Exception as e:
+        logger.error(f"Error en handle_agent_message: {e}")
+        # Enviar mensaje de error al agente
+        try:
+            error_msg = f"❌ Error procesando tu mensaje: {str(e)}"
+            twilio_service.send_whatsapp_message(agent_phone, error_msg)
+        except Exception:
+            pass
 
 @app.post("/reset-conversation")
 async def reset_conversation(numero_telefono: str = Form(...)):
