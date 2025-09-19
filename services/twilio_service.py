@@ -1,4 +1,5 @@
 import os
+import json
 from twilio.rest import Client
 from typing import Optional
 import logging
@@ -67,6 +68,47 @@ class TwilioService:
             
         except Exception as e:
             logger.error(f"Error enviando media a {to_number}: {str(e)}")
+            return False
+    
+    def send_whatsapp_template(self, to_number: str, template_name: str, parameters: list = None) -> bool:
+        """
+        Envía un Message Template de WhatsApp
+        
+        Args:
+            to_number: Número de destino
+            template_name: Nombre del template (ej: "handoff_notification")
+            parameters: Lista de parámetros para el template
+            
+        Returns:
+            bool: True si se envió exitosamente
+        """
+        try:
+            logger.info(f"=== TWILIO TEMPLATE SEND DEBUG ===")
+            logger.info(f"to_number: {to_number}")
+            logger.info(f"template_name: {template_name}")
+            logger.info(f"parameters: {parameters}")
+            
+            # Asegurar que el número tenga el prefijo whatsapp:
+            if not to_number.startswith('whatsapp:'):
+                to_number = f'whatsapp:{to_number}'
+            
+            # Preparar el contenido del template
+            template_content = f"whatsapp:{template_name}"
+            
+            # Crear el mensaje con template
+            message = self.client.messages.create(
+                from_=self.whatsapp_number,
+                to=to_number,
+                content_sid=template_content,
+                content_variables=json.dumps(parameters) if parameters else None
+            )
+            
+            logger.info(f"✅ Template enviado exitosamente a {to_number}. SID: {message.sid}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error enviando template a {to_number}: {str(e)}")
+            logger.error(f"Tipo de error: {type(e).__name__}")
             return False
     
     def extract_message_data(self, request_data: dict) -> tuple[str, str, str, str]:

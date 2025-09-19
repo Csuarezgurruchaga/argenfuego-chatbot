@@ -26,7 +26,7 @@ class WhatsAppHandoffService:
     def notify_agent_new_handoff(self, client_phone: str, client_name: str, 
                                 handoff_message: str, current_message: str) -> bool:
         """
-        Notifica al agente sobre una nueva solicitud de handoff.
+        Notifica al agente sobre una nueva solicitud de handoff usando Message Template.
         
         Args:
             client_phone: Número de teléfono del cliente
@@ -38,15 +38,16 @@ class WhatsAppHandoffService:
             bool: True si la notificación se envió exitosamente
         """
         try:
-            # Formatear mensaje para el agente
-            agent_message = self._format_handoff_notification(
-                client_phone, client_name, handoff_message, current_message
-            )
-            
-            # Enviar mensaje al agente
-            success = twilio_service.send_whatsapp_message(
-                self.agent_whatsapp_number, 
-                agent_message
+            # Usar Message Template para iniciar conversación
+            success = twilio_service.send_whatsapp_template(
+                self.agent_whatsapp_number,
+                "handoff_notification",  # Nombre del template
+                [
+                    client_name or "Sin nombre",  # {{1}}
+                    client_phone,                 # {{2}}
+                    handoff_message,              # {{3}}
+                    current_message               # {{4}}
+                ]
             )
             
             if success:

@@ -695,6 +695,94 @@ async def reset_conversation(numero_telefono: str = Form(...)):
         logger.error(f"Error reseteando conversación: {str(e)}")
         raise HTTPException(status_code=500, detail="Error reseteando conversación")
 
+@app.post("/debug/test-handoff")
+async def debug_test_handoff(token: str = Form(...)):
+    """Endpoint temporal para debuggear el handoff - ENVIAR MENSAJE DIRECTO AL AGENTE"""
+    if token != os.getenv("AGENT_API_TOKEN", ""):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    try:
+        # Obtener número del agente
+        agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+        if not agent_number:
+            return {"error": "AGENT_WHATSAPP_NUMBER no configurado"}
+        
+        # Mensaje de prueba
+        from datetime import datetime
+        test_message = f"""🧪 *TEST DE HANDOFF - DEBUG*
+
+Este es un mensaje de prueba para verificar que el sistema de handoff funciona correctamente.
+
+Si recibes este mensaje, el sistema está funcionando ✅
+
+Cliente de prueba: +5491123456789
+Mensaje: 'quiero hablar con un humano'
+
+Timestamp: {datetime.utcnow().isoformat()}"""
+
+        # Enviar mensaje directo al agente
+        success = twilio_service.send_whatsapp_message(agent_number, test_message)
+        
+        if success:
+            return {
+                "status": "success",
+                "message": f"Mensaje de prueba enviado a {agent_number}",
+                "agent_number": agent_number
+            }
+        else:
+            return {
+                "status": "error", 
+                "message": f"Error enviando mensaje a {agent_number}",
+                "agent_number": agent_number
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en debug test handoff: {e}")
+        return {"error": f"Error interno: {str(e)}"}
+
+@app.post("/debug/test-handoff-full")
+async def debug_test_handoff_full(token: str = Form(...)):
+    """Endpoint temporal para debuggear el handoff completo - SIMULAR CONVERSACIÓN REAL"""
+    if token != os.getenv("AGENT_API_TOKEN", ""):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    try:
+        # Simular una conversación completa
+        test_phone = "+5491123456789"
+        test_name = "Cliente Test"
+        test_message = "quiero hablar con un humano"
+        
+        # 1. Procesar mensaje como si fuera del cliente
+        respuesta = ChatbotRules.procesar_mensaje(test_phone, test_message, test_name)
+        
+        # 2. Verificar si se activó el handoff
+        conversacion = conversation_manager.get_conversacion(test_phone)
+        handoff_activated = conversacion.atendido_por_humano or conversacion.estado == EstadoConversacion.ATENDIDO_POR_HUMANO
+        
+        # 3. Si se activó, notificar al agente
+        if handoff_activated and not conversacion.handoff_notified:
+            success = whatsapp_handoff_service.notify_agent_new_handoff(
+                test_phone,
+                test_name,
+                conversacion.mensaje_handoff_contexto or test_message,
+                test_message
+            )
+            if success:
+                conversacion.handoff_notified = True
+        
+        return {
+            "status": "success",
+            "handoff_activated": handoff_activated,
+            "handoff_notified": conversacion.handoff_notified,
+            "bot_response": respuesta,
+            "conversation_state": conversacion.estado,
+            "agent_number": os.getenv("AGENT_WHATSAPP_NUMBER", "")
+        }
+        
+    except Exception as e:
+        logger.error(f"Error en debug test handoff full: {e}")
+        return {"error": f"Error interno: {str(e)}"}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
