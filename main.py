@@ -892,6 +892,69 @@ async def debug_test_handoff_full(token: str = Form(...)):
         logger.error(f"Error en debug test handoff full: {e}")
         return {"error": f"Error interno: {str(e)}"}
 
+@app.post("/test-bot-flow")
+async def test_bot_flow(test_number: str = Form(...)):
+    """Endpoint para probar el flujo completo del bot desde un número específico"""
+    try:
+        from chatbot.rules import ChatbotRules
+        from chatbot.states import conversation_manager
+        from services.twilio_service import twilio_service
+        
+        logger.info(f"🧪 TESTING BOT FLOW para número: {test_number}")
+        
+        # Resetear conversación
+        conversation_manager.reset_conversacion(test_number)
+        
+        # Simular mensaje "hola"
+        respuesta = ChatbotRules.procesar_mensaje(test_number, "hola", "Usuario Test")
+        
+        # Enviar respuesta
+        if respuesta:
+            success = twilio_service.send_whatsapp_message(test_number, respuesta)
+            if success:
+                return {
+                    "message": "Flujo de bot probado exitosamente",
+                    "test_number": test_number,
+                    "response_sent": True
+                }
+            else:
+                return {"error": "Error enviando respuesta del bot"}
+        else:
+            return {
+                "message": "Bot procesó el mensaje (respuesta en background)",
+                "test_number": test_number,
+                "response_sent": False
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en test de bot flow: {str(e)}")
+        return {"error": f"Error: {str(e)}"}
+
+@app.post("/test-interactive-buttons")
+async def test_interactive_buttons(test_number: str = Form(...)):
+    """Endpoint para probar botones interactivos"""
+    try:
+        from chatbot.rules import ChatbotRules
+        from services.twilio_service import twilio_service
+        
+        logger.info(f"🧪 TESTING INTERACTIVE BUTTONS para número: {test_number}")
+        
+        # Probar menú interactivo
+        success = ChatbotRules.send_menu_interactivo(test_number, "Usuario Test")
+        
+        if success:
+            return {
+                "message": "Botones interactivos enviados exitosamente",
+                "test_number": test_number,
+                "button_type": "menu_interactivo"
+            }
+        else:
+            return {"error": "Error enviando botones interactivos"}
+            
+    except Exception as e:
+        logger.error(f"Error en test de botones interactivos: {str(e)}")
+        return {"error": f"Error: {str(e)}"}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
