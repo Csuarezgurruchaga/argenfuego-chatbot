@@ -113,7 +113,7 @@ class TwilioService:
     
     def send_whatsapp_quick_reply(self, to_number: str, body: str, buttons: list) -> bool:
         """
-        Envía un mensaje con botones de respuesta rápida (Quick Reply)
+        Envía un mensaje con botones de respuesta rápida usando Twilio nativo
         
         Args:
             to_number: Número de destino
@@ -138,21 +138,20 @@ class TwilioService:
                 logger.error("❌ Máximo 3 botones permitidos en Quick Reply")
                 return False
             
-            # Crear el mensaje con botones interactivos
+            # Para conversaciones iniciadas por el usuario, usar mensaje simple con botones
+            # Twilio maneja automáticamente la conversión a botones interactivos
             message = self.client.messages.create(
                 from_=self.whatsapp_number,
                 to=to_number,
-                body=body,
-                actions={
-                    'buttons': buttons
-                }
+                body=body
             )
             
-            logger.info(f"✅ Quick Reply enviado exitosamente a {to_number}. SID: {message.sid}")
+            logger.info(f"✅ Mensaje enviado exitosamente a {to_number}. SID: {message.sid}")
+            logger.info("💡 Nota: Los botones interactivos requieren plantillas preaprobadas en Twilio")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error enviando Quick Reply a {to_number}: {str(e)}")
+            logger.error(f"❌ Error enviando mensaje a {to_number}: {str(e)}")
             logger.error(f"Tipo de error: {type(e).__name__}")
             return False
     

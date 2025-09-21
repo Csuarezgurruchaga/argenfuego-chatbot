@@ -94,7 +94,7 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def send_menu_interactivo(numero_telefono: str, nombre_usuario: str = ""):
         """
-        Envía el menú principal con botones interactivos
+        Envía el menú principal con botones de texto mejorados
         """
         from services.twilio_service import twilio_service
         import logging
@@ -106,25 +106,26 @@ Responde con el número de la opción que necesitas 📱"""
         else:
             saludo = "¡Hola! 👋🏻 Mi nombre es Eva 👩🏻‍🦱, soy la asistente virtual de Argenfuego."
         
-        mensaje = f"{saludo}\n\n¿En qué puedo ayudarte hoy?"
+        # Crear menú con botones de texto mejorados
+        mensaje = f"""{saludo}
+
+¿En qué puedo ayudarte hoy?
+
+┌─────────────────────────────┐
+│  📋 1. Solicitar presupuesto │
+│  🚨 2. Reportar urgencia     │
+│  ❓ 3. Otras consultas       │
+└─────────────────────────────┘
+
+💡 *Responde con el número de la opción que necesitas*"""
         
-        # Botones interactivos
-        buttons = [
-            {"id": "presupuesto", "title": "📋 Presupuesto"},
-            {"id": "urgencia", "title": "🚨 Urgencia"},
-            {"id": "otras", "title": "❓ Otras consultas"}
-        ]
-        
-        # Enviar mensaje con botones
-        success = twilio_service.send_whatsapp_quick_reply(numero_telefono, mensaje, buttons)
+        # Enviar mensaje
+        success = twilio_service.send_whatsapp_message(numero_telefono, mensaje)
         
         if success:
-            logger.info(f"✅ Menú interactivo enviado a {numero_telefono}")
+            logger.info(f"✅ Menú mejorado enviado a {numero_telefono}")
         else:
-            logger.error(f"❌ Error enviando menú interactivo a {numero_telefono}")
-            # Fallback a mensaje de texto normal
-            mensaje_fallback = f"{mensaje}\n\n1️⃣ Solicitar un presupuesto\n2️⃣ Reportar una urgencia\n3️⃣ Otras consultas\n\nResponde con el número de la opción que necesitas 📱"
-            twilio_service.send_whatsapp_message(numero_telefono, mensaje_fallback)
+            logger.error(f"❌ Error enviando menú a {numero_telefono}")
         
         return success
     
@@ -137,24 +138,23 @@ Responde con el número de la opción que necesitas 📱"""
         import logging
         logger = logging.getLogger(__name__)
         
-        mensaje = "Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼\nUn asesor continuará la conversación en este mismo chat."
+        mensaje = f"""Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼
+Un asesor continuará la conversación en este mismo chat.
+
+┌─────────────────────────────┐
+│  ⬅️ 1. Volver al menú        │
+│  ✋ 2. Finalizar chat        │
+└─────────────────────────────┘
+
+💡 *Responde con el número de la opción que necesitas*"""
         
-        # Botones de navegación
-        buttons = [
-            {"id": "volver_menu", "title": "⬅️ Volver al menú"},
-            {"id": "finalizar_chat", "title": "✋ Finalizar chat"}
-        ]
-        
-        # Enviar mensaje con botones
-        success = twilio_service.send_whatsapp_quick_reply(numero_telefono, mensaje, buttons)
+        # Enviar mensaje
+        success = twilio_service.send_whatsapp_message(numero_telefono, mensaje)
         
         if success:
             logger.info(f"✅ Botones de handoff enviados a {numero_telefono}")
         else:
             logger.error(f"❌ Error enviando botones de handoff a {numero_telefono}")
-            # Fallback a mensaje de texto normal
-            mensaje_fallback = f"{mensaje}\n\nEscribe 'menú' para volver al inicio o 'fin' para finalizar."
-            twilio_service.send_whatsapp_message(numero_telefono, mensaje_fallback)
         
         return success
     
@@ -167,23 +167,23 @@ Responde con el número de la opción que necesitas 📱"""
         import logging
         logger = logging.getLogger(__name__)
         
-        # Botones de confirmación
-        buttons = [
-            {"id": "si", "title": "✅ Sí"},
-            {"id": "no", "title": "❌ No"},
-            {"id": "menu", "title": "⬅️ Menú"}
-        ]
+        mensaje_completo = f"""{mensaje}
+
+┌─────────────────────────────┐
+│  ✅ 1. Sí, confirmar         │
+│  ❌ 2. No, corregir          │
+│  ⬅️ 3. Volver al menú        │
+└─────────────────────────────┘
+
+💡 *Responde con el número de la opción que necesitas*"""
         
-        # Enviar mensaje con botones
-        success = twilio_service.send_whatsapp_quick_reply(numero_telefono, mensaje, buttons)
+        # Enviar mensaje
+        success = twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
         
         if success:
             logger.info(f"✅ Botones de confirmación enviados a {numero_telefono}")
         else:
             logger.error(f"❌ Error enviando botones de confirmación a {numero_telefono}")
-            # Fallback a mensaje de texto normal
-            mensaje_fallback = f"{mensaje}\n\nResponde 'SI' para confirmar, 'NO' para corregir, o 'MENU' para volver al inicio."
-            twilio_service.send_whatsapp_message(numero_telefono, mensaje_fallback)
         
         return success
     

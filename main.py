@@ -955,6 +955,86 @@ async def test_interactive_buttons(test_number: str = Form(...)):
         logger.error(f"Error en test de botones interactivos: {str(e)}")
         return {"error": f"Error: {str(e)}"}
 
+@app.post("/simulate-client-message")
+async def simulate_client_message(test_number: str = Form(...), message: str = Form(...)):
+    """Endpoint para simular mensaje de cliente (bypass de detección de agente)"""
+    try:
+        from chatbot.rules import ChatbotRules
+        from chatbot.states import conversation_manager
+        from services.twilio_service import twilio_service
+        
+        logger.info(f"🧪 SIMULATING CLIENT MESSAGE: {message} from {test_number}")
+        
+        # Procesar mensaje como si fuera de cliente (no agente)
+        respuesta = ChatbotRules.procesar_mensaje(test_number, message, "Usuario Test")
+        
+        # Enviar respuesta
+        if respuesta:
+            success = twilio_service.send_whatsapp_message(test_number, respuesta)
+            if success:
+                return {
+                    "message": "Mensaje de cliente simulado exitosamente",
+                    "test_number": test_number,
+                    "client_message": message,
+                    "bot_response": respuesta,
+                    "response_sent": True
+                }
+            else:
+                return {"error": "Error enviando respuesta del bot"}
+        else:
+            return {
+                "message": "Bot procesó el mensaje (respuesta en background)",
+                "test_number": test_number,
+                "client_message": message,
+                "response_sent": False
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en simulación de mensaje de cliente: {str(e)}")
+        return {"error": f"Error: {str(e)}"}
+
+@app.get("/test-complete-flow")
+async def test_complete_flow():
+    """Endpoint GET para probar el flujo completo con tu número"""
+    try:
+        from chatbot.rules import ChatbotRules
+        from chatbot.states import conversation_manager
+        from services.twilio_service import twilio_service
+        
+        # Usar tu número por defecto
+        test_number = "+5491135722871"
+        
+        logger.info(f"🧪 TESTING COMPLETE FLOW para número: {test_number}")
+        
+        # Resetear conversación
+        conversation_manager.reset_conversacion(test_number)
+        
+        # Simular mensaje "hola"
+        respuesta = ChatbotRules.procesar_mensaje(test_number, "hola", "Usuario Test")
+        
+        # Enviar respuesta
+        if respuesta:
+            success = twilio_service.send_whatsapp_message(test_number, respuesta)
+            if success:
+                return {
+                    "message": "Flujo completo probado exitosamente",
+                    "test_number": test_number,
+                    "response_sent": True,
+                    "bot_response": respuesta
+                }
+            else:
+                return {"error": "Error enviando respuesta del bot"}
+        else:
+            return {
+                "message": "Bot procesó el mensaje (respuesta en background)",
+                "test_number": test_number,
+                "response_sent": False
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en test de flujo completo: {str(e)}")
+        return {"error": f"Error: {str(e)}"}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
