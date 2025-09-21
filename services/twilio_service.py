@@ -113,7 +113,7 @@ class TwilioService:
     
     def send_whatsapp_quick_reply(self, to_number: str, body: str, buttons: list) -> bool:
         """
-        Envía un mensaje con botones de respuesta rápida usando plantillas preaprobadas
+        Envía un mensaje con botones de respuesta rápida usando plantillas de Twilio
         
         Args:
             to_number: Número de destino
@@ -138,63 +138,37 @@ class TwilioService:
                 logger.error("❌ Máximo 3 botones permitidos en Quick Reply")
                 return False
             
-            # Para botones interactivos reales, necesitamos usar plantillas preaprobadas
-            # Por ahora, vamos a crear una plantilla dinámica usando la API de WhatsApp Business
+            # Verificar si tenemos plantillas de botones configuradas
+            menu_template_sid = os.getenv("MENU_BUTTONS_TEMPLATE_SID")
             
-            # Crear el payload para WhatsApp Business API
-            whatsapp_payload = {
-                "messaging_product": "whatsapp",
-                "to": to_number.replace('whatsapp:', ''),
-                "type": "interactive",
-                "interactive": {
-                    "type": "button",
-                    "body": {
-                        "text": body
-                    },
-                    "action": {
-                        "buttons": []
-                    }
+            if menu_template_sid:
+                # Usar plantilla de Twilio con botones
+                logger.info(f"Usando plantilla de botones: {menu_template_sid}")
+                
+                # Crear variables para la plantilla
+                template_variables = {
+                    "1": body,  # Mensaje principal
+                    "2": buttons[0]["title"] if len(buttons) > 0 else "",
+                    "3": buttons[1]["title"] if len(buttons) > 1 else "",
+                    "4": buttons[2]["title"] if len(buttons) > 2 else ""
                 }
-            }
-            
-            # Agregar botones al payload
-            for button in buttons:
-                whatsapp_payload["interactive"]["action"]["buttons"].append({
-                    "type": "reply",
-                    "reply": {
-                        "id": button["id"],
-                        "title": button["title"]
-                    }
-                })
-            
-            # Enviar usando la API de WhatsApp Business directamente
-            import requests
-            
-            # Obtener token de acceso (necesitarás configurar esto)
-            access_token = os.getenv("WHATSAPP_ACCESS_TOKEN")
-            phone_number_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
-            
-            if not access_token or not phone_number_id:
-                logger.error("❌ WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID requeridos para botones interactivos")
-                return False
-            
-            url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
-            }
-            
-            response = requests.post(url, json=whatsapp_payload, headers=headers)
-            
-            if response.status_code == 200:
-                logger.info(f"✅ Mensaje interactivo enviado exitosamente a {to_number}")
+                
+                message = self.client.messages.create(
+                    from_=self.whatsapp_number,
+                    to=to_number,
+                    content_sid=menu_template_sid,
+                    content_variables=json.dumps(template_variables)
+                )
+                
+                logger.info(f"✅ Plantilla de botones enviada exitosamente a {to_number}. SID: {message.sid}")
                 return True
             else:
-                logger.error(f"❌ Error enviando mensaje interactivo: {response.status_code} - {response.text}")
+                # Fallback: usar mensaje de texto mejorado
+                logger.info("No hay plantilla de botones configurada, usando fallback")
                 return False
             
         except Exception as e:
-            logger.error(f"❌ Error enviando mensaje interactivo a {to_number}: {str(e)}")
+            logger.error(f"❌ Error enviando botones a {to_number}: {str(e)}")
             logger.error(f"Tipo de error: {type(e).__name__}")
             return False
     
