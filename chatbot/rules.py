@@ -94,7 +94,7 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def send_menu_interactivo(numero_telefono: str, nombre_usuario: str = ""):
         """
-        Envía el menú principal con botones de texto mejorados
+        Envía el menú principal con botones interactivos reales
         """
         from services.twilio_service import twilio_service
         import logging
@@ -106,10 +106,24 @@ Responde con el número de la opción que necesitas 📱"""
         else:
             saludo = "¡Hola! 👋🏻 Mi nombre es Eva 👩🏻‍🦱, soy la asistente virtual de Argenfuego."
         
-        # Crear menú con botones de texto mejorados
-        mensaje = f"""{saludo}
-
-¿En qué puedo ayudarte hoy?
+        mensaje = f"{saludo}\n\n¿En qué puedo ayudarte hoy?"
+        
+        # Botones interactivos reales
+        buttons = [
+            {"id": "presupuesto", "title": "📋 Presupuesto"},
+            {"id": "urgencia", "title": "🚨 Urgencia"},
+            {"id": "otras", "title": "❓ Otras consultas"}
+        ]
+        
+        # Enviar mensaje con botones interactivos
+        success = twilio_service.send_whatsapp_quick_reply(numero_telefono, mensaje, buttons)
+        
+        if success:
+            logger.info(f"✅ Menú interactivo enviado a {numero_telefono}")
+        else:
+            logger.error(f"❌ Error enviando menú interactivo a {numero_telefono}")
+            # Fallback a mensaje de texto normal
+            mensaje_fallback = f"""{mensaje}
 
 ┌─────────────────────────────┐
 │  📋 1. Solicitar presupuesto │
@@ -118,14 +132,7 @@ Responde con el número de la opción que necesitas 📱"""
 └─────────────────────────────┘
 
 💡 *Responde con el número de la opción que necesitas*"""
-        
-        # Enviar mensaje
-        success = twilio_service.send_whatsapp_message(numero_telefono, mensaje)
-        
-        if success:
-            logger.info(f"✅ Menú mejorado enviado a {numero_telefono}")
-        else:
-            logger.error(f"❌ Error enviando menú a {numero_telefono}")
+            twilio_service.send_whatsapp_message(numero_telefono, mensaje_fallback)
         
         return success
     
