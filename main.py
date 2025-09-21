@@ -99,12 +99,34 @@ async def webhook_whatsapp(request: Request):
         
         logger.info(f"Webhook recibido: {form_dict}")
         
-        # Extraer datos del mensaje
-        numero_telefono, mensaje_usuario, message_sid, profile_name = twilio_service.extract_message_data(form_dict)
-        
-        if not numero_telefono or not mensaje_usuario:
-            logger.warning("Datos incompletos en el webhook")
-            return PlainTextResponse("OK", status_code=200)
+        # Verificar si es un mensaje interactivo (botón)
+        if 'ButtonText' in form_dict:
+            # Es un mensaje de botón interactivo
+            numero_telefono, button_id, message_sid, profile_name = twilio_service.extract_interactive_data(form_dict)
+            
+            if not numero_telefono or not button_id:
+                logger.warning("Datos incompletos en el webhook de botón")
+                return PlainTextResponse("OK", status_code=200)
+            
+            logger.info(f"Botón presionado por {numero_telefono} ({profile_name or 'sin nombre'}): {button_id}")
+            
+            # Procesar botón presionado
+            respuesta = await handle_interactive_button(numero_telefono, button_id, profile_name)
+            
+            # Enviar respuesta si hay una
+            if respuesta:
+                mensaje_enviado = twilio_service.send_whatsapp_message(numero_telefono, respuesta)
+                if not mensaje_enviado:
+                    logger.error(f"Error enviando respuesta a botón a {numero_telefono}")
+            
+            return PlainTextResponse("", status_code=200)
+        else:
+            # Es un mensaje de texto normal
+            numero_telefono, mensaje_usuario, message_sid, profile_name = twilio_service.extract_message_data(form_dict)
+            
+            if not numero_telefono or not mensaje_usuario:
+                logger.warning("Datos incompletos en el webhook")
+                return PlainTextResponse("OK", status_code=200)
         
         logger.info(f"Procesando mensaje de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
         
@@ -599,6 +621,93 @@ async def get_stats():
         "conversaciones_por_estado": conversaciones_por_estado,
         "timestamp": "2024-01-01T00:00:00Z"  # Placeholder timestamp
     }
+
+async def handle_interactive_button(numero_telefono: str, button_id: str, profile_name: str = "") -> str:
+    """
+    Maneja las respuestas de botones interactivos
+    
+    Args:
+        numero_telefono: Número de teléfono del usuario
+        button_id: ID del botón presionado
+        profile_name: Nombre del perfil del usuario
+        
+    Returns:
+        str: Respuesta a enviar al usuario (si hay alguna)
+    """
+    try:
+        from chatbot.rules import ChatbotRules
+        from chatbot.states import conversation_manager
+        from chatbot.models import EstadoConversacion, TipoConsulta
+        
+        logger.info(f"Procesando botón {button_id} de {numero_telefono}")
+        
+        # Obtener conversación actual
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        
+        # Guardar nombre de usuario si es la primera vez que lo vemos
+        if profile_name and not conversacion.nombre_usuario:
+            conversation_manager.set_nombre_usuario(numero_telefono, profile_name)
+        
+        # Manejar diferentes tipos de botones
+        if button_id == "presupuesto":
+            conversation_manager.set_tipo_consulta(numero_telefono, TipoConsulta.PRESUPUESTO)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+            return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.PRESUPUESTO)
+            
+        elif button_id == "urgencia":
+            conversation_manager.set_tipo_consulta(numero_telefono, TipoConsulta.URGENCIA)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+            return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.URGENCIA)
+            
+        elif button_id == "otras":
+            conversation_manager.set_tipo_consulta(numero_telefono, TipoConsulta.OTRAS)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+            return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.OTRAS)
+            
+        elif button_id == "volver_menu":
+            # Limpiar datos temporales y volver al menú
+            conversation_manager.clear_datos_temporales(numero_telefono)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+            # Enviar menú interactivo
+            ChatbotRules.send_menu_interactivo(numero_telefono, conversacion.nombre_usuario)
+            return ""  # El menú se envía directamente
+            
+        elif button_id == "finalizar_chat":
+            # Finalizar conversación
+            conversation_manager.finalizar_conversacion(numero_telefono)
+            return "¡Gracias por contactarnos! 👋 Esperamos poder ayudarte en el futuro."
+            
+        elif button_id == "si":
+            # Confirmar datos
+            if conversacion.estado == EstadoConversacion.CONFIRMANDO:
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.ENVIANDO)
+                return "⏳ Procesando tu solicitud..."
+            else:
+                return "No hay nada que confirmar en este momento."
+                
+        elif button_id == "no":
+            # Corregir datos
+            if conversacion.estado == EstadoConversacion.CONFIRMANDO:
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)
+                return ChatbotRules._get_mensaje_pregunta_campo_a_corregir()
+            else:
+                return "No hay datos para corregir en este momento."
+                
+        elif button_id == "menu":
+            # Volver al menú principal
+            conversation_manager.clear_datos_temporales(numero_telefono)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+            # Enviar menú interactivo
+            ChatbotRules.send_menu_interactivo(numero_telefono, conversacion.nombre_usuario)
+            return ""  # El menú se envía directamente
+            
+        else:
+            logger.warning(f"Botón no reconocido: {button_id}")
+            return "No reconozco ese botón. Por favor, usa los botones disponibles o escribe tu mensaje."
+            
+    except Exception as e:
+        logger.error(f"Error en handle_interactive_button: {e}")
+        return "Hubo un error procesando tu solicitud. Por favor, intenta nuevamente."
 
 async def handle_agent_message(agent_phone: str, message: str, profile_name: str = ""):
     """
