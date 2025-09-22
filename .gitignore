@@ -71,3 +71,6 @@ coverage.xml
 # Claude AI configuration
 CLAUDE.md
 
+# Environment documentation
+ENVIRONMENT_VARIABLES.md
+

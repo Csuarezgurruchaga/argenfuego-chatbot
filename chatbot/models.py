@@ -46,12 +46,15 @@ class ConversacionData(BaseModel):
     nombre_usuario: Optional[str] = None
     # Campos para handoff a humano
     atendido_por_humano: bool = False
-    slack_thread_ts: Optional[str] = None  # Thread de Slack asociado a la conversación
-    slack_channel_id: Optional[str] = None
+    slack_thread_ts: Optional[str] = None  # Thread de Slack asociado a la conversación (legacy)
+    slack_channel_id: Optional[str] = None  # Canal de Slack asociado a la conversación (legacy)
     handoff_started_at: Optional[datetime] = None
     last_client_message_at: Optional[datetime] = None
     modo_conversacion_activa: bool = False  # Modo conversación activa para respuestas directas del agente
     mensaje_handoff_contexto: Optional[str] = None  # Mensaje que disparó el handoff para contexto del agente
+    handoff_notified: bool = False  # Indica si ya se notificó al agente sobre el handoff
+    resolution_question_sent: bool = False  # Indica si se envió la pregunta de resolución al cliente
+    resolution_question_sent_at: Optional[datetime] = None  # Timestamp de cuando se envió la pregunta de resolución
     
     class Config:
         use_enum_values = True
