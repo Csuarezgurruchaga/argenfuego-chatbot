@@ -88,8 +88,7 @@ class WhatsAppHandoffService:
         try:
             agent_message = f"💬 *Nuevo mensaje del cliente*\n\n"
             agent_message += f"Cliente: {client_name or 'Sin nombre'} ({client_phone})\n"
-            agent_message += f"Mensaje: {message}\n\n"
-            agent_message += f"Para responder, envía tu mensaje a: {client_phone}"
+            agent_message += f"Mensaje: {message}"
             
             success = twilio_service.send_whatsapp_message(
                 self.agent_whatsapp_number, 
@@ -120,9 +119,8 @@ class WhatsAppHandoffService:
         """
         try:
             # Formatear mensaje del agente
-            formatted_message = f"👨‍💼 *Agente:* {agent_message}"
-            
-            success = twilio_service.send_whatsapp_message(client_phone, formatted_message)
+            # Enviar el mensaje del agente tal cual, sin prefijo ni formato adicional
+            success = twilio_service.send_whatsapp_message(client_phone, agent_message)
             
             if success:
                 logger.info(f"✅ Respuesta del agente enviada al cliente {client_phone}")
@@ -176,7 +174,6 @@ class WhatsAppHandoffService:
         message += f"Cliente: {client_name or 'Sin nombre'} ({client_phone})\n\n"
         message += f"📝 *Mensaje que disparó el handoff:*\n{handoff_message}\n\n"
         message += f"💬 *Último mensaje:*\n{current_message}\n\n"
-        message += f"Para responder, envía tu mensaje a: {client_phone}\n\n"
         message += f"Para marcar como resuelto, responde con: /resuelto"
         
         return message
