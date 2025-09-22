@@ -102,6 +102,12 @@ async def webhook_whatsapp(request: Request):
         # Extraer datos del mensaje
         numero_telefono, mensaje_usuario, message_sid, profile_name = twilio_service.extract_message_data(form_dict)
         
+        # Extraer información de media ANTES de las validaciones
+        try:
+            num_media = int(form_dict.get('NumMedia', '0') or '0')
+        except Exception:
+            num_media = 0
+        
         if not numero_telefono:
             logger.warning("Datos incompletos en el webhook - falta numero_telefono")
             return PlainTextResponse("OK", status_code=200)
@@ -114,10 +120,6 @@ async def webhook_whatsapp(request: Request):
         logger.info(f"Procesando mensaje de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
 
         # Fallback unificado para contenidos no-texto (audio/imagen/video/documento/etc.)
-        try:
-            num_media = int(form_dict.get('NumMedia', '0') or '0')
-        except Exception:
-            num_media = 0
 
         message_type = (form_dict.get('MessageType') or '').lower().strip()
 
