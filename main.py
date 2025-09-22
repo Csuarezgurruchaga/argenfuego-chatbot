@@ -119,6 +119,14 @@ async def webhook_whatsapp(request: Request):
         # Determinar si la conversación está en handoff
         conv_check = conversation_manager.get_conversacion(numero_telefono)
         en_handoff = conv_check.atendido_por_humano or conv_check.estado == EstadoConversacion.ATENDIDO_POR_HUMANO
+        
+        # DEBUG: Log del estado del handoff
+        logger.info(f"🔍 DEBUG HANDOFF - Cliente: {numero_telefono}")
+        logger.info(f"🔍 DEBUG HANDOFF - atendido_por_humano: {conv_check.atendido_por_humano}")
+        logger.info(f"🔍 DEBUG HANDOFF - estado: {conv_check.estado}")
+        logger.info(f"🔍 DEBUG HANDOFF - en_handoff: {en_handoff}")
+        logger.info(f"🔍 DEBUG HANDOFF - num_media: {num_media}")
+        logger.info(f"🔍 DEBUG HANDOFF - message_type: {message_type}")
 
         if not whatsapp_handoff_service.is_agent_message(numero_telefono) and not en_handoff:
             if num_media > 0 or message_type in ['image', 'audio', 'video', 'document', 'file', 'sticker', 'media', 'location']:
