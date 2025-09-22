@@ -2,8 +2,6 @@ import os
 import json
 import requests
 import tempfile
-import threading
-import time
 from twilio.rest import Client
 from typing import Optional
 import logging
@@ -120,10 +118,6 @@ class TwilioService:
                 )
                 
                 logger.info(f"✅ Media reenviado exitosamente con URL pública a {to_number}. SID: {message.sid}")
-                
-                # Programar limpieza del archivo después de 5 minutos
-                self._schedule_file_cleanup(temp_file_path, delay_minutes=5)
-                
                 return True
             else:
                 logger.error("No se pudo obtener URL pública de Railway")
@@ -133,20 +127,6 @@ class TwilioService:
             logger.error(f"❌ Error reenviando media desde URL a {to_number}: {str(e)}")
             return False
     
-    def _schedule_file_cleanup(self, file_path: str, delay_minutes: int = 5):
-        """Programa la limpieza de un archivo temporal después de un delay"""
-        def cleanup_file():
-            time.sleep(delay_minutes * 60)  # Convertir minutos a segundos
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    logger.info(f"🗑️ Archivo temporal limpiado: {file_path}")
-            except Exception as e:
-                logger.error(f"Error limpiando archivo temporal {file_path}: {e}")
-        
-        # Ejecutar limpieza en un thread separado
-        cleanup_thread = threading.Thread(target=cleanup_file, daemon=True)
-        cleanup_thread.start()
     
     def send_whatsapp_template(self, to_number: str, template_name: str, parameters: list = None) -> bool:
         """

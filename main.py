@@ -104,7 +104,28 @@ async def handoff_ttl_sweep(token: str = Form(...)):
                 cerradas += 1
                 logger.info(f"Conversación {conv.numero_telefono} cerrada por: {close_reason}")
     
-    return {"closed": cerradas}
+    # Limpiar archivos temporales de media
+    temp_files_cleaned = 0
+    try:
+        import tempfile
+        import os
+        temp_dir = tempfile.gettempdir()
+        for filename in os.listdir(temp_dir):
+            if filename.startswith('media_') and filename.endswith('.tmp'):
+                file_path = os.path.join(temp_dir, filename)
+                try:
+                    os.remove(file_path)
+                    temp_files_cleaned += 1
+                    logger.info(f"🗑️ Archivo temporal limpiado: {filename}")
+                except Exception as e:
+                    logger.error(f"Error limpiando archivo temporal {filename}: {e}")
+    except Exception as e:
+        logger.error(f"Error en limpieza de archivos temporales: {e}")
+    
+    return {
+        "closed": cerradas,
+        "temp_files_cleaned": temp_files_cleaned
+    }
 
 @app.post("/webhook")
 async def webhook_whatsapp(request: Request):
