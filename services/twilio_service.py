@@ -94,9 +94,11 @@ class TwilioService:
                 to_number = f'whatsapp:{to_number}'
             
             # Determinar el Content SID del template
-            # Preferimos HANDOFF_TEMPLATE_SID si está definido; si no, usamos el template_name como SID/nombre
-            content_sid_env = os.getenv('HANDOFF_TEMPLATE_SID')
-            content_sid = content_sid_env if content_sid_env else template_name
+            # FORZADO: usar HANDOFF_TEMPLATE_SID. Si no existe, registrar error y abortar.
+            content_sid = os.getenv('HANDOFF_TEMPLATE_SID')
+            if not content_sid:
+                logger.error("HANDOFF_TEMPLATE_SID no está definido en las variables de entorno. Configúralo con el SID del template aprobado (HX...).")
+                return False
 
             # Convertir lista de parámetros a dict numerado {"1": v1, "2": v2, ...}
             content_vars: Optional[dict] = None
