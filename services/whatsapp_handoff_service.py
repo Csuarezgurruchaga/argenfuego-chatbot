@@ -52,6 +52,17 @@ class WhatsAppHandoffService:
             
             if success:
                 logger.info(f"✅ Notificación de handoff enviada al agente para cliente {client_phone}")
+                # Enviar instrucción clara: responder en este chat para que el bot reenvíe al cliente
+                try:
+                    instruction = (
+                        "ℹ️ Instrucciones:\n\n"
+                        "• Responde en este mismo chat y enviaremos tu mensaje al cliente automáticamente.\n"
+                        "• No es necesario escribirle al número del cliente.\n"
+                        "• Para cerrar la conversación, responde con: /resuelto"
+                    )
+                    twilio_service.send_whatsapp_message(self.agent_whatsapp_number, instruction)
+                except Exception:
+                    pass
             else:
                 logger.error(f"❌ Error enviando notificación de handoff al agente para cliente {client_phone}")
             
