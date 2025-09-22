@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, FileResponse
 import logging
 from typing import Optional
 from chatbot.rules import ChatbotRules
@@ -29,6 +29,22 @@ app = FastAPI(
     description="Chatbot basado en reglas para WhatsApp usando Twilio",
     version="1.0.0"
 )
+
+# Endpoint para servir archivos temporales de media
+@app.get("/temp_media/{filename}")
+async def serve_temp_media(filename: str):
+    """Sirve archivos temporales de media para reenvío"""
+    import tempfile
+    import os
+    
+    # Buscar el archivo en el directorio temporal
+    temp_dir = tempfile.gettempdir()
+    file_path = os.path.join(temp_dir, filename)
+    
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    else:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
 TTL_MINUTES = int(os.getenv("HANDOFF_TTL_MINUTES", "120"))
 
@@ -179,24 +195,26 @@ async def webhook_whatsapp(request: Request):
         # Si está en handoff, reenviar a WhatsApp del agente y no responder con bot
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
-            # Notificar al agente sobre media recibida
+            # Reenviar media al agente si hay contenido multimedia
             if num_media > 0:
                 agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
                 if agent_number:
-                    # Determinar tipo de media
-                    media_type = "archivo"
-                    if form_dict.get('MessageType') == 'audio':
-                        media_type = "audio"
-                    elif form_dict.get('MessageType') == 'image':
-                        media_type = "imagen"
-                    elif form_dict.get('MessageType') == 'video':
-                        media_type = "video"
-                    
-                    media_notification = f"📎 El cliente envió un {media_type}"
-                    if mensaje_usuario and mensaje_usuario.strip():
-                        media_notification += f" con el mensaje: \"{mensaje_usuario}\""
-                    
-                    twilio_service.send_whatsapp_message(agent_number, media_notification)
+                    for i in range(num_media):
+                        media_url = form_dict.get(f'MediaUrl{i}')
+                        if media_url:
+                            # Descargar y reenviar media
+                            success = twilio_service.send_whatsapp_media_from_url(
+                                agent_number, 
+                                media_url, 
+                                caption=mensaje_usuario or ""
+                            )
+                            if not success:
+                                # Fallback: notificar sobre media si falla el reenvío
+                                media_type = form_dict.get('MessageType', 'archivo')
+                                fallback_msg = f"📎 El cliente envió un {media_type}"
+                                if mensaje_usuario and mensaje_usuario.strip():
+                                    fallback_msg += f" con el mensaje: \"{mensaje_usuario}\""
+                                twilio_service.send_whatsapp_message(agent_number, fallback_msg)
             
             # Notificar al agente vía WhatsApp
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:

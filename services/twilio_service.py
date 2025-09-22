@@ -1,5 +1,7 @@
 import os
 import json
+import requests
+import tempfile
 from twilio.rest import Client
 from typing import Optional
 import logging
@@ -71,6 +73,57 @@ class TwilioService:
             
         except Exception as e:
             logger.error(f"Error enviando media a {to_number}: {str(e)}")
+            return False
+    
+    def send_whatsapp_media_from_url(self, to_number: str, media_url: str, caption: str = "") -> bool:
+        """
+        Descarga media desde URL de Twilio y lo reenvía al agente.
+        Soluciona el problema de URLs expirados.
+        """
+        try:
+            # Asegurar que el número tenga el prefijo whatsapp:
+            if not to_number.startswith('whatsapp:'):
+                to_number = f'whatsapp:{to_number}'
+            
+            # Descargar el media desde Twilio
+            logger.info(f"Descargando media desde: {media_url}")
+            response = requests.get(media_url, timeout=30)
+            response.raise_for_status()
+            
+            # Crear archivo temporal
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as temp_file:
+                temp_file.write(response.content)
+                temp_file_path = temp_file.name
+            
+            # Crear URL pública usando el servidor de Railway
+            # Railway expone el puerto automáticamente
+            railway_url = os.getenv('RAILWAY_PUBLIC_DOMAIN', '')
+            if not railway_url:
+                # Fallback: usar el dominio de Railway si está disponible
+                railway_url = os.getenv('RAILWAY_STATIC_URL', '')
+            
+            if railway_url:
+                # Crear endpoint temporal para servir el archivo
+                public_url = f"https://{railway_url}/temp_media/{os.path.basename(temp_file_path)}"
+                
+                # Enviar media usando la URL pública
+                body_text = caption if caption.strip() else "📎 Archivo multimedia"
+                
+                message = self.client.messages.create(
+                    body=body_text,
+                    from_=self.whatsapp_number,
+                    to=to_number,
+                    media_url=[public_url]
+                )
+                
+                logger.info(f"Media reenviado exitosamente a {to_number}. SID: {message.sid}")
+                return True
+            else:
+                logger.error("No se pudo obtener URL pública de Railway")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error reenviando media desde URL a {to_number}: {str(e)}")
             return False
     
     def send_whatsapp_template(self, to_number: str, template_name: str, parameters: list = None) -> bool:
