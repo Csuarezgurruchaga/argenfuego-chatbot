@@ -875,10 +875,12 @@ Responde con el número del campo que deseas modificar."""
             
             # Si NLU detecta urgencia, iniciar handoff a humano
             if tipo_consulta == TipoConsulta.URGENCIA:
+                logger.info(f"🚨 ACTIVANDO HANDOFF para {numero_telefono} - URGENCIA detectada")
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
                 conversacion = conversation_manager.get_conversacion(numero_telefono)
                 conversacion.atendido_por_humano = True
                 conversacion.handoff_started_at = __import__('datetime').datetime.utcnow()
+                logger.info(f"✅ HANDOFF ACTIVADO - atendido_por_humano: {conversacion.atendido_por_humano}, estado: {conversacion.estado}")
                 return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
             
             # Para otras consultas, usar flujo secuencial conversacional
