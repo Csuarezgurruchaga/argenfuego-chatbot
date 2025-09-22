@@ -56,8 +56,11 @@ class TwilioService:
             if not to_number.startswith('whatsapp:'):
                 to_number = f'whatsapp:{to_number}'
             
+            # WhatsApp requiere un body, usar caption o texto por defecto
+            body_text = caption if caption.strip() else "📎 Archivo multimedia"
+            
             message = self.client.messages.create(
-                body=caption,
+                body=body_text,
                 from_=self.whatsapp_number,
                 to=to_number,
                 media_url=[media_url]
