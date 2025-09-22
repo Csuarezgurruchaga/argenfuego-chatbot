@@ -107,6 +107,30 @@ async def webhook_whatsapp(request: Request):
             return PlainTextResponse("OK", status_code=200)
         
         logger.info(f"Procesando mensaje de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
+
+        # Fallback unificado para contenidos no-texto (audio/imagen/video/documento/etc.)
+        try:
+            num_media = int(form_dict.get('NumMedia', '0') or '0')
+        except Exception:
+            num_media = 0
+
+        message_type = (form_dict.get('MessageType') or '').lower().strip()
+
+        if not whatsapp_handoff_service.is_agent_message(numero_telefono):
+            if num_media > 0 or message_type in ['image', 'audio', 'video', 'document', 'file', 'sticker', 'media', 'location']:
+                try:
+                    from config.company_profiles import get_active_company_profile
+                    email_contacto = (get_active_company_profile() or {}).get('email', '')
+                except Exception:
+                    email_contacto = ''
+
+                fallback_email = f" También podés enviarnos toda la información por email a {email_contacto}." if email_contacto else ""
+                fallback_msg = (
+                    "Recibí tu mensaje, pero lamentablemente el contenido no es compatible con mis herramientas actuales. "
+                    "Por este canal solo puedo procesar texto. Por favor, escribí en 1–2 frases lo que necesitás y te ayudo enseguida." + fallback_email
+                )
+                twilio_service.send_whatsapp_message(numero_telefono, fallback_msg)
+                return PlainTextResponse("", status_code=200)
         
         # Verificar si el mensaje viene del agente
         if whatsapp_handoff_service.is_agent_message(numero_telefono):
