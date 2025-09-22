@@ -89,8 +89,9 @@ class TwilioService:
             # Twilio no puede acceder a sus propios MediaUrls para reenvío externo
             logger.info(f"🔍 Descargando media desde Twilio: {media_url}")
             
-            # Descargar el media
-            response = requests.get(media_url, timeout=30)
+            # Descargar el media con autenticación de Twilio
+            auth = (self.account_sid, self.auth_token)
+            response = requests.get(media_url, auth=auth, timeout=30)
             response.raise_for_status()
             
             # Crear archivo temporal con nombre único
