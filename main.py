@@ -610,13 +610,16 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
         profile_name: Nombre del perfil del agente (si está disponible)
     """
     try:
+        # Import local para evitar NameError
+        from datetime import datetime
         logger.info(f"Procesando mensaje del agente {agent_phone}: {message}")
         
         # Verificar si es un comando de resolución
         if whatsapp_handoff_service.is_resolution_command(message):
             # Buscar conversaciones activas en handoff
             resolved_count = 0
-            for phone, conv in conversation_manager.conversaciones.items():
+        # Tomar snapshot para evitar "dictionary changed size during iteration"
+        for phone, conv in list(conversation_manager.conversaciones.items()):
                 if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
                     # En lugar de cerrar inmediatamente, enviar pregunta de resolución
                     if not conv.resolution_question_sent:
