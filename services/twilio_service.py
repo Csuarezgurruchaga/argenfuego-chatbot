@@ -76,7 +76,8 @@ class TwilioService:
         
         Args:
             to_number: Número de destino
-            template_name: Nombre del template (ej: "handoff_notification")
+            template_name: Nombre del template (ej: "handoff_notification").
+                           Si existe HANDOFF_TEMPLATE_SID en variables de entorno, se usará ese SID en su lugar.
             parameters: Lista de parámetros para el template
             
         Returns:
@@ -92,15 +93,28 @@ class TwilioService:
             if not to_number.startswith('whatsapp:'):
                 to_number = f'whatsapp:{to_number}'
             
-            # Preparar el contenido del template
-            template_content = f"whatsapp:{template_name}"
+            # Determinar el Content SID del template
+            # FORZADO: usar HANDOFF_TEMPLATE_SID. Si no existe, registrar error y abortar.
+            content_sid = os.getenv('HANDOFF_TEMPLATE_SID')
+            if not content_sid:
+                logger.error("HANDOFF_TEMPLATE_SID no está definido en las variables de entorno. Configúralo con el SID del template aprobado (HX...).")
+                return False
+
+            # Convertir lista de parámetros a dict numerado {"1": v1, "2": v2, ...}
+            content_vars: Optional[dict] = None
+            if parameters:
+                try:
+                    content_vars = {str(i + 1): str(v) for i, v in enumerate(parameters)}
+                except Exception:
+                    # fallback simple: enviar como json de la lista
+                    content_vars = {"1": json.dumps(parameters)}
             
             # Crear el mensaje con template
             message = self.client.messages.create(
                 from_=self.whatsapp_number,
                 to=to_number,
-                content_sid=template_content,
-                content_variables=json.dumps(parameters) if parameters else None
+                content_sid=content_sid,
+                content_variables=json.dumps(content_vars) if content_vars else None
             )
             
             logger.info(f"✅ Template enviado exitosamente a {to_number}. SID: {message.sid}")
