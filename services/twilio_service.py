@@ -2,6 +2,8 @@ import os
 import json
 import requests
 import tempfile
+import threading
+import time
 from twilio.rest import Client
 from typing import Optional
 import logging
@@ -93,10 +95,13 @@ class TwilioService:
             response = requests.get(media_url, timeout=30)
             response.raise_for_status()
             
-            # Crear archivo temporal
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as temp_file:
+            # Crear archivo temporal con nombre único
+            import uuid
+            unique_filename = f"media_{uuid.uuid4().hex}.tmp"
+            temp_file_path = os.path.join(tempfile.gettempdir(), unique_filename)
+            
+            with open(temp_file_path, 'wb') as temp_file:
                 temp_file.write(response.content)
-                temp_file_path = temp_file.name
             
             # Crear URL pública usando Railway
             railway_url = os.getenv('RAILWAY_PUBLIC_DOMAIN', '')
@@ -104,7 +109,7 @@ class TwilioService:
                 railway_url = os.getenv('RAILWAY_STATIC_URL', '')
             
             if railway_url:
-                public_url = f"https://{railway_url}/temp_media/{os.path.basename(temp_file_path)}"
+                public_url = f"https://{railway_url}/temp_media/{unique_filename}"
                 body_text = caption if caption.strip() else "📎 Archivo multimedia"
                 
                 message = self.client.messages.create(
@@ -115,6 +120,10 @@ class TwilioService:
                 )
                 
                 logger.info(f"✅ Media reenviado exitosamente con URL pública a {to_number}. SID: {message.sid}")
+                
+                # Programar limpieza del archivo después de 5 minutos
+                self._schedule_file_cleanup(temp_file_path, delay_minutes=5)
+                
                 return True
             else:
                 logger.error("No se pudo obtener URL pública de Railway")
@@ -123,6 +132,21 @@ class TwilioService:
         except Exception as e:
             logger.error(f"❌ Error reenviando media desde URL a {to_number}: {str(e)}")
             return False
+    
+    def _schedule_file_cleanup(self, file_path: str, delay_minutes: int = 5):
+        """Programa la limpieza de un archivo temporal después de un delay"""
+        def cleanup_file():
+            time.sleep(delay_minutes * 60)  # Convertir minutos a segundos
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"🗑️ Archivo temporal limpiado: {file_path}")
+            except Exception as e:
+                logger.error(f"Error limpiando archivo temporal {file_path}: {e}")
+        
+        # Ejecutar limpieza en un thread separado
+        cleanup_thread = threading.Thread(target=cleanup_file, daemon=True)
+        cleanup_thread.start()
     
     def send_whatsapp_template(self, to_number: str, template_name: str, parameters: list = None) -> bool:
         """
