@@ -179,13 +179,24 @@ async def webhook_whatsapp(request: Request):
         # Si está en handoff, reenviar a WhatsApp del agente y no responder con bot
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
-            # Reenviar media al agente si hay contenido multimedia
+            # Notificar al agente sobre media recibida
             if num_media > 0:
                 agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
-                for i in range(num_media):
-                    media_url = form_dict.get(f'MediaUrl{i}')
-                    if media_url and agent_number:
-                        twilio_service.send_whatsapp_media(agent_number, media_url, caption=mensaje_usuario or "")
+                if agent_number:
+                    # Determinar tipo de media
+                    media_type = "archivo"
+                    if form_dict.get('MessageType') == 'audio':
+                        media_type = "audio"
+                    elif form_dict.get('MessageType') == 'image':
+                        media_type = "imagen"
+                    elif form_dict.get('MessageType') == 'video':
+                        media_type = "video"
+                    
+                    media_notification = f"📎 El cliente envió un {media_type}"
+                    if mensaje_usuario and mensaje_usuario.strip():
+                        media_notification += f" con el mensaje: \"{mensaje_usuario}\""
+                    
+                    twilio_service.send_whatsapp_message(agent_number, media_notification)
             
             # Notificar al agente vía WhatsApp
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:
