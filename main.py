@@ -164,6 +164,14 @@ async def webhook_whatsapp(request: Request):
         # Si está en handoff, reenviar a WhatsApp del agente y no responder con bot
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
+            # Reenviar media al agente si hay contenido multimedia
+            if num_media > 0:
+                agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                for i in range(num_media):
+                    media_url = form_dict.get(f'MediaUrl{i}')
+                    if media_url and agent_number:
+                        twilio_service.send_whatsapp_media(agent_number, media_url, caption=mensaje_usuario or "")
+            
             # Notificar al agente vía WhatsApp
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:
                 # Es el primer mensaje del handoff, incluir contexto completo con botones
@@ -176,15 +184,8 @@ async def webhook_whatsapp(request: Request):
                 if success:
                     conversacion_actual.handoff_notified = True
             else:
-                # Es un mensaje posterior durante el handoff
-                if num_media > 0:
-                    # Reenviar media al agente
-                    agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
-                    for i in range(num_media):
-                        media_url = form_dict.get(f'MediaUrl{i}')
-                        if media_url and agent_number:
-                            twilio_service.send_whatsapp_media(agent_number, media_url, caption=mensaje_usuario or "")
-                else:
+                # Es un mensaje posterior durante el handoff (solo texto)
+                if num_media == 0:  # Solo enviar notificación de texto si no hay media
                     whatsapp_handoff_service.notify_agent_new_message(
                         numero_telefono,
                         profile_name or '',
