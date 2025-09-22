@@ -116,7 +116,11 @@ async def webhook_whatsapp(request: Request):
 
         message_type = (form_dict.get('MessageType') or '').lower().strip()
 
-        if not whatsapp_handoff_service.is_agent_message(numero_telefono):
+        # Determinar si la conversación está en handoff
+        conv_check = conversation_manager.get_conversacion(numero_telefono)
+        en_handoff = conv_check.atendido_por_humano or conv_check.estado == EstadoConversacion.ATENDIDO_POR_HUMANO
+
+        if not whatsapp_handoff_service.is_agent_message(numero_telefono) and not en_handoff:
             if num_media > 0 or message_type in ['image', 'audio', 'video', 'document', 'file', 'sticker', 'media', 'location']:
                 try:
                     from config.company_profiles import get_active_company_profile
@@ -134,6 +138,25 @@ async def webhook_whatsapp(request: Request):
         
         # Verificar si el mensaje viene del agente
         if whatsapp_handoff_service.is_agent_message(numero_telefono):
+            # Si el agente envía media durante handoff, reenviarla al cliente
+            try:
+                if num_media > 0:
+                    # Buscar la conversación de handoff más reciente
+                    latest_handoff_conv = None
+                    latest_timestamp = None
+                    for phone, conv in conversation_manager.conversaciones.items():
+                        if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
+                            if conv.handoff_started_at and (latest_timestamp is None or conv.handoff_started_at > latest_timestamp):
+                                latest_handoff_conv = conv
+                                latest_timestamp = conv.handoff_started_at
+                    if latest_handoff_conv:
+                        for i in range(num_media):
+                            media_url = form_dict.get(f'MediaUrl{i}')
+                            if media_url:
+                                twilio_service.send_whatsapp_media(latest_handoff_conv.numero_telefono, media_url, caption=mensaje_usuario or "")
+                        return PlainTextResponse("", status_code=200)
+            except Exception:
+                pass
             # Procesar mensaje del agente
             await handle_agent_message(numero_telefono, mensaje_usuario, profile_name)
             return PlainTextResponse("", status_code=200)
@@ -154,11 +177,19 @@ async def webhook_whatsapp(request: Request):
                     conversacion_actual.handoff_notified = True
             else:
                 # Es un mensaje posterior durante el handoff
-                whatsapp_handoff_service.notify_agent_new_message(
-                    numero_telefono,
-                    profile_name or '',
-                    mensaje_usuario
-                )
+                if num_media > 0:
+                    # Reenviar media al agente
+                    agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                    for i in range(num_media):
+                        media_url = form_dict.get(f'MediaUrl{i}')
+                        if media_url and agent_number:
+                            twilio_service.send_whatsapp_media(agent_number, media_url, caption=mensaje_usuario or "")
+                else:
+                    whatsapp_handoff_service.notify_agent_new_message(
+                        numero_telefono,
+                        profile_name or '',
+                        mensaje_usuario
+                    )
             try:
                 from datetime import datetime
                 conversacion_actual.last_client_message_at = datetime.utcnow()
