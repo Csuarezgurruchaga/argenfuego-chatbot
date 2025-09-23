@@ -272,6 +272,9 @@ Responde con el número de la opción que necesitas 📱"""
                 twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
         
         # 1. Enviar saludo inmediatamente
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if nombre_usuario:
             saludo = f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva"
         else:
