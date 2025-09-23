@@ -97,24 +97,45 @@ async def webhook_whatsapp(request: Request):
         
         logger.info(f"Webhook recibido: {form_dict}")
         
-        # Extraer datos del mensaje
-        numero_telefono, mensaje_usuario, message_sid, profile_name = twilio_service.extract_message_data(form_dict)
-
-        # Parsear NumMedia y MessageType ANTES de validar mensaje_usuario para manejar audio/imagen/etc
-        try:
-            num_media = int(form_dict.get('NumMedia', '0') or '0')
-        except Exception:
-            num_media = 0
-        message_type = (form_dict.get('MessageType') or '').lower().strip()
-
-        if not numero_telefono:
-            logger.warning("Datos incompletos en el webhook (sin numero_telefono)")
+        # Verificar si es un mensaje interactivo (botón)
+        if 'ButtonText' in form_dict:
+            # Es un mensaje de botón interactivo
+            numero_telefono, button_id, message_sid, profile_name = twilio_service.extract_interactive_data(form_dict)
+            
+            if not numero_telefono or not button_id:
+                logger.warning("Datos incompletos en el webhook de botón")
+                return PlainTextResponse("", status_code=200)
+            
+            logger.info(f"Botón presionado por {numero_telefono} ({profile_name or 'sin nombre'}): {button_id}")
+            
+            # Procesar botón presionado
+            respuesta = await handle_interactive_button(numero_telefono, button_id, profile_name)
+            
+            # Enviar respuesta si hay una
+            if respuesta:
+                mensaje_enviado = twilio_service.send_whatsapp_message(numero_telefono, respuesta)
+                if not mensaje_enviado:
+                    logger.error(f"Error enviando respuesta a botón a {numero_telefono}")
+            
             return PlainTextResponse("", status_code=200)
-        # Permitir continuar si hay media, aunque Body esté vacío
-        if (not mensaje_usuario or not mensaje_usuario.strip()) and num_media == 0:
-            logger.warning("Datos incompletos en el webhook (sin mensaje ni media)")
-            return PlainTextResponse("", status_code=200)
+        else:
+            # Es un mensaje de texto normal
+            numero_telefono, mensaje_usuario, message_sid, profile_name = twilio_service.extract_message_data(form_dict)
 
+            # Parsear NumMedia y MessageType ANTES de validar mensaje_usuario para manejar audio/imagen/etc
+            try:
+                num_media = int(form_dict.get('NumMedia', '0') or '0')
+            except Exception:
+                num_media = 0
+            message_type = (form_dict.get('MessageType') or '').lower().strip()
+
+            if not numero_telefono:
+                logger.warning("Datos incompletos en el webhook (sin numero_telefono)")
+                return PlainTextResponse("", status_code=200)
+            # Permitir continuar si hay media, aunque Body esté vacío
+            if (not mensaje_usuario or not mensaje_usuario.strip()) and num_media == 0:
+                logger.warning("Datos incompletos en el webhook (sin mensaje ni media)")
+                return PlainTextResponse("", status_code=200)
         logger.info(f"Procesando mensaje de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
 
         # Fallback unificado para contenidos no-texto (audio/imagen/video/documento/etc.)
@@ -231,11 +252,14 @@ async def webhook_whatsapp(request: Request):
         # Procesar el mensaje con el chatbot (incluyendo nombre del perfil)
         respuesta = ChatbotRules.procesar_mensaje(numero_telefono, mensaje_usuario, profile_name)
         
-        # Enviar respuesta via WhatsApp
-        mensaje_enviado = twilio_service.send_whatsapp_message(numero_telefono, respuesta)
-        
-        if not mensaje_enviado:
-            logger.error(f"Error enviando mensaje a {numero_telefono}")
+        # Enviar respuesta via WhatsApp solo si no está vacía
+        if respuesta and respuesta.strip():
+            mensaje_enviado = twilio_service.send_whatsapp_message(numero_telefono, respuesta)
+            
+            if not mensaje_enviado:
+                logger.error(f"Error enviando mensaje a {numero_telefono}")
+        else:
+            logger.info(f"Respuesta vacía, no se envía mensaje a {numero_telefono}")
         
         # Si durante el procesamiento se activó el handoff, notificar al agente vía WhatsApp
         try:
@@ -351,6 +375,93 @@ async def get_stats():
         "conversaciones_por_estado": conversaciones_por_estado,
         "timestamp": "2024-01-01T00:00:00Z"  # Placeholder timestamp
     }
+
+async def handle_interactive_button(numero_telefono: str, button_id: str, profile_name: str = "") -> str:
+    """
+    Maneja las respuestas de botones interactivos
+    
+    Args:
+        numero_telefono: Número de teléfono del usuario
+        button_id: ID del botón presionado
+        profile_name: Nombre del perfil del usuario
+        
+    Returns:
+        str: Respuesta a enviar al usuario (si hay alguna)
+    """
+    try:
+        from chatbot.rules import ChatbotRules
+        from chatbot.states import conversation_manager
+        from chatbot.models import EstadoConversacion, TipoConsulta
+        
+        logger.info(f"Procesando botón {button_id} de {numero_telefono}")
+        
+        # Obtener conversación actual
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        
+        # Guardar nombre de usuario si es la primera vez que lo vemos
+        if profile_name and not conversacion.nombre_usuario:
+            conversation_manager.set_nombre_usuario(numero_telefono, profile_name)
+        
+        # Manejar diferentes tipos de botones
+        if button_id == "presupuesto":
+            conversation_manager.set_tipo_consulta(numero_telefono, TipoConsulta.PRESUPUESTO)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+            return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.PRESUPUESTO)
+            
+        elif button_id == "urgencia":
+            conversation_manager.set_tipo_consulta(numero_telefono, TipoConsulta.URGENCIA)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+            return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.URGENCIA)
+            
+        elif button_id == "otras":
+            conversation_manager.set_tipo_consulta(numero_telefono, TipoConsulta.OTRAS)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+            return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.OTRAS)
+            
+        elif button_id == "volver_menu":
+            # Limpiar datos temporales y volver al menú
+            conversation_manager.clear_datos_temporales(numero_telefono)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+            # Enviar menú interactivo
+            ChatbotRules.send_menu_interactivo(numero_telefono, conversacion.nombre_usuario)
+            return ""  # El menú se envía directamente
+            
+        elif button_id == "finalizar_chat":
+            # Finalizar conversación
+            conversation_manager.finalizar_conversacion(numero_telefono)
+            return "¡Gracias por contactarnos! 👋 Esperamos poder ayudarte en el futuro."
+            
+        elif button_id == "si":
+            # Confirmar datos
+            if conversacion.estado == EstadoConversacion.CONFIRMANDO:
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.ENVIANDO)
+                return "⏳ Procesando tu solicitud..."
+            else:
+                return "No hay nada que confirmar en este momento."
+                
+        elif button_id == "no":
+            # Corregir datos
+            if conversacion.estado == EstadoConversacion.CONFIRMANDO:
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)
+                return ChatbotRules._get_mensaje_pregunta_campo_a_corregir()
+            else:
+                return "No hay datos para corregir en este momento."
+                
+        elif button_id == "menu":
+            # Volver al menú principal
+            conversation_manager.clear_datos_temporales(numero_telefono)
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+            # Enviar menú interactivo
+            ChatbotRules.send_menu_interactivo(numero_telefono, conversacion.nombre_usuario)
+            return ""  # El menú se envía directamente
+            
+        else:
+            logger.warning(f"Botón no reconocido: {button_id}")
+            return "No reconozco ese botón. Por favor, usa los botones disponibles o escribe tu mensaje."
+            
+    except Exception as e:
+        logger.error(f"Error en handle_interactive_button: {e}")
+        return "Hubo un error procesando tu solicitud. Por favor, intenta nuevamente."
 
 async def handle_agent_message(agent_phone: str, message: str, profile_name: str = ""):
     """
@@ -537,6 +648,149 @@ async def debug_test_handoff_full(token: str = Form(...)):
     except Exception as e:
         logger.error(f"Error en debug test handoff full: {e}")
         return {"error": f"Error interno: {str(e)}"}
+
+@app.post("/test-bot-flow")
+async def test_bot_flow(test_number: str = Form(...)):
+    """Endpoint para probar el flujo completo del bot desde un número específico"""
+    try:
+        from chatbot.rules import ChatbotRules
+        from chatbot.states import conversation_manager
+        from services.twilio_service import twilio_service
+        
+        logger.info(f"🧪 TESTING BOT FLOW para número: {test_number}")
+        
+        # Resetear conversación
+        conversation_manager.reset_conversacion(test_number)
+        
+        # Simular mensaje "hola"
+        respuesta = ChatbotRules.procesar_mensaje(test_number, "hola", "Usuario Test")
+        
+        # Enviar respuesta
+        if respuesta:
+            success = twilio_service.send_whatsapp_message(test_number, respuesta)
+            if success:
+                return {
+                    "message": "Flujo de bot probado exitosamente",
+                    "test_number": test_number,
+                    "response_sent": True
+                }
+            else:
+                return {"error": "Error enviando respuesta del bot"}
+        else:
+            return {
+                "message": "Bot procesó el mensaje (respuesta en background)",
+                "test_number": test_number,
+                "response_sent": False
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en test de bot flow: {str(e)}")
+        return {"error": f"Error: {str(e)}"}
+
+@app.post("/test-interactive-buttons")
+async def test_interactive_buttons(test_number: str = Form(...)):
+    """Endpoint para probar botones interactivos"""
+    try:
+        from chatbot.rules import ChatbotRules
+        from services.twilio_service import twilio_service
+        
+        logger.info(f"🧪 TESTING INTERACTIVE BUTTONS para número: {test_number}")
+        
+        # Probar menú interactivo
+        success = ChatbotRules.send_menu_interactivo(test_number, "Usuario Test")
+        
+        if success:
+            return {
+                "message": "Botones interactivos enviados exitosamente",
+                "test_number": test_number,
+                "button_type": "menu_interactivo"
+            }
+        else:
+            return {"error": "Error enviando botones interactivos"}
+            
+    except Exception as e:
+        logger.error(f"Error en test de botones interactivos: {str(e)}")
+        return {"error": f"Error: {str(e)}"}
+
+@app.post("/simulate-client-message")
+async def simulate_client_message(test_number: str = Form(...), message: str = Form(...)):
+    """Endpoint para simular mensaje de cliente (bypass de detección de agente)"""
+    try:
+        from chatbot.rules import ChatbotRules
+        from chatbot.states import conversation_manager
+        from services.twilio_service import twilio_service
+        
+        logger.info(f"🧪 SIMULATING CLIENT MESSAGE: {message} from {test_number}")
+        
+        # Procesar mensaje como si fuera de cliente (no agente)
+        respuesta = ChatbotRules.procesar_mensaje(test_number, message, "Usuario Test")
+        
+        # Enviar respuesta
+        if respuesta:
+            success = twilio_service.send_whatsapp_message(test_number, respuesta)
+            if success:
+                return {
+                    "message": "Mensaje de cliente simulado exitosamente",
+                    "test_number": test_number,
+                    "client_message": message,
+                    "bot_response": respuesta,
+                    "response_sent": True
+                }
+            else:
+                return {"error": "Error enviando respuesta del bot"}
+        else:
+            return {
+                "message": "Bot procesó el mensaje (respuesta en background)",
+                "test_number": test_number,
+                "client_message": message,
+                "response_sent": False
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en simulación de mensaje de cliente: {str(e)}")
+        return {"error": f"Error: {str(e)}"}
+
+@app.get("/test-complete-flow")
+async def test_complete_flow():
+    """Endpoint GET para probar el flujo completo con tu número"""
+    try:
+        from chatbot.rules import ChatbotRules
+        from chatbot.states import conversation_manager
+        from services.twilio_service import twilio_service
+        
+        # Usar tu número por defecto
+        test_number = "+5491135722871"
+        
+        logger.info(f"🧪 TESTING COMPLETE FLOW para número: {test_number}")
+        
+        # Resetear conversación
+        conversation_manager.reset_conversacion(test_number)
+        
+        # Simular mensaje "hola"
+        respuesta = ChatbotRules.procesar_mensaje(test_number, "hola", "Usuario Test")
+        
+        # Enviar respuesta
+        if respuesta:
+            success = twilio_service.send_whatsapp_message(test_number, respuesta)
+            if success:
+                return {
+                    "message": "Flujo completo probado exitosamente",
+                    "test_number": test_number,
+                    "response_sent": True,
+                    "bot_response": respuesta
+                }
+            else:
+                return {"error": "Error enviando respuesta del bot"}
+        else:
+            return {
+                "message": "Bot procesó el mensaje (respuesta en background)",
+                "test_number": test_number,
+                "response_sent": False
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en test de flujo completo: {str(e)}")
+        return {"error": f"Error: {str(e)}"}
 
 if __name__ == "__main__":
     import uvicorn

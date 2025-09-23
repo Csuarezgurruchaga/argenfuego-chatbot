@@ -92,6 +92,104 @@ Responde con el número de la opción que necesitas 📱"""
         return saludo + menu
     
     @staticmethod
+    def send_menu_interactivo(numero_telefono: str, nombre_usuario: str = ""):
+        """
+        Envía el menú principal con botones interactivos reales
+        """
+        from services.twilio_service import twilio_service
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Enviar template con solo el menú (sin saludo)
+        mensaje_menu = "¿En qué puedo ayudarte hoy?"
+        
+        # Botones interactivos reales
+        buttons = [
+            {"id": "presupuesto", "title": "📋 Presupuesto"},
+            {"id": "urgencia", "title": "🚨 Urgencia"},
+            {"id": "otras", "title": "❓ Otras consultas"}
+        ]
+        
+        # Enviar template con botones interactivos
+        success = twilio_service.send_whatsapp_quick_reply(numero_telefono, mensaje_menu, buttons)
+        
+        if success:
+            logger.info(f"✅ Menú interactivo enviado a {numero_telefono}")
+        else:
+            logger.error(f"❌ Error enviando menú interactivo a {numero_telefono}")
+            # Fallback a mensaje de texto normal
+            mensaje_fallback = f"""{mensaje}
+
+┌─────────────────────────────┐
+│  📋 1. Solicitar presupuesto │
+│  🚨 2. Reportar urgencia     │
+│  ❓ 3. Otras consultas       │
+└─────────────────────────────┘
+
+💡 *Responde con el número de la opción que necesitas*"""
+            twilio_service.send_whatsapp_message(numero_telefono, mensaje_fallback)
+        
+        return success
+    
+    @staticmethod
+    def send_handoff_buttons(numero_telefono: str):
+        """
+        Envía botones de navegación después del handoff
+        """
+        from services.twilio_service import twilio_service
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        mensaje = f"""Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼
+Un asesor continuará la conversación en este mismo chat.
+
+┌─────────────────────────────┐
+│  ⬅️ 1. Volver al menú        │
+│  ✋ 2. Finalizar chat        │
+└─────────────────────────────┘
+
+💡 *Responde con el número de la opción que necesitas*"""
+        
+        # Enviar mensaje
+        success = twilio_service.send_whatsapp_message(numero_telefono, mensaje)
+        
+        if success:
+            logger.info(f"✅ Botones de handoff enviados a {numero_telefono}")
+        else:
+            logger.error(f"❌ Error enviando botones de handoff a {numero_telefono}")
+        
+        return success
+    
+    @staticmethod
+    def send_confirmation_buttons(numero_telefono: str, mensaje: str):
+        """
+        Envía botones de confirmación (Sí/No)
+        """
+        from services.twilio_service import twilio_service
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        mensaje_completo = f"""{mensaje}
+
+┌─────────────────────────────┐
+│  ✅ 1. Sí, confirmar         │
+│  ❌ 2. No, corregir          │
+│  ⬅️ 3. Volver al menú        │
+└─────────────────────────────┘
+
+💡 *Responde con el número de la opción que necesitas*"""
+        
+        # Enviar mensaje
+        success = twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+        
+        if success:
+            logger.info(f"✅ Botones de confirmación enviados a {numero_telefono}")
+        else:
+            logger.error(f"❌ Error enviando botones de confirmación a {numero_telefono}")
+        
+        return success
+    
+    @staticmethod
     def get_saludo_inicial(nombre_usuario: str = "") -> str:
         """
         Primera parte del saludo: solo el saludo y presentación de Eva
@@ -123,15 +221,19 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def _enviar_flujo_saludo_completo(numero_telefono: str, nombre_usuario: str = "") -> str:
         """
-        Envía el flujo completo de saludo: texto + imagen + texto
-        Retorna solo el primer mensaje, los otros se envían en background
+        Envía el flujo completo de saludo: sticker + menú interactivo
+        Retorna mensaje vacío ya que todo se envía en background
         """
+        import os
         from services.twilio_service import twilio_service
         from config.company_profiles import get_active_company_profile
         import threading
         import time
         
-        # 1. Enviar sticker PRIMERO (para que llegue como 2do mensaje)
+        # Verificar si los botones interactivos están habilitados
+        use_interactive_buttons = os.getenv("USE_INTERACTIVE_BUTTONS", "false").lower() == "true"
+        
+        # 1. Enviar sticker PRIMERO (para que llegue como 1er mensaje)
         def enviar_sticker_primero():
             try:
                 import logging
@@ -151,42 +253,55 @@ Responde con el número de la opción que necesitas 📱"""
                 logger = logging.getLogger(__name__)
                 logger.error(f"Error enviando sticker: {str(e)}")
         
-        # 2. Enviar saludo y menú en background
-        def enviar_saludo_y_menu():
+        # 2. Enviar menú (interactivo o tradicional) en background
+        def enviar_menu():
             try:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.info(f"DEBUG: Enviando saludo y menú para {numero_telefono}")
                 
-                # 2. Enviar saludo (2do mensaje)
-                saludo = ChatbotRules.get_saludo_inicial(nombre_usuario)
-                logger.info(f"DEBUG: Enviando saludo (2do mensaje)")
-                twilio_service.send_whatsapp_message(numero_telefono, saludo)
-                
-                # 3. Delay de 2.5 segundos para asegurar que el saludo se procese
-                logger.info(f"DEBUG: Esperando 2.5s para que el saludo se procese...")
-                time.sleep(2.5)
-                
-                # 4. Enviar menú (3er mensaje)
-                menu_mensaje = ChatbotRules.get_presentacion_empresa()
-                logger.info(f"DEBUG: Enviando menú (3er mensaje)")
-                twilio_service.send_whatsapp_message(numero_telefono, menu_mensaje)
-                logger.info(f"DEBUG: Flujo de saludo completo terminado")
+                if use_interactive_buttons:
+                    logger.info(f"DEBUG: Enviando menú interactivo para {numero_telefono}")
+                    # Delay de 2 segundos para el template
+                    time.sleep(2)
+                    # Enviar menú con botones interactivos
+                    success = ChatbotRules.send_menu_interactivo(numero_telefono, nombre_usuario)
+                    logger.info(f"DEBUG: Menú interactivo enviado: {success}")
+                else:
+                    logger.info(f"DEBUG: Enviando menú tradicional para {numero_telefono}")
+                    # Delay de 2 segundos para el menú tradicional
+                    time.sleep(2)
+                    # Enviar menú tradicional
+                    mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
+                    success = twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+                    logger.info(f"DEBUG: Menú tradicional enviado: {success}")
                 
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.error(f"Error enviando imagen/presentación: {str(e)}")
+                logger.error(f"Error enviando menú: {str(e)}")
                 # Fallback: enviar mensaje completo si falla
                 mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
                 twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
         
-        # Ejecutar ambos en background
+        # 1. Enviar saludo inmediatamente
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if nombre_usuario:
+            saludo = f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva"
+        else:
+            saludo = "¡Hola! 👋🏻 Mi nombre es Eva"
+        
+        logger.info(f"DEBUG: Enviando saludo inicial para {numero_telefono}")
+        saludo_enviado = twilio_service.send_whatsapp_message(numero_telefono, saludo)
+        logger.info(f"DEBUG: Saludo enviado exitosamente: {saludo_enviado}")
+        
+        # 2. Ejecutar sticker y menú en background
         thread1 = threading.Thread(target=enviar_sticker_primero)
         thread1.daemon = True
         thread1.start()
         
-        thread2 = threading.Thread(target=enviar_saludo_y_menu)
+        thread2 = threading.Thread(target=enviar_menu)
         thread2.daemon = True
         thread2.start()
         
@@ -277,13 +392,31 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         mensaje_confirmacion += f"""
 📝 *Descripción:* {datos.descripcion}
 
-¿Es correcta toda la información? 
-
-✅ Responde *"SI"* para confirmar y enviar la solicitud
-❌ Responde *"NO"* si hay algo que corregir ✏️
-↩️ Responde *"MENU"* para volver al menú principal"""
+¿Es correcta toda la información?"""
 
         return mensaje_confirmacion
+    
+    @staticmethod
+    def send_confirmacion_interactiva(numero_telefono: str, conversacion) -> bool:
+        """
+        Envía mensaje de confirmación con botones interactivos
+        """
+        from services.twilio_service import twilio_service
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Obtener mensaje de confirmación
+        mensaje = ChatbotRules.get_mensaje_confirmacion(conversacion)
+        
+        # Enviar con botones
+        success = ChatbotRules.send_confirmation_buttons(numero_telefono, mensaje)
+        
+        if success:
+            logger.info(f"✅ Confirmación interactiva enviada a {numero_telefono}")
+        else:
+            logger.error(f"❌ Error enviando confirmación interactiva a {numero_telefono}")
+        
+        return success
     
     @staticmethod
     def _get_texto_tipo_consulta(tipo_consulta: TipoConsulta) -> str:
@@ -772,13 +905,31 @@ Responde con el número del campo que deseas modificar."""
             conversacion.handoff_started_at = datetime.utcnow()
             # Guardar el mensaje que disparó el handoff como contexto
             conversacion.mensaje_handoff_contexto = mensaje
-            # Mensaje de confirmación con aviso fuera de horario simple
-            profile = get_active_company_profile()
-            fuera_horario = ChatbotRules._esta_fuera_de_horario(profile.get('hours', ''))
-            base = "Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼\nUn asesor continuará la conversación en este mismo chat."
-            if fuera_horario:
-                base += "\n\n🕒 En este momento estamos fuera de horario. Tomaremos tu caso y te responderemos a la brevedad."
-            return base
+            
+            # Enviar mensaje de handoff con botones interactivos
+            try:
+                success = ChatbotRules.send_handoff_buttons(numero_telefono)
+                if success:
+                    return ""  # Los botones se enviaron exitosamente
+                else:
+                    # Fallback a mensaje de texto normal
+                    profile = get_active_company_profile()
+                    fuera_horario = ChatbotRules._esta_fuera_de_horario(profile.get('hours', ''))
+                    base = "Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼\nUn asesor continuará la conversación en este mismo chat."
+                    if fuera_horario:
+                        base += "\n\n🕒 En este momento estamos fuera de horario. Tomaremos tu caso y te responderemos a la brevedad."
+                    return base
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error enviando botones de handoff: {str(e)}")
+                # Fallback a mensaje de texto normal
+                profile = get_active_company_profile()
+                fuera_horario = ChatbotRules._esta_fuera_de_horario(profile.get('hours', ''))
+                base = "Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼\nUn asesor continuará la conversación en este mismo chat."
+                if fuera_horario:
+                    base += "\n\n🕒 En este momento estamos fuera de horario. Tomaremos tu caso y te responderemos a la brevedad."
+                return base
         
         # INTERCEPTAR SOLICITUDES DE VOLVER AL MENÚ EN CUALQUIER MOMENTO
         if ChatbotRules._detectar_volver_menu(mensaje) and conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:

@@ -125,6 +125,116 @@ class TwilioService:
             logger.error(f"Tipo de error: {type(e).__name__}")
             return False
     
+    def send_whatsapp_quick_reply(self, to_number: str, body: str, buttons: list) -> bool:
+        """
+        Envía un mensaje con botones de respuesta rápida usando plantillas de Twilio
+        
+        Args:
+            to_number: Número de destino
+            body: Texto del mensaje
+            buttons: Lista de botones (máximo 3) [{"id": "button1", "title": "Opción 1"}]
+            
+        Returns:
+            bool: True si se envió exitosamente
+        """
+        try:
+            logger.info(f"=== TWILIO QUICK REPLY SEND DEBUG ===")
+            logger.info(f"to_number: {to_number}")
+            logger.info(f"body: {body}")
+            logger.info(f"buttons: {buttons}")
+            
+            # Asegurar que el número tenga el prefijo whatsapp:
+            if not to_number.startswith('whatsapp:'):
+                to_number = f'whatsapp:{to_number}'
+            
+            # Validar que no haya más de 3 botones
+            if len(buttons) > 3:
+                logger.error("❌ Máximo 3 botones permitidos en Quick Reply")
+                return False
+            
+            # Verificar si tenemos plantillas de botones configuradas
+            menu_template_sid = os.getenv("MENU_BUTTONS_TEMPLATE_SID")
+            
+            if menu_template_sid:
+                # Usar plantilla de Twilio con botones
+                logger.info(f"Usando plantilla de botones: {menu_template_sid}")
+                
+                # Crear variables para la plantilla
+                template_variables = {
+                    "1": body,  # Mensaje principal
+                    "2": buttons[0]["title"] if len(buttons) > 0 else "",
+                    "3": buttons[1]["title"] if len(buttons) > 1 else "",
+                    "4": buttons[2]["title"] if len(buttons) > 2 else ""
+                }
+                
+                message = self.client.messages.create(
+                    from_=self.whatsapp_number,
+                    to=to_number,
+                    content_sid=menu_template_sid,
+                    content_variables=json.dumps(template_variables)
+                )
+                
+                logger.info(f"✅ Plantilla de botones enviada exitosamente a {to_number}. SID: {message.sid}")
+                return True
+            else:
+                # Fallback: usar mensaje de texto mejorado
+                logger.info("No hay plantilla de botones configurada, usando fallback")
+                return False
+            
+        except Exception as e:
+            logger.error(f"❌ Error enviando botones a {to_number}: {str(e)}")
+            logger.error(f"Tipo de error: {type(e).__name__}")
+            return False
+    
+    def send_whatsapp_list_picker(self, to_number: str, body: str, button_text: str, sections: list) -> bool:
+        """
+        Envía un mensaje con lista desplegable (List Picker)
+        
+        Args:
+            to_number: Número de destino
+            body: Texto del mensaje
+            button_text: Texto del botón que abre la lista
+            sections: Lista de secciones con opciones [{"title": "Sección 1", "rows": [{"id": "opt1", "title": "Opción 1"}]}]
+            
+        Returns:
+            bool: True si se envió exitosamente
+        """
+        try:
+            logger.info(f"=== TWILIO LIST PICKER SEND DEBUG ===")
+            logger.info(f"to_number: {to_number}")
+            logger.info(f"body: {body}")
+            logger.info(f"button_text: {button_text}")
+            logger.info(f"sections: {sections}")
+            
+            # Asegurar que el número tenga el prefijo whatsapp:
+            if not to_number.startswith('whatsapp:'):
+                to_number = f'whatsapp:{to_number}'
+            
+            # Validar que no haya más de 10 opciones totales
+            total_options = sum(len(section.get('rows', [])) for section in sections)
+            if total_options > 10:
+                logger.error("❌ Máximo 10 opciones permitidas en List Picker")
+                return False
+            
+            # Crear el mensaje con lista interactiva
+            message = self.client.messages.create(
+                from_=self.whatsapp_number,
+                to=to_number,
+                body=body,
+                actions={
+                    'button': button_text,
+                    'sections': sections
+                }
+            )
+            
+            logger.info(f"✅ List Picker enviado exitosamente a {to_number}. SID: {message.sid}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error enviando List Picker a {to_number}: {str(e)}")
+            logger.error(f"Tipo de error: {type(e).__name__}")
+            return False
+    
     def extract_message_data(self, request_data: dict) -> tuple[str, str, str, str]:
         """
         Extrae los datos relevantes del webhook de Twilio
@@ -136,6 +246,18 @@ class TwilioService:
         profile_name = request_data.get('ProfileName', '').strip()
         
         return numero_telefono, mensaje, message_sid, profile_name
+    
+    def extract_interactive_data(self, request_data: dict) -> tuple[str, str, str, str]:
+        """
+        Extrae los datos de botones interactivos del webhook de Twilio
+        Returns: (numero_telefono, button_id, message_sid, profile_name)
+        """
+        numero_telefono = request_data.get('From', '').replace('whatsapp:', '')
+        button_id = request_data.get('ButtonPayload', '').strip()
+        message_sid = request_data.get('MessageSid', '')
+        profile_name = request_data.get('ProfileName', '').strip()
+        
+        return numero_telefono, button_id, message_sid, profile_name
     
     def validate_webhook_signature(self, request_url: str, post_data: dict, signature: str) -> bool:
         """
