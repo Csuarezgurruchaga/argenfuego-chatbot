@@ -122,6 +122,15 @@ async def webhook_whatsapp(request: Request):
 
         if not whatsapp_handoff_service.is_agent_message(numero_telefono) and not en_handoff:
             if num_media > 0 or message_type in ['image', 'audio', 'video', 'document', 'file', 'sticker', 'media', 'location']:
+                # Si el usuario está en el menú principal, enviar mensaje corto específico
+                if conv_check.estado in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION, EstadoConversacion.MENU_PRINCIPAL]:
+                    twilio_service.send_whatsapp_message(
+                        numero_telefono,
+                        "Actualmente este canal solo recibe mensajes de texto. Por favor, selecciona la opcion que desees del menu"
+                    )
+                    return PlainTextResponse("", status_code=200)
+
+                # En otros estados, usar fallback general (con email si está disponible)
                 try:
                     from config.company_profiles import get_active_company_profile
                     email_contacto = (get_active_company_profile() or {}).get('email', '')
@@ -164,6 +173,18 @@ async def webhook_whatsapp(request: Request):
         # Si está en handoff, reenviar a WhatsApp del agente y no responder con bot
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
+            # Si el cliente envía no-texto durante handoff, responder con fallback y no reenviar al agente
+            if num_media > 0 or message_type in ['image', 'audio', 'video', 'document', 'file', 'sticker', 'media', 'location']:
+                twilio_service.send_whatsapp_message(
+                    numero_telefono,
+                    "Actualmente este canal solo recibe mensajes de texto. Disculpe las molestias ocasionadas"
+                )
+                try:
+                    from datetime import datetime
+                    conversacion_actual.last_client_message_at = datetime.utcnow()
+                except Exception:
+                    pass
+                return PlainTextResponse("", status_code=200)
             # Notificar al agente vía WhatsApp
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:
                 # Es el primer mensaje del handoff, incluir contexto completo con botones

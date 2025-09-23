@@ -271,7 +271,7 @@ class WhatsAppHandoffService:
         """
         try:
             question_message = (
-                f"👨‍💼 *Agente:* ¿Hay algo más en lo que pueda ayudarte?\n\n"
+                f"¿Hay algo más en lo que pueda ayudarte?\n\n"
                 f"Si no necesitas más ayuda, simplemente no respondas y la conversación se cerrará automáticamente en unos minutos."
             )
             
