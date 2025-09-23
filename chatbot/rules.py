@@ -256,7 +256,7 @@ Responde con el número de la opción que necesitas 📱"""
                 logger = logging.getLogger(__name__)
                 logger.info(f"DEBUG: Enviando menú interactivo para {numero_telefono}")
                 
-                # Delay de 2 segundos para asegurar que el sticker se procese
+                # Delay de 2 segundos para el template
                 time.sleep(2)
                 
                 # Enviar menú con botones interactivos
