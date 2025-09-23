@@ -253,7 +253,7 @@ class TwilioService:
         Returns: (numero_telefono, button_id, message_sid, profile_name)
         """
         numero_telefono = request_data.get('From', '').replace('whatsapp:', '')
-        button_id = request_data.get('ButtonText', '').strip()
+        button_id = request_data.get('ButtonPayload', '').strip()
         message_sid = request_data.get('MessageSid', '')
         profile_name = request_data.get('ProfileName', '').strip()
         

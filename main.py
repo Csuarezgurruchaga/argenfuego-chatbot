@@ -222,11 +222,14 @@ async def webhook_whatsapp(request: Request):
         # Procesar el mensaje con el chatbot (incluyendo nombre del perfil)
         respuesta = ChatbotRules.procesar_mensaje(numero_telefono, mensaje_usuario, profile_name)
         
-        # Enviar respuesta via WhatsApp
-        mensaje_enviado = twilio_service.send_whatsapp_message(numero_telefono, respuesta)
-        
-        if not mensaje_enviado:
-            logger.error(f"Error enviando mensaje a {numero_telefono}")
+        # Enviar respuesta via WhatsApp solo si no está vacía
+        if respuesta and respuesta.strip():
+            mensaje_enviado = twilio_service.send_whatsapp_message(numero_telefono, respuesta)
+            
+            if not mensaje_enviado:
+                logger.error(f"Error enviando mensaje a {numero_telefono}")
+        else:
+            logger.info(f"Respuesta vacía, no se envía mensaje a {numero_telefono}")
         
         # Si durante el procesamiento se activó el handoff, notificar al agente vía WhatsApp
         try:
