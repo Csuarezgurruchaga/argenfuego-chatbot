@@ -100,13 +100,18 @@ Responde con el número de la opción que necesitas 📱"""
         import logging
         logger = logging.getLogger(__name__)
         
-        # Saludo personalizado
+        # 1. Enviar saludo personalizado primero
         if nombre_usuario:
-            saludo = f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva 👩🏻‍🦱, soy la asistente virtual de Argenfuego."
+            saludo = f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva"
         else:
-            saludo = "¡Hola! 👋🏻 Mi nombre es Eva 👩🏻‍🦱, soy la asistente virtual de Argenfuego."
+            saludo = "¡Hola! 👋🏻 Mi nombre es Eva"
         
-        mensaje = f"{saludo}\n\n¿En qué puedo ayudarte hoy?"
+        logger.info(f"DEBUG: Enviando saludo inicial para {numero_telefono}")
+        saludo_enviado = twilio_service.send_whatsapp_message(numero_telefono, saludo)
+        logger.info(f"DEBUG: Saludo enviado exitosamente: {saludo_enviado}")
+        
+        # 2. Enviar template con solo el menú (sin saludo)
+        mensaje_menu = "¿En qué puedo ayudarte hoy?"
         
         # Botones interactivos reales
         buttons = [
@@ -115,8 +120,8 @@ Responde con el número de la opción que necesitas 📱"""
             {"id": "otras", "title": "❓ Otras consultas"}
         ]
         
-        # Enviar mensaje con botones interactivos
-        success = twilio_service.send_whatsapp_quick_reply(numero_telefono, mensaje, buttons)
+        # Enviar template con botones interactivos
+        success = twilio_service.send_whatsapp_quick_reply(numero_telefono, mensaje_menu, buttons)
         
         if success:
             logger.info(f"✅ Menú interactivo enviado a {numero_telefono}")
