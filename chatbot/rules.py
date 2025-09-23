@@ -224,10 +224,14 @@ Responde con el número de la opción que necesitas 📱"""
         Envía el flujo completo de saludo: sticker + menú interactivo
         Retorna mensaje vacío ya que todo se envía en background
         """
+        import os
         from services.twilio_service import twilio_service
         from config.company_profiles import get_active_company_profile
         import threading
         import time
+        
+        # Verificar si los botones interactivos están habilitados
+        use_interactive_buttons = os.getenv("USE_INTERACTIVE_BUTTONS", "false").lower() == "true"
         
         # 1. Enviar sticker PRIMERO (para que llegue como 1er mensaje)
         def enviar_sticker_primero():
@@ -249,24 +253,32 @@ Responde con el número de la opción que necesitas 📱"""
                 logger = logging.getLogger(__name__)
                 logger.error(f"Error enviando sticker: {str(e)}")
         
-        # 2. Enviar menú interactivo en background
-        def enviar_menu_interactivo():
+        # 2. Enviar menú (interactivo o tradicional) en background
+        def enviar_menu():
             try:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.info(f"DEBUG: Enviando menú interactivo para {numero_telefono}")
                 
-                # Delay de 2 segundos para el template
-                time.sleep(2)
-                
-                # Enviar menú con botones interactivos
-                success = ChatbotRules.send_menu_interactivo(numero_telefono, nombre_usuario)
-                logger.info(f"DEBUG: Menú interactivo enviado: {success}")
+                if use_interactive_buttons:
+                    logger.info(f"DEBUG: Enviando menú interactivo para {numero_telefono}")
+                    # Delay de 2 segundos para el template
+                    time.sleep(2)
+                    # Enviar menú con botones interactivos
+                    success = ChatbotRules.send_menu_interactivo(numero_telefono, nombre_usuario)
+                    logger.info(f"DEBUG: Menú interactivo enviado: {success}")
+                else:
+                    logger.info(f"DEBUG: Enviando menú tradicional para {numero_telefono}")
+                    # Delay de 2 segundos para el menú tradicional
+                    time.sleep(2)
+                    # Enviar menú tradicional
+                    mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
+                    success = twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+                    logger.info(f"DEBUG: Menú tradicional enviado: {success}")
                 
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.error(f"Error enviando menú interactivo: {str(e)}")
+                logger.error(f"Error enviando menú: {str(e)}")
                 # Fallback: enviar mensaje completo si falla
                 mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
                 twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
@@ -289,7 +301,7 @@ Responde con el número de la opción que necesitas 📱"""
         thread1.daemon = True
         thread1.start()
         
-        thread2 = threading.Thread(target=enviar_menu_interactivo)
+        thread2 = threading.Thread(target=enviar_menu)
         thread2.daemon = True
         thread2.start()
         
