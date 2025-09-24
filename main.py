@@ -153,8 +153,16 @@ async def webhook_whatsapp(request: Request):
 
         if not whatsapp_handoff_service.is_agent_message(numero_telefono) and not en_handoff:
             if num_media > 0 or message_type in ['image', 'audio', 'video', 'document', 'file', 'sticker', 'media', 'location']:
+                # Caso especial: primer mensaje del usuario es media (aún no se mostró el menú)
+                if conv_check.estado == EstadoConversacion.INICIO:
+                    twilio_service.send_whatsapp_message(
+                        numero_telefono,
+                        "Gracias por tu mensaje 😊 Para continuar, mandá un texto breve (por ejemplo: 'Hola') y verás el menú 📲"
+                    )
+                    return PlainTextResponse("", status_code=200)
+
                 # Si el usuario está en el menú principal, enviar mensaje corto específico
-                if conv_check.estado in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION, EstadoConversacion.MENU_PRINCIPAL]:
+                if conv_check.estado in [EstadoConversacion.ESPERANDO_OPCION, EstadoConversacion.MENU_PRINCIPAL]:
                     twilio_service.send_whatsapp_message(
                         numero_telefono,
                         "Actualmente este canal solo recibe mensajes de texto. Por favor, selecciona la opcion que desees del menu"
