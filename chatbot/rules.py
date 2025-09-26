@@ -261,15 +261,15 @@ Responde con el número de la opción que necesitas 📱"""
                 
                 if use_interactive_buttons:
                     logger.info(f"DEBUG: Enviando menú interactivo para {numero_telefono}")
-                    # Delay de 2 segundos para el template
-                    time.sleep(2)
+                    # Delay de 2.2 segundos para el template
+                    time.sleep(2.2)
                     # Enviar menú con botones interactivos
                     success = ChatbotRules.send_menu_interactivo(numero_telefono, nombre_usuario)
                     logger.info(f"DEBUG: Menú interactivo enviado: {success}")
                 else:
                     logger.info(f"DEBUG: Enviando menú tradicional para {numero_telefono}")
-                    # Delay de 2 segundos para el menú tradicional
-                    time.sleep(2)
+                    # Delay de 2.2 segundos para el menú tradicional
+                    time.sleep(2.2)
                     # Enviar menú tradicional
                     mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
                     success = twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
