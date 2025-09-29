@@ -61,8 +61,14 @@ async def handoff_ttl_sweep(token: str = Form(...)):
             should_close = False
             close_reason = ""
             
+            # Verificar timeout de encuesta de satisfacción (15 minutos)
+            if conv.estado == EstadoConversacion.ENCUESTA_SATISFACCION and conv.survey_sent_at:
+                if (ahora - conv.survey_sent_at) > timedelta(minutes=15):
+                    should_close = True
+                    close_reason = "Encuesta de satisfacción sin completar"
+            
             # Verificar timeout de pregunta de resolución (10 minutos)
-            if conv.resolution_question_sent and conv.resolution_question_sent_at:
+            elif conv.resolution_question_sent and conv.resolution_question_sent_at:
                 if (ahora - conv.resolution_question_sent_at) > timedelta(minutes=resolution_timeout_minutes):
                     should_close = True
                     close_reason = "Pregunta de resolución sin respuesta"
@@ -76,7 +82,9 @@ async def handoff_ttl_sweep(token: str = Form(...)):
             
             if should_close:
                 try:
-                    if close_reason == "Pregunta de resolución sin respuesta":
+                    if close_reason == "Encuesta de satisfacción sin completar":
+                        twilio_service.send_whatsapp_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
+                    elif close_reason == "Pregunta de resolución sin respuesta":
                         twilio_service.send_whatsapp_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
                     else:
                         twilio_service.send_whatsapp_message(conv.numero_telefono, "Esta conversación se finalizará por inactividad. ¡Muchas gracias por contactarnos! 🕒")

@@ -59,6 +59,7 @@ class ConversacionData(BaseModel):
     # Campos para encuesta de satisfacción
     survey_enabled: bool = False  # Si la encuesta está habilitada para esta conversación
     survey_sent: bool = False  # Si se envió la encuesta
+    survey_sent_at: Optional[datetime] = None  # Timestamp de cuando se envió la encuesta
     survey_responses: dict = Field(default_factory=dict)  # Respuestas de la encuesta
     survey_question_number: int = 0  # Número de pregunta actual (1, 2, 3)
     

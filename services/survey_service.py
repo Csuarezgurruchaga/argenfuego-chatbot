@@ -80,6 +80,7 @@ class SurveyService:
         try:
             # Marcar que se envió la encuesta
             conversation.survey_sent = True
+            conversation.survey_sent_at = datetime.utcnow()
             conversation.survey_question_number = 1
             
             # Construir mensaje de la primera pregunta
