@@ -589,11 +589,7 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
                 message
             )
             
-            if success:
-                # Confirmar al agente que el mensaje se envió
-                confirmation_msg = f"✅ Mensaje enviado al cliente {latest_handoff_conv.numero_telefono}"
-                twilio_service.send_whatsapp_message(agent_phone, confirmation_msg)
-            else:
+            if not success:
                 # Notificar error al agente
                 error_msg = f"❌ Error enviando mensaje al cliente {latest_handoff_conv.numero_telefono}"
                 twilio_service.send_whatsapp_message(agent_phone, error_msg)
