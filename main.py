@@ -239,8 +239,30 @@ async def webhook_whatsapp(request: Request):
             await handle_agent_message(numero_telefono, mensaje_usuario, profile_name)
             return PlainTextResponse("", status_code=200)
         
-        # Si está en handoff, reenviar a WhatsApp del agente y no responder con bot
+        # Obtener conversación actual
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
+        
+        # Verificar si está en encuesta de satisfacción (PRIORIDAD ALTA)
+        if conversacion_actual.estado == EstadoConversacion.ENCUESTA_SATISFACCION:
+            # Procesar respuesta de encuesta
+            from services.survey_service import survey_service
+            
+            survey_complete, next_message = survey_service.process_survey_response(
+                numero_telefono, mensaje_usuario, conversacion_actual
+            )
+            
+            if next_message:
+                # Enviar siguiente pregunta o mensaje de finalización
+                twilio_service.send_whatsapp_message(numero_telefono, next_message)
+            
+            if survey_complete:
+                # Encuesta completada, finalizar conversación
+                conversation_manager.finalizar_conversacion(numero_telefono)
+                logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono}")
+            
+            return PlainTextResponse("", status_code=200)
+
+        # Si está en handoff, reenviar a WhatsApp del agente y no responder con bot
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
             # Si el cliente envía no-texto durante handoff, responder con fallback y no reenviar al agente
             if num_media > 0 or message_type in ['image', 'audio', 'video', 'document', 'file', 'sticker', 'media', 'location']:
@@ -285,26 +307,6 @@ async def webhook_whatsapp(request: Request):
                 conversacion_actual.last_client_message_at = datetime.utcnow()
             except Exception:
                 pass
-            return PlainTextResponse("", status_code=200)
-
-        # Verificar si está en encuesta de satisfacción
-        if conversacion_actual.estado == EstadoConversacion.ENCUESTA_SATISFACCION:
-            # Procesar respuesta de encuesta
-            from services.survey_service import survey_service
-            
-            survey_complete, next_message = survey_service.process_survey_response(
-                numero_telefono, mensaje_usuario, conversacion_actual
-            )
-            
-            if next_message:
-                # Enviar siguiente pregunta o mensaje de finalización
-                twilio_service.send_whatsapp_message(numero_telefono, next_message)
-            
-            if survey_complete:
-                # Encuesta completada, finalizar conversación
-                conversation_manager.finalizar_conversacion(numero_telefono)
-                logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono}")
-            
             return PlainTextResponse("", status_code=200)
 
         # Procesar el mensaje con el chatbot (incluyendo nombre del perfil)
