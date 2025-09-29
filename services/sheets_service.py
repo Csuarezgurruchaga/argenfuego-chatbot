@@ -31,6 +31,7 @@ class SheetsService:
         self.business_sheet_name = os.getenv('SHEETS_BUSINESS_SHEET_NAME', 'METRICS_BUSINESS').strip()
         self.tech_sheet_name = os.getenv('SHEETS_TECH_SHEET_NAME', default_metrics).strip()
         self.errors_sheet_name = os.getenv('SHEETS_ERRORS_SHEET_NAME', 'ERRORS').strip()
+        self.survey_sheet_name = os.getenv('SHEETS_SURVEY_SHEET_NAME', 'ENCUESTA_RESULTADOS').strip()
 
         self._gc = None
         self._last_auth_ts = 0
@@ -71,7 +72,7 @@ class SheetsService:
 
     def append_row(self, target: str, row: List[Any]) -> bool:
         """
-        target: 'metrics' or 'errors'
+        target: 'business', 'tech', 'errors', or 'survey'
         row: list of values to append
         """
         if not self.enabled:
@@ -87,6 +88,9 @@ class SheetsService:
             elif target == 'tech':
                 ss_id = self.spreadsheet_metrics_id
                 sheet_name = self.tech_sheet_name
+            elif target == 'survey':
+                ss_id = self.spreadsheet_metrics_id
+                sheet_name = self.survey_sheet_name
             else:
                 ss_id = self.spreadsheet_metrics_id
                 sheet_name = self.tech_sheet_name

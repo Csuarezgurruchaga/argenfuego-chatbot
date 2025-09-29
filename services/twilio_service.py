@@ -33,10 +33,14 @@ class TwilioService:
             
             logger.info(f"to_number final: {to_number}")
             
+            # Obtener URL de callback de estado si está configurada
+            status_callback_url = os.getenv('TWILIO_STATUS_CALLBACK_URL')
+            
             message_obj = self.client.messages.create(
                 body=message,
                 from_=self.whatsapp_number,
-                to=to_number
+                to=to_number,
+                status_callback=status_callback_url if status_callback_url else None
             )
             
             logger.info(f"✅ Mensaje enviado exitosamente a {to_number}. SID: {message_obj.sid}")
@@ -56,11 +60,15 @@ class TwilioService:
             if not to_number.startswith('whatsapp:'):
                 to_number = f'whatsapp:{to_number}'
             
+            # Obtener URL de callback de estado si está configurada
+            status_callback_url = os.getenv('TWILIO_STATUS_CALLBACK_URL')
+            
             message = self.client.messages.create(
                 body=caption,
                 from_=self.whatsapp_number,
                 to=to_number,
-                media_url=[media_url]
+                media_url=[media_url],
+                status_callback=status_callback_url if status_callback_url else None
             )
             
             logger.info(f"Media enviado exitosamente a {to_number}. SID: {message.sid}")
@@ -109,12 +117,16 @@ class TwilioService:
                     # fallback simple: enviar como json de la lista
                     content_vars = {"1": json.dumps(parameters)}
             
+            # Obtener URL de callback de estado si está configurada
+            status_callback_url = os.getenv('TWILIO_STATUS_CALLBACK_URL')
+            
             # Crear el mensaje con template
             message = self.client.messages.create(
                 from_=self.whatsapp_number,
                 to=to_number,
                 content_sid=content_sid,
-                content_variables=json.dumps(content_vars) if content_vars else None
+                content_variables=json.dumps(content_vars) if content_vars else None,
+                status_callback=status_callback_url if status_callback_url else None
             )
             
             logger.info(f"✅ Template enviado exitosamente a {to_number}. SID: {message.sid}")

@@ -41,9 +41,6 @@ class MetricsService:
     def on_human_request(self):
         self._inc('human_requests')
 
-    def on_validation_failure(self, field: str):
-        self._inc(f'validation_fail_{field}')
-
     def on_geo_caba(self):
         self._inc('geo_caba')
 
@@ -56,6 +53,25 @@ class MetricsService:
 
     def on_exception(self):
         self._inc('exceptions')
+
+    def on_validation_failure(self, field: str):
+        self._inc(f'validation_fail_{field}')
+
+    # Hooks de estado de entrega de mensajes
+    def on_message_sent(self):
+        self._inc('messages_sent')
+
+    def on_message_delivered(self):
+        self._inc('messages_delivered')
+
+    def on_message_failed(self):
+        self._inc('messages_failed')
+
+    def on_message_undelivered(self):
+        self._inc('messages_undelivered')
+
+    def on_message_read(self):
+        self._inc('messages_read')
 
     # Flush
     def flush_if_needed(self):
@@ -83,16 +99,21 @@ class MetricsService:
                 int(bucket.get('intent_otras', 0)),
                 int(bucket.get('geo_caba', 0)),
                 int(bucket.get('geo_provincia', 0)),
-                int(bucket.get('validation_fail_email', 0)),
-                int(bucket.get('validation_fail_direccion', 0)),
-                int(bucket.get('validation_fail_horario_visita', 0)),
-                int(bucket.get('validation_fail_descripcion', 0)),
+                int(bucket.get('messages_sent', 0)),
+                int(bucket.get('messages_delivered', 0)),
+                int(bucket.get('messages_failed', 0)),
+                int(bucket.get('messages_undelivered', 0)),
+                int(bucket.get('messages_read', 0)),
             ])
             # Enviar a TECH
             sheets_service.append_row('tech', [
                 day,
                 int(bucket.get('nlu_unclear', 0)),
                 int(bucket.get('exceptions', 0)),
+                int(bucket.get('validation_fail_email', 0)),
+                int(bucket.get('validation_fail_direccion', 0)),
+                int(bucket.get('validation_fail_horario_visita', 0)),
+                int(bucket.get('validation_fail_descripcion', 0)),
             ])
             return True
         except Exception as e:

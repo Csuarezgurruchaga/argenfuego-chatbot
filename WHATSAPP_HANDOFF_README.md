@@ -39,9 +39,10 @@ TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886  # Número de Twilio WhatsApp
 
 ### 4. Resolution (Mejorado)
 - Para finalizar la conversación, el agente envía: `ok`, `listo`, `/r`, etc.
-- Se envía pregunta al cliente: "¿Hay algo más en lo que pueda ayudarte?"
+- Si `SUMMARY=true` está habilitado, se envía encuesta de satisfacción
+- Si `SUMMARY=false` o no está configurado, se envía pregunta: "¿Hay algo más en lo que pueda ayudarte?"
 - Si el cliente no responde en 10 minutos, se cierra automáticamente
-- Si el cliente responde, continúa la conversación
+- Si el cliente responde, continúa la conversación o completa la encuesta
 
 ## Agent Commands
 
@@ -56,6 +57,37 @@ TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886  # Número de Twilio WhatsApp
 - **`ok`** - Comando natural más usado
 - **`listo`** - Comando en español
 - **`done`** - Comando en inglés
+
+## Encuesta de Satisfacción
+
+### Configuración
+Para habilitar la encuesta de satisfacción post-handoff, configurar:
+```bash
+SUMMARY=true
+SHEETS_SURVEY_SHEET_NAME=ENCUESTA_RESULTADOS
+```
+
+### Funcionamiento
+1. **Activación**: Se activa cuando el agente escribe `/r` o `/resuelto`
+2. **Preguntas**: 3 preguntas secuenciales con opciones numeradas
+3. **Respuestas**: El cliente puede responder con números (1, 2, 3) o texto
+4. **Almacenamiento**: Resultados se guardan en Google Sheets
+5. **Finalización**: Conversación se cierra automáticamente
+
+### Preguntas de la Encuesta
+1. **¿Pudiste resolver el motivo por el cuál te comunicaste?**
+   - 1️⃣ Sí
+   - 2️⃣ Parcialmente  
+   - 3️⃣ No
+
+2. **¿Cómo calificarías la amabilidad en la atención?**
+   - 1️⃣ Muy buena
+   - 2️⃣ Regular
+   - 3️⃣ Mala
+
+3. **¿Volverías a utilizar esta vía de contacto?**
+   - 1️⃣ Sí
+   - 2️⃣ No
 
 ## Message Flow
 
@@ -72,32 +104,46 @@ Bot → Client: "👨‍💼 Agente: Hola Juan, ¿en qué puedo ayudarte?"
 Bot → Agent: "✅ Mensaje enviado al cliente +5491123456789"
 
 Agent → Bot: "ok"
-Bot → Client: "👨‍💼 Agente: ¿Hay algo más en lo que pueda ayudarte?"
+# Si SUMMARY=true:
+Bot → Client: "Con el fin de seguir mejorando la calidad de nuestra atención, le proponemos responder la siguiente encuesta:\n\n¿Pudiste resolver el motivo por el cuál te comunicaste?\n1️⃣ Sí\n2️⃣ Parcialmente\n3️⃣ No\n\nResponde con el número (1, 2 o 3)"
+Bot → Agent: "✅ Encuesta de satisfacción enviada al cliente +5491123456789"
+
+# Si SUMMARY=false:
+Bot → Client: "¿Hay algo más en lo que pueda ayudarte?\n\nSi no necesitas más ayuda, simplemente no respondas y la conversación se cerrará automáticamente en unos minutos."
 Bot → Agent: "✅ Pregunta de resolución enviada al cliente +5491123456789. Se cerrará automáticamente si no responde en 10 minutos."
 
-# Si cliente no responde en 10 minutos:
-Bot → Client: "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
+# Flujo de encuesta (si SUMMARY=true):
+Client → Bot: "1"
+Bot → Client: "¿Cómo calificarías la amabilidad en la atención?\n1️⃣ Muy buena\n2️⃣ Regular\n3️⃣ Mala\n\nResponde con el número (1, 2 o 3)"
 
-# Si cliente responde:
-Client → Bot: "Sí, tengo otra pregunta"
-Bot → Agent: "💬 Nuevo mensaje del cliente\nCliente: Juan (+5491123456789)\nMensaje: Sí, tengo otra pregunta"
+Client → Bot: "1"
+Bot → Client: "¿Volverías a utilizar esta vía de contacto?\n1️⃣ Sí\n2️⃣ No\n\nResponde con el número (1, 2 o 3)"
+
+Client → Bot: "1"
+Bot → Client: "¡Gracias por tu tiempo! Tus respuestas nos ayudan a mejorar nuestro servicio. ✅"
+# Conversación finalizada automáticamente
 ```
 
 ## Technical Implementation
 
 ### Files Modified
 - `services/whatsapp_handoff_service.py` - New service for WhatsApp handoff
-- `main.py` - Modified webhook to handle agent messages
-- `chatbot/models.py` - Added `handoff_notified` field
+- `main.py` - Modified webhook to handle agent messages and survey responses
+- `chatbot/models.py` - Added handoff fields and survey fields
+- `chatbot/states.py` - Added `ENCUESTA_SATISFACCION` state
+- `services/survey_service.py` - New service for satisfaction surveys
+- `services/sheets_service.py` - Added support for survey results sheet
 
 ### Key Features
 - **Agent Detection**: Automatically detects messages from the agent's WhatsApp number
 - **Bidirectional Communication**: Agent can respond to clients directly
 - **Smart Resolution**: Natural commands (ok, listo, /r) with client confirmation
+- **Satisfaction Surveys**: Optional post-handoff surveys with 3 questions
 - **Auto Timeout**: Conversations close automatically after 10 minutes of no response
 - **Error Handling**: Comprehensive error handling and logging
 - **Confirmation Messages**: Agent receives confirmation of sent messages
 - **Improved UX**: Short commands and natural language support
+- **Data Collection**: Survey results stored in Google Sheets for analysis
 
 ## Migration from Slack
 

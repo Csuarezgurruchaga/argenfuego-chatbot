@@ -259,30 +259,53 @@ class WhatsAppHandoffService:
             logger.error(f"Error en send_agent_buttons: {e}")
             return False
 
-    def send_resolution_question_to_client(self, client_phone: str) -> bool:
+    def send_resolution_question_to_client(self, client_phone: str, conversation=None) -> bool:
         """
-        Envía pregunta de resolución al cliente.
+        Envía pregunta de resolución al cliente o encuesta de satisfacción si está habilitada.
         
         Args:
             client_phone: Número de teléfono del cliente
+            conversation: Datos de la conversación (opcional)
             
         Returns:
             bool: True si se envió exitosamente
         """
         try:
-            question_message = (
-                f"¿Hay algo más en lo que pueda ayudarte?\n\n"
-                f"Si no necesitas más ayuda, simplemente no respondas y la conversación se cerrará automáticamente en unos minutos."
-            )
+            # Importar aquí para evitar import circular
+            from services.survey_service import survey_service
+            from chatbot.models import EstadoConversacion
             
-            success = twilio_service.send_whatsapp_message(client_phone, question_message)
-            
-            if success:
-                logger.info(f"✅ Pregunta de resolución enviada al cliente {client_phone}")
+            # Verificar si las encuestas están habilitadas
+            if survey_service.is_enabled() and conversation:
+                # Habilitar encuesta para esta conversación
+                conversation.survey_enabled = True
+                
+                # Enviar encuesta en lugar de pregunta de resolución
+                success = survey_service.send_survey(client_phone, conversation)
+                
+                if success:
+                    # Cambiar estado a encuesta de satisfacción
+                    conversation.estado = EstadoConversacion.ENCUESTA_SATISFACCION
+                    logger.info(f"✅ Encuesta de satisfacción enviada al cliente {client_phone}")
+                else:
+                    logger.error(f"❌ Error enviando encuesta al cliente {client_phone}")
+                
+                return success
             else:
-                logger.error(f"❌ Error enviando pregunta de resolución al cliente {client_phone}")
-            
-            return success
+                # Comportamiento original: pregunta de resolución
+                question_message = (
+                    f"¿Hay algo más en lo que pueda ayudarte?\n\n"
+                    f"Si no necesitas más ayuda, simplemente no respondas y la conversación se cerrará automáticamente en unos minutos."
+                )
+                
+                success = twilio_service.send_whatsapp_message(client_phone, question_message)
+                
+                if success:
+                    logger.info(f"✅ Pregunta de resolución enviada al cliente {client_phone}")
+                else:
+                    logger.error(f"❌ Error enviando pregunta de resolución al cliente {client_phone}")
+                
+                return success
             
         except Exception as e:
             logger.error(f"Error en send_resolution_question_to_client: {e}")

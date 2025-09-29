@@ -15,16 +15,19 @@ What you will see in Google Sheets
      - intent_otras: mapped to “Otras”
      - geo_caba: addresses tagged as CABA
      - geo_provincia: addresses tagged as Provincia de Buenos Aires
-     - validation_fail_email: failed email validations (count)
-     - validation_fail_direccion: failed address validations (count)
-     - validation_fail_horario_visita: failed schedule validations (count)
-     - validation_fail_descripcion: failed description validations (count)
+     - messages_sent: number of messages sent (Twilio status: sent)
+     - messages_delivered: number of messages delivered (Twilio status: delivered)
+     - messages_failed: number of messages failed (Twilio status: failed)
+     - messages_undelivered: number of messages undelivered (Twilio status: undelivered)
+     - messages_read: number of messages read (Twilio status: read)
 
    • How to read it:
      - Conversion proxy: leads_sent / conversations_started.
      - Intent mix: intent_* columns show demand distribution.
-     - Friction proxy: human_requests and validation_fail_* help spot blockers.
+     - Friction proxy: human_requests help spot blockers.
      - Geo split: geo_caba vs geo_provincia can inform operations and coverage.
+     - Message delivery: messages_delivered / messages_sent shows delivery success rate.
+     - Engagement: messages_read / messages_delivered shows user engagement rate.
 
 2) METRICS_TECH (operational health)
    • Granularity: daily rows (one row per day).
@@ -32,10 +35,15 @@ What you will see in Google Sheets
      - date: YYYY-MM-DD
      - nlu_unclear: cases where the system could not map the user intent
      - exceptions: technical errors captured (e.g., webhook/SendGrid/Twilio/OpenAI)
+     - validation_fail_email: failed email validations (count)
+     - validation_fail_direccion: failed address validations (count)
+     - validation_fail_horario_visita: failed schedule validations (count)
+     - validation_fail_descripcion: failed description validations (count)
 
    • How to read it:
      - nlu_unclear: if high, improve patterns/prompts or examples.
      - exceptions: investigate spikes (infrastructure or provider issues).
+     - validation_fail_*: high counts indicate UX issues in form validation.
 
 3) ERRORS (event log – troubleshooting)
    • Granularity: one row per event (not aggregated).
@@ -53,9 +61,12 @@ Update cadence and limits
 Common interpretations
 • Demand: track intent_* to see what users ask for. Align staffing and inventory.
 • Performance: leads_sent rising with flat conversations_started = better conversion.
-• Funnel friction: high validation_fail_* or human_requests implies UX/content fixes.
+• Funnel friction: high human_requests implies UX/content fixes.
 • Geography: geo_caba vs geo_provincia mix supports routing/logistics decisions.
 • Reliability: sustained exceptions require provider or infra review.
+• Message delivery: low delivery rates may indicate Twilio/WhatsApp issues.
+• User engagement: low read rates may indicate message timing or content issues.
+• Validation issues: high validation_fail_* in TECH metrics indicate form UX problems.
 
 Operational tips
 • Use daily rollups for trends; use ERRORS for individual cases.
@@ -71,6 +82,7 @@ Environment variables (for reference)
 • GOOGLE_SERVICE_ACCOUNT_JSON=<service_account_json (base64 or raw)>
 • METRICS_FLUSH_SECONDS=3600 (recommended for low traffic)
 • (Optional) ENABLE_ERROR_REPORTS=true and ERROR_LOG_EMAIL=<dev_email>
+• (Optional) TWILIO_STATUS_CALLBACK_URL=<your_webhook_url>/webhook/status
 
 FAQ
 • Why some days have zeros? No traffic or the service was idle.

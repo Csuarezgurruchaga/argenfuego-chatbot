@@ -24,6 +24,7 @@ class EstadoConversacion(str, Enum):
     CORRIGIENDO_CAMPO = "corrigiendo_campo"  # Para recibir el nuevo valor del campo
     MENU_PRINCIPAL = "menu_principal"  # Para volver al menú principal
     ATENDIDO_POR_HUMANO = "atendido_por_humano"  # Handoff activo: bot silenciado
+    ENCUESTA_SATISFACCION = "encuesta_satisfaccion"  # Encuesta de satisfacción post-handoff
 
 class DatosContacto(BaseModel):
     email: EmailStr
@@ -55,6 +56,11 @@ class ConversacionData(BaseModel):
     handoff_notified: bool = False  # Indica si ya se notificó al agente sobre el handoff
     resolution_question_sent: bool = False  # Indica si se envió la pregunta de resolución al cliente
     resolution_question_sent_at: Optional[datetime] = None  # Timestamp de cuando se envió la pregunta de resolución
+    # Campos para encuesta de satisfacción
+    survey_enabled: bool = False  # Si la encuesta está habilitada para esta conversación
+    survey_sent: bool = False  # Si se envió la encuesta
+    survey_responses: dict = Field(default_factory=dict)  # Respuestas de la encuesta
+    survey_question_number: int = 0  # Número de pregunta actual (1, 2, 3)
     
     class Config:
         use_enum_values = True
