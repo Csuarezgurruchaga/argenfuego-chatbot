@@ -905,6 +905,11 @@ Responde con el número del campo que deseas modificar."""
             conversacion.handoff_started_at = datetime.utcnow()
             # Guardar el mensaje que disparó el handoff como contexto
             conversacion.mensaje_handoff_contexto = mensaje
+            try:
+                metrics_service.on_human_request()
+                metrics_service.on_handoff_started()
+            except Exception:
+                pass
             
             # Enviar mensaje de handoff con botones interactivos
             try:
@@ -1030,6 +1035,10 @@ Responde con el número del campo que deseas modificar."""
                 conversacion = conversation_manager.get_conversacion(numero_telefono)
                 conversacion.atendido_por_humano = True
                 conversacion.handoff_started_at = __import__('datetime').datetime.utcnow()
+                try:
+                    metrics_service.on_handoff_started()
+                except Exception:
+                    pass
                 return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
             
             # Para otras consultas, usar flujo secuencial conversacional
@@ -1053,6 +1062,10 @@ Responde con el número del campo que deseas modificar."""
                     conversacion = conversation_manager.get_conversacion(numero_telefono)
                     conversacion.atendido_por_humano = True
                     conversacion.handoff_started_at = __import__('datetime').datetime.utcnow()
+                    try:
+                        metrics_service.on_handoff_started()
+                    except Exception:
+                        pass
                     return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
                 
                 # Para otras consultas, usar flujo secuencial conversacional

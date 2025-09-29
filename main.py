@@ -1,4 +1,5 @@
 import os
+import asyncio
 from dotenv import load_dotenv
 
 # Cargar variables de entorno PRIMERO
@@ -83,18 +84,32 @@ async def handoff_ttl_sweep(token: str = Form(...)):
                 except Exception:
                     pass
                 conversation_manager.finalizar_conversacion(conv.numero_telefono)
+                try:
+                    metrics_service.on_handoff_resolved()
+                except Exception:
+                    pass
                 cerradas += 1
                 logger.info(f"Conversación {conv.numero_telefono} cerrada por: {close_reason}")
     
     return {"closed": cerradas}
 
+
 @app.post("/webhook")
 async def webhook_whatsapp(request: Request):
     try:
-        # Obtener datos del formulario de Twilio
         form_data = await request.form()
         form_dict = dict(form_data)
-        
+    except Exception as exc:
+        logger.error(f"Error leyendo formulario de webhook: {exc}")
+        return PlainTextResponse("Error", status_code=400)
+
+    # Procesar el webhook en segundo plano para responder rápido a Twilio
+    asyncio.create_task(asyncio.to_thread(_process_twilio_webhook, form_dict))
+    return PlainTextResponse("", status_code=200)
+
+
+def _process_twilio_webhook(form_dict: dict):
+    try:
         logger.info(f"Webhook recibido: {form_dict}")
         
         # Verificar si es un mensaje interactivo (botón)
@@ -104,12 +119,12 @@ async def webhook_whatsapp(request: Request):
             
             if not numero_telefono or not button_id:
                 logger.warning("Datos incompletos en el webhook de botón")
-                return PlainTextResponse("", status_code=200)
+                return
             
             logger.info(f"Botón presionado por {numero_telefono} ({profile_name or 'sin nombre'}): {button_id}")
             
             # Procesar botón presionado
-            respuesta = await handle_interactive_button(numero_telefono, button_id, profile_name)
+            respuesta = handle_interactive_button(numero_telefono, button_id, profile_name)
             
             # Enviar respuesta si hay una
             if respuesta:
@@ -117,7 +132,7 @@ async def webhook_whatsapp(request: Request):
                 if not mensaje_enviado:
                     logger.error(f"Error enviando respuesta a botón a {numero_telefono}")
             
-            return PlainTextResponse("", status_code=200)
+            return
         else:
             # Es un mensaje de texto normal
             numero_telefono, mensaje_usuario, message_sid, profile_name = twilio_service.extract_message_data(form_dict)
@@ -131,11 +146,11 @@ async def webhook_whatsapp(request: Request):
 
             if not numero_telefono:
                 logger.warning("Datos incompletos en el webhook (sin numero_telefono)")
-                return PlainTextResponse("", status_code=200)
+                return
             # Permitir continuar si hay media, aunque Body esté vacío
             if (not mensaje_usuario or not mensaje_usuario.strip()) and num_media == 0:
                 logger.warning("Datos incompletos en el webhook (sin mensaje ni media)")
-                return PlainTextResponse("", status_code=200)
+                return
         logger.info(f"Procesando mensaje de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
 
         # Fallback unificado para contenidos no-texto (audio/imagen/video/documento/etc.)
@@ -159,7 +174,7 @@ async def webhook_whatsapp(request: Request):
                         numero_telefono,
                         "Gracias por tu mensaje 😊 Para continuar, mandá un texto breve (por ejemplo: 'Hola') y verás el menú 📲"
                     )
-                    return PlainTextResponse("", status_code=200)
+                    return
 
                 # Si el usuario está en el menú principal, enviar mensaje corto específico
                 if conv_check.estado in [EstadoConversacion.ESPERANDO_OPCION, EstadoConversacion.MENU_PRINCIPAL]:
@@ -167,7 +182,7 @@ async def webhook_whatsapp(request: Request):
                         numero_telefono,
                         "Actualmente este canal solo recibe mensajes de texto. Por favor, selecciona la opcion que desees del menu"
                     )
-                    return PlainTextResponse("", status_code=200)
+                    return
 
                 # En otros estados, usar fallback general (con email si está disponible)
                 try:
@@ -182,7 +197,7 @@ async def webhook_whatsapp(request: Request):
                     "Por este canal solo puedo procesar texto. Por favor, escribí en 1–2 frases lo que necesitás y te ayudo enseguida." + fallback_email
                 )
                 twilio_service.send_whatsapp_message(numero_telefono, fallback_msg)
-                return PlainTextResponse("", status_code=200)
+                return
         
         # Verificar si el mensaje viene del agente
         if whatsapp_handoff_service.is_agent_message(numero_telefono):
@@ -202,12 +217,12 @@ async def webhook_whatsapp(request: Request):
                             media_url = form_dict.get(f'MediaUrl{i}')
                             if media_url:
                                 twilio_service.send_whatsapp_media(latest_handoff_conv.numero_telefono, media_url, caption=mensaje_usuario or "")
-                        return PlainTextResponse("", status_code=200)
+                        return
             except Exception:
                 pass
             # Procesar mensaje del agente
-            await handle_agent_message(numero_telefono, mensaje_usuario, profile_name)
-            return PlainTextResponse("", status_code=200)
+            handle_agent_message(numero_telefono, mensaje_usuario, profile_name)
+            return
         
         # Si está en handoff, reenviar a WhatsApp del agente y no responder con bot
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
@@ -223,7 +238,7 @@ async def webhook_whatsapp(request: Request):
                     conversacion_actual.last_client_message_at = datetime.utcnow()
                 except Exception:
                     pass
-                return PlainTextResponse("", status_code=200)
+                return
             # Notificar al agente vía WhatsApp
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:
                 # Es el primer mensaje del handoff, incluir contexto completo con botones
@@ -255,7 +270,7 @@ async def webhook_whatsapp(request: Request):
                 conversacion_actual.last_client_message_at = datetime.utcnow()
             except Exception:
                 pass
-            return PlainTextResponse("", status_code=200)
+            return
 
         # Procesar el mensaje con el chatbot (incluyendo nombre del perfil)
         respuesta = ChatbotRules.procesar_mensaje(numero_telefono, mensaje_usuario, profile_name)
@@ -315,16 +330,10 @@ async def webhook_whatsapp(request: Request):
                 twilio_service.send_whatsapp_message(numero_telefono, error_msg)
                 logger.error(f"Error enviando email para {numero_telefono}")
         
-        return PlainTextResponse("", status_code=200)
+        return
         
     except Exception as e:
         logger.error(f"Error en webhook: {str(e)}")
-        # Reporte estructurado de excepción
-        try:
-            form_data = await request.form()
-            form_dict = dict(form_data)
-        except Exception:
-            form_dict = {}
         try:
             error_reporter.capture_exception(
                 e,
@@ -338,7 +347,12 @@ async def webhook_whatsapp(request: Request):
             )
         except Exception:
             pass
-        return PlainTextResponse("Error", status_code=500)
+        return
+    finally:
+        try:
+            metrics_service.flush_if_needed()
+        except Exception:
+            pass
 
 
 @app.post("/agent/reply")
@@ -363,6 +377,10 @@ async def agent_close(to: str = Form(...), token: str = Form(...)):
         conversation_manager.finalizar_conversacion(to)
         cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
         twilio_service.send_whatsapp_message(to, cierre_msg)
+        try:
+            metrics_service.on_handoff_resolved()
+        except Exception:
+            pass
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"agent_close error: {e}")
@@ -384,7 +402,7 @@ async def get_stats():
         "timestamp": "2024-01-01T00:00:00Z"  # Placeholder timestamp
     }
 
-async def handle_interactive_button(numero_telefono: str, button_id: str, profile_name: str = "") -> str:
+def handle_interactive_button(numero_telefono: str, button_id: str, profile_name: str = "") -> str:
     """
     Maneja las respuestas de botones interactivos
     
@@ -471,7 +489,7 @@ async def handle_interactive_button(numero_telefono: str, button_id: str, profil
         logger.error(f"Error en handle_interactive_button: {e}")
         return "Hubo un error procesando tu solicitud. Por favor, intenta nuevamente."
 
-async def handle_agent_message(agent_phone: str, message: str, profile_name: str = ""):
+def handle_agent_message(agent_phone: str, message: str, profile_name: str = "") -> None:
     """
     Maneja mensajes del agente humano.
     
@@ -508,6 +526,10 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
                         conversation_manager.finalizar_conversacion(phone)
                         cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
                         twilio_service.send_whatsapp_message(phone, cierre_msg)
+                        try:
+                            metrics_service.on_handoff_resolved()
+                        except Exception:
+                            pass
                         whatsapp_handoff_service.notify_handoff_resolved(phone, conv.nombre_usuario or "")
                         resolved_count += 1
             
@@ -803,4 +825,16 @@ async def test_complete_flow():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    reload_enabled = os.getenv("UVICORN_RELOAD", "false").lower() == "true"
+    workers = int(os.getenv("UVICORN_WORKERS", "2"))
+
+    uvicorn_kwargs = {
+        "host": "0.0.0.0",
+        "port": port,
+        "reload": reload_enabled,
+    }
+
+    if not reload_enabled and workers > 1:
+        uvicorn_kwargs["workers"] = workers
+
+    uvicorn.run("main:app", **uvicorn_kwargs)

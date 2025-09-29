@@ -15,6 +15,13 @@ class MetricsService:
         self._last_flush = 0
         self._day_cache: Dict[str, Dict[str, float]] = {}
 
+    def _sanitize_key(self, value: str, fallback: str = "generic") -> str:
+        if not value:
+            return fallback
+        sanitized = ''.join(ch.lower() if ch.isalnum() else '_' for ch in value)
+        sanitized = sanitized.strip('_')
+        return sanitized or fallback
+
     def _key(self) -> str:
         return time.strftime('%Y-%m-%d')
 
@@ -41,14 +48,43 @@ class MetricsService:
     def on_human_request(self):
         self._inc('human_requests')
 
-    def on_validation_failure(self, field: str):
-        self._inc(f'validation_fail_{field}')
-
     def on_geo_caba(self):
         self._inc('geo_caba')
 
     def on_geo_provincia(self):
         self._inc('geo_provincia')
+
+    def on_message_attempt(self, kind: str = 'generic'):
+        key = self._sanitize_key(kind)
+        self._inc('msg_attempt_total')
+        self._inc(f'msg_attempt_{key}')
+
+    def on_message_success(self, kind: str = 'generic'):
+        key = self._sanitize_key(kind)
+        self._inc('msg_success_total')
+        self._inc(f'msg_success_{key}')
+
+    def on_message_failure(self, kind: str = 'generic'):
+        key = self._sanitize_key(kind)
+        self._inc('msg_failure_total')
+        self._inc(f'msg_failure_{key}')
+
+    def on_message_delivered(self, kind: str = 'generic'):
+        key = self._sanitize_key(kind)
+        self._inc('msg_delivered_total')
+        self._inc(f'msg_delivered_{key}')
+
+    def on_message_status(self, status: str, kind: str = 'generic'):
+        status_key = self._sanitize_key(status, 'unknown')
+        kind_key = self._sanitize_key(kind)
+        self._inc(f'msg_status_{status_key}')
+        self._inc(f'msg_status_{status_key}_{kind_key}')
+
+    def on_handoff_started(self):
+        self._inc('handoff_started')
+
+    def on_handoff_resolved(self):
+        self._inc('handoff_resolved')
 
     # Hooks técnicos
     def on_nlu_unclear(self):
@@ -83,10 +119,18 @@ class MetricsService:
                 int(bucket.get('intent_otras', 0)),
                 int(bucket.get('geo_caba', 0)),
                 int(bucket.get('geo_provincia', 0)),
-                int(bucket.get('validation_fail_email', 0)),
-                int(bucket.get('validation_fail_direccion', 0)),
-                int(bucket.get('validation_fail_horario_visita', 0)),
-                int(bucket.get('validation_fail_descripcion', 0)),
+                int(bucket.get('msg_attempt_total', 0)),
+                int(bucket.get('msg_success_total', 0)),
+                int(bucket.get('msg_failure_total', 0)),
+                int(bucket.get('msg_delivered_total', 0)),
+                int(bucket.get('msg_status_queued', 0)),
+                int(bucket.get('msg_status_sent', 0)),
+                int(bucket.get('msg_status_delivered', 0)),
+                int(bucket.get('msg_status_failed', 0)),
+                int(bucket.get('msg_status_undelivered', 0)),
+                int(bucket.get('msg_status_read', 0)),
+                int(bucket.get('handoff_started', 0)),
+                int(bucket.get('handoff_resolved', 0)),
             ])
             # Enviar a TECH
             sheets_service.append_row('tech', [
@@ -101,5 +145,3 @@ class MetricsService:
 
 
 metrics_service = MetricsService()
-
-
