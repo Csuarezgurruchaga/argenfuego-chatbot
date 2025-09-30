@@ -24,6 +24,7 @@ class EstadoConversacion(str, Enum):
     CORRIGIENDO_CAMPO = "corrigiendo_campo"  # Para recibir el nuevo valor del campo
     MENU_PRINCIPAL = "menu_principal"  # Para volver al menú principal
     ATENDIDO_POR_HUMANO = "atendido_por_humano"  # Handoff activo: bot silenciado
+    ESPERANDO_RESPUESTA_ENCUESTA = "esperando_respuesta_encuesta"  # Esperando decisión del cliente sobre encuesta
     ENCUESTA_SATISFACCION = "encuesta_satisfaccion"  # Encuesta de satisfacción post-handoff
 
 class DatosContacto(BaseModel):
@@ -58,6 +59,9 @@ class ConversacionData(BaseModel):
     resolution_question_sent_at: Optional[datetime] = None  # Timestamp de cuando se envió la pregunta de resolución
     # Campos para encuesta de satisfacción
     survey_enabled: bool = False  # Si la encuesta está habilitada para esta conversación
+    survey_offered: bool = False  # Si se ofreció la encuesta al cliente
+    survey_offer_sent_at: Optional[datetime] = None  # Timestamp de cuando se ofreció la encuesta
+    survey_accepted: Optional[bool] = None  # True si aceptó, False si rechazó, None si no respondió
     survey_sent: bool = False  # Si se envió la encuesta
     survey_sent_at: Optional[datetime] = None  # Timestamp de cuando se envió la encuesta
     survey_responses: dict = Field(default_factory=dict)  # Respuestas de la encuesta

@@ -67,7 +67,7 @@ class AgentCommandService:
 
     def execute_done_command(self, agent_phone: str) -> str:
         """
-        Ejecuta el comando /done: cierra conversación activa y activa siguiente.
+        Ejecuta el comando /done: ofrece encuesta al cliente o cierra conversación si encuestas deshabilitadas.
 
         Args:
             agent_phone: Número del agente (para logs)
@@ -76,35 +76,77 @@ class AgentCommandService:
             str: Mensaje de respuesta para el agente
         """
         try:
+            from services.survey_service import survey_service
+            from chatbot.models import EstadoConversacion
+            from datetime import datetime
+
             active_phone = conversation_manager.get_active_handoff()
 
             if not active_phone:
                 return "⚠️ No hay conversación activa para finalizar.\n\nUsa /queue para ver el estado de la cola."
 
-            # Obtener info del cliente antes de cerrar
+            # Obtener info del cliente
             conversacion = conversation_manager.get_conversacion(active_phone)
             nombre_cliente = conversacion.nombre_usuario or "Cliente"
 
-            # Enviar mensaje de cierre al cliente
-            twilio_service.send_whatsapp_message(
-                active_phone,
-                "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
-            )
+            # Verificar si las encuestas están habilitadas
+            if survey_service.is_enabled():
+                # Enviar mensaje opt-in/opt-out de encuesta
+                survey_message = self._build_survey_offer_message(nombre_cliente)
+                success = twilio_service.send_whatsapp_message(active_phone, survey_message)
 
-            # Cerrar conversación activa (esto automáticamente activa la siguiente)
-            next_phone = conversation_manager.close_active_handoff()
+                if success:
+                    # Cambiar estado a esperar respuesta de encuesta
+                    conversacion.estado = EstadoConversacion.ESPERANDO_RESPUESTA_ENCUESTA
+                    conversacion.survey_offered = True
+                    conversacion.survey_offer_sent_at = datetime.utcnow()
 
-            logger.info(f"✅ Agente {agent_phone} finalizó conversación con {active_phone}")
-
-            # Mensaje de confirmación
-            if next_phone:
-                return f"✅ Conversación con {nombre_cliente} finalizada.\n\n🔄 Activando siguiente conversación..."
+                    logger.info(f"✅ Oferta de encuesta enviada al cliente {active_phone}")
+                    return f"✅ Solicitud de cierre enviada a {nombre_cliente}.\n\n⏳ Esperando respuesta sobre la encuesta (auto-cierre en 2 min).\n\nLa conversación sigue activa hasta que el cliente responda o expire el tiempo."
+                else:
+                    logger.error(f"❌ Error enviando oferta de encuesta al cliente {active_phone}")
+                    return f"❌ Error enviando mensaje al cliente. Intenta nuevamente."
             else:
-                return f"✅ Conversación con {nombre_cliente} finalizada.\n\n📋 Cola vacía. No hay más conversaciones pendientes."
+                # Encuestas deshabilitadas: comportamiento original (cerrar inmediatamente)
+                twilio_service.send_whatsapp_message(
+                    active_phone,
+                    "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
+                )
+
+                # Cerrar conversación activa (esto automáticamente activa la siguiente)
+                next_phone = conversation_manager.close_active_handoff()
+
+                logger.info(f"✅ Agente {agent_phone} finalizó conversación con {active_phone} (encuestas deshabilitadas)")
+
+                # Mensaje de confirmación
+                if next_phone:
+                    return f"✅ Conversación con {nombre_cliente} finalizada.\n\n🔄 Activando siguiente conversación..."
+                else:
+                    return f"✅ Conversación con {nombre_cliente} finalizada.\n\n📋 Cola vacía. No hay más conversaciones pendientes."
 
         except Exception as e:
             logger.error(f"Error ejecutando comando /done: {e}")
             return f"❌ Error finalizando conversación: {str(e)}"
+
+    def _build_survey_offer_message(self, nombre_cliente: str) -> str:
+        """
+        Construye el mensaje de oferta de encuesta con opt-in/opt-out.
+
+        Args:
+            nombre_cliente: Nombre del cliente
+
+        Returns:
+            str: Mensaje formateado
+        """
+        return f"""¡Gracias por tu consulta, {nombre_cliente}! 🙏
+
+¿Nos ayudas con 3 preguntas rápidas? (toma menos de 1 minuto)
+Tu opinión es muy valiosa para mejorar nuestro servicio.
+
+1️⃣ Sí, con gusto
+2️⃣ No, gracias
+
+Si no respondes en 2 minutos, cerraremos la conversación automáticamente."""
 
     def execute_next_command(self, agent_phone: str) -> str:
         """

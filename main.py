@@ -60,13 +60,19 @@ async def handoff_ttl_sweep(token: str = Form(...)):
         if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
             should_close = False
             close_reason = ""
-            
+
+            # Verificar timeout de oferta de encuesta (2 minutos)
+            if conv.estado == EstadoConversacion.ESPERANDO_RESPUESTA_ENCUESTA and conv.survey_offer_sent_at:
+                if (ahora - conv.survey_offer_sent_at) > timedelta(minutes=2):
+                    should_close = True
+                    close_reason = "Oferta de encuesta sin respuesta"
+
             # Verificar timeout de encuesta de satisfacción (15 minutos)
-            if conv.estado == EstadoConversacion.ENCUESTA_SATISFACCION and conv.survey_sent_at:
+            elif conv.estado == EstadoConversacion.ENCUESTA_SATISFACCION and conv.survey_sent_at:
                 if (ahora - conv.survey_sent_at) > timedelta(minutes=15):
                     should_close = True
                     close_reason = "Encuesta de satisfacción sin completar"
-            
+
             # Verificar timeout de pregunta de resolución (10 minutos)
             elif conv.resolution_question_sent and conv.resolution_question_sent_at:
                 if (ahora - conv.resolution_question_sent_at) > timedelta(minutes=resolution_timeout_minutes):
@@ -83,7 +89,11 @@ async def handoff_ttl_sweep(token: str = Form(...)):
             if should_close:
                 try:
                     # Enviar mensaje de cierre al cliente
-                    if close_reason == "Encuesta de satisfacción sin completar":
+                    if close_reason == "Oferta de encuesta sin respuesta":
+                        # Cierre silencioso cuando no responde a oferta de encuesta (no enviar mensaje)
+                        conv.survey_accepted = None  # Registrar como timeout
+                        logger.info(f"⏱️ Timeout de oferta de encuesta para {conv.numero_telefono}")
+                    elif close_reason == "Encuesta de satisfacción sin completar":
                         twilio_service.send_whatsapp_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
                     elif close_reason == "Pregunta de resolución sin respuesta":
                         twilio_service.send_whatsapp_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
@@ -273,7 +283,74 @@ async def webhook_whatsapp(request: Request):
         
         # Obtener conversación actual
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
-        
+
+        # Verificar si está esperando respuesta de encuesta (PRIORIDAD MUY ALTA)
+        if conversacion_actual.estado == EstadoConversacion.ESPERANDO_RESPUESTA_ENCUESTA:
+            from services.survey_service import survey_service
+            from datetime import datetime
+
+            # Parsear respuesta (1=sí, 2=no)
+            respuesta = mensaje_usuario.strip().lower()
+
+            # Keywords de aceptación
+            acepta_keywords = ['1', '1️⃣', 'si', 'sí', 'yes', 'ok', 'dale', 'con gusto', 'acepto']
+            # Keywords de rechazo
+            rechaza_keywords = ['2', '2️⃣', 'no', 'nope', 'no gracias', 'no quiero', 'paso']
+
+            if any(kw in respuesta for kw in acepta_keywords):
+                # Cliente acepta la encuesta
+                conversacion_actual.survey_accepted = True
+
+                # Iniciar encuesta
+                success = survey_service.send_survey(numero_telefono, conversacion_actual)
+
+                if success:
+                    logger.info(f"✅ Cliente {numero_telefono} aceptó encuesta, primera pregunta enviada")
+                else:
+                    logger.error(f"❌ Error enviando primera pregunta de encuesta a {numero_telefono}")
+                    # Fallback: cerrar conversación
+                    twilio_service.send_whatsapp_message(
+                        numero_telefono,
+                        "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
+                    )
+                    conversation_manager.close_active_handoff()
+
+                return PlainTextResponse("", status_code=200)
+
+            elif any(kw in respuesta for kw in rechaza_keywords):
+                # Cliente rechaza la encuesta
+                conversacion_actual.survey_accepted = False
+
+                # Enviar mensaje de agradecimiento y cerrar
+                twilio_service.send_whatsapp_message(
+                    numero_telefono,
+                    "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
+                )
+
+                # Cerrar conversación activa (esto automáticamente activa la siguiente)
+                next_phone = conversation_manager.close_active_handoff()
+
+                logger.info(f"✅ Cliente {numero_telefono} rechazó encuesta, conversación cerrada")
+
+                # Notificar al agente si hay siguiente conversación
+                if next_phone:
+                    agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                    if agent_number:
+                        next_conv = conversation_manager.get_conversacion(next_phone)
+                        position = 1
+                        total = conversation_manager.get_queue_size()
+                        notification = _format_handoff_activated_notification(next_conv, position, total)
+                        twilio_service.send_whatsapp_message(agent_number, notification)
+
+                return PlainTextResponse("", status_code=200)
+            else:
+                # Respuesta no reconocida, pedir que responda con 1 o 2
+                twilio_service.send_whatsapp_message(
+                    numero_telefono,
+                    "Por favor responde con:\n1️⃣ para aceptar la encuesta\n2️⃣ para omitirla"
+                )
+                return PlainTextResponse("", status_code=200)
+
         # Verificar si está en encuesta de satisfacción (PRIORIDAD ALTA)
         if conversacion_actual.estado == EstadoConversacion.ENCUESTA_SATISFACCION:
             # Procesar respuesta de encuesta

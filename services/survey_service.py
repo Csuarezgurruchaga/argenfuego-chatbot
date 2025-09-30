@@ -82,11 +82,15 @@ class SurveyService:
             conversation.survey_sent = True
             conversation.survey_sent_at = datetime.utcnow()
             conversation.survey_question_number = 1
-            
-            # Construir mensaje de la primera pregunta
+
+            # Cambiar estado a ENCUESTA_SATISFACCION
+            from chatbot.models import EstadoConversacion
+            conversation.estado = EstadoConversacion.ENCUESTA_SATISFACCION
+
+            # Construir mensaje de la primera pregunta (sin preámbulo, ya viene del opt-in)
             question_data = self.questions[1]
-            message = self._build_question_message(question_data)
-            
+            message = self._build_question_message(question_data, first_question=True)
+
             # Enviar mensaje
             success = twilio_service.send_whatsapp_message(client_phone, message)
             
@@ -149,18 +153,24 @@ class SurveyService:
             logger.error(f"Error procesando respuesta de encuesta: {e}")
             return False, None
     
-    def _build_question_message(self, question_data: Dict, include_instructions: bool = False) -> str:
+    def _build_question_message(self, question_data: Dict, include_instructions: bool = False, first_question: bool = False) -> str:
         """Construye el mensaje de una pregunta de la encuesta"""
-        message = question_data['text'] + '\n\n'
-        
+        message = ""
+
+        # Solo agregar preámbulo en la primera pregunta
+        if first_question:
+            message += "¡Perfecto! Comencemos:\n\n"
+
+        message += question_data['text'] + '\n\n'
+
         # Agregar opciones con emojis
         for key, emoji in question_data['emojis'].items():
             option_text = question_data['options'][key]
             message += f"{emoji} {option_text}\n"
-        
+
         if include_instructions:
             message += '\nResponde con el número (1, 2 o 3)'
-        
+
         return message
     
     def _build_completion_message(self) -> str:
