@@ -20,14 +20,19 @@ SHEETS_SURVEY_SHEET_NAME=ENCUESTA_RESULTADOS
 
 Crear una hoja llamada `ENCUESTA_RESULTADOS` con las siguientes columnas:
 
-| Columna | Nombre | Descripción |
-|---------|--------|-------------|
-| A | `fecha` | Fecha y hora de la encuesta (YYYY-MM-DD HH:MM:SS) |
-| B | `telefono_masked` | Número de teléfono enmascarado (***1234) |
-| C | `resolvio_problema` | Respuesta a "¿Pudiste resolver el motivo?" |
-| D | `amabilidad` | Respuesta a "¿Cómo calificarías la amabilidad?" |
-| E | `volveria_contactar` | Respuesta a "¿Volverías a utilizar esta vía?" |
-| F | `fecha_handoff` | Fecha y hora del handoff (YYYY-MM-DD HH:MM:SS) |
+| Columna | Nombre | Descripción | Valores |
+|---------|--------|-------------|---------|
+| A | `fecha` | Fecha y hora de finalización de encuesta | `2025-01-15 14:30:22` |
+| B | `telefono_masked` | Número de teléfono enmascarado | `***1234` |
+| C | `resolvio_problema` | Respuesta a "¿Pudiste resolver el motivo?" | `Sí` / `Parcialmente` / `No` |
+| D | `amabilidad` | Respuesta a "¿Cómo calificarías la amabilidad?" | `Muy buena` / `Regular` / `Mala` |
+| E | `volveria_contactar` | Respuesta a "¿Volverías a utilizar esta vía?" | `Sí` / `No` |
+| F | `duracion_handoff_minutos` | Duración del handoff en minutos | `15` (número) |
+| G | `survey_offered` | Si se ofreció la encuesta al cliente | `true` / `false` |
+| H | `survey_accepted` | Decisión del cliente sobre la encuesta | `accepted` / `declined` / `timeout` |
+| I | `nombre_cliente` | Nombre del cliente (nombre + inicial) | `Juan P.` |
+
+**Nota importante**: Esta estructura reemplaza la columna anterior `fecha_handoff` con `duracion_handoff_minutos` para evitar redundancia y facilitar análisis directo.
 
 ## Funcionamiento
 
@@ -111,23 +116,35 @@ El sistema acepta múltiples formatos de respuesta:
 
 ### Métricas Clave
 
-1. **Tasa de Resolución**
-   - `Sí` / Total de respuestas
-   - Indica efectividad del agente
+1. **Opt-in Rate** (Nueva métrica)
+   - `accepted` / (`accepted` + `declined` + `timeout`)
+   - Indica engagement y disposición del cliente
+   - Meta sugerida: >60%
 
-2. **Calidad de Atención**
+2. **Tasa de Resolución**
+   - `Sí` / Total de respuestas completadas
+   - Indica efectividad del agente
+   - Correlacionar con `duracion_handoff_minutos`
+
+3. **Calidad de Atención**
    - `Muy buena` / Total de respuestas
    - Indica satisfacción con el servicio
 
-3. **Retención de Clientes**
+4. **Retención de Clientes**
    - `Sí` / Total de respuestas (pregunta 3)
    - Indica probabilidad de reutilización
+
+5. **Eficiencia vs Satisfacción** (Nueva métrica)
+   - Analizar `duracion_handoff_minutos` vs `amabilidad`
+   - Identificar si handoffs más largos tienen mejor/peor satisfacción
 
 ### Interpretación de Resultados
 
 - **Alta satisfacción**: >80% "Muy buena" en amabilidad
 - **Baja resolución**: >30% "No" en resolución de problemas
 - **Riesgo de abandono**: >20% "No" en volvería a contactar
+- **Buen opt-in rate**: >60% accepted
+- **Handoff eficiente**: Promedio <20 minutos con satisfacción "Muy buena"
 
 ## Implementación Técnica
 

@@ -229,18 +229,43 @@ class SurveyService:
     def _save_survey_results(self, client_phone: str, conversation: ConversacionData) -> bool:
         """
         Guarda los resultados de la encuesta en Google Sheets
-        
+
         Args:
             client_phone: Número de teléfono del cliente
             conversation: Datos de la conversación
-            
+
         Returns:
             bool: True si se guardó exitosamente
         """
         try:
             # Obtener respuestas
             responses = conversation.survey_responses
-            
+
+            # Calcular duración del handoff en minutos
+            duracion_minutos = 0
+            if conversation.handoff_started_at:
+                delta = datetime.utcnow() - conversation.handoff_started_at
+                duracion_minutos = int(delta.total_seconds() / 60)
+
+            # Formatear survey_accepted como string para claridad
+            survey_accepted_str = ''
+            if conversation.survey_accepted is True:
+                survey_accepted_str = 'accepted'
+            elif conversation.survey_accepted is False:
+                survey_accepted_str = 'declined'
+            elif conversation.survey_accepted is None:
+                survey_accepted_str = 'timeout'
+
+            # Formatear nombre del cliente (nombre + inicial de apellido)
+            nombre_cliente = ''
+            if conversation.nombre_usuario:
+                partes = conversation.nombre_usuario.strip().split()
+                if len(partes) == 1:
+                    nombre_cliente = partes[0]  # Solo nombre
+                elif len(partes) >= 2:
+                    # Nombre + inicial de apellido
+                    nombre_cliente = f"{partes[0]} {partes[1][0]}."
+
             # Preparar datos para la hoja
             row_data = [
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),  # fecha
@@ -248,9 +273,12 @@ class SurveyService:
                 responses.get('pregunta_1', ''),  # resolvio_problema
                 responses.get('pregunta_2', ''),  # amabilidad
                 responses.get('pregunta_3', ''),  # volveria_contactar
-                self._mask_phone(conversation.handoff_started_at.strftime('%Y-%m-%d %H:%M:%S') if conversation.handoff_started_at else '')  # fecha_handoff
+                duracion_minutos,  # duracion_handoff_minutos
+                str(conversation.survey_offered).lower(),  # survey_offered (true/false)
+                survey_accepted_str,  # survey_accepted (accepted/declined/timeout)
+                nombre_cliente  # nombre_cliente (formato: "Juan P.")
             ]
-            
+
             # Enviar a Google Sheets
             success = sheets_service.append_row('survey', row_data)
             
