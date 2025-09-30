@@ -174,7 +174,10 @@ class WhatsAppHandoffService:
         message += f"Cliente: {client_name or 'Sin nombre'} ({client_phone})\n\n"
         message += f"📝 *Mensaje que disparó el handoff:*\n{handoff_message}\n\n"
         message += f"💬 *Último mensaje:*\n{current_message}\n\n"
-        message += f"Para marcar como resuelto, responde con: /resuelto"
+        message += f"ℹ️ *Instrucciones:*\n"
+        message += f"• Responde en este mismo chat y enviaremos tu mensaje al cliente automáticamente.\n"
+        message += f"• No es necesario escribirle al número del cliente.\n"
+        message += f"• Para cerrar la conversación, responde con: /resuelto o /r"
         
         return message
 
@@ -242,8 +245,7 @@ class WhatsAppHandoffService:
                 buttons_message = (
                     f"📱 *Opciones de respuesta:*\n\n"
                     f"• Escribe tu respuesta para enviar al cliente\n"
-                    f"• Envía 'ok' o 'listo' para marcar como resuelto\n"
-                    f"• Envía '/r' para resolución rápida"
+                    f"• Envía '/resuelto' o '/r' para marcar como resuelto"
                 )
                 
                 twilio_service.send_whatsapp_message(
