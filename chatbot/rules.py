@@ -905,7 +905,9 @@ Responde con el número del campo que deseas modificar."""
             conversacion.handoff_started_at = datetime.utcnow()
             # Guardar el mensaje que disparó el handoff como contexto
             conversacion.mensaje_handoff_contexto = mensaje
-            
+            # Agregar a la cola de handoffs (la notificación se hace en main.py)
+            conversation_manager.add_to_handoff_queue(numero_telefono)
+
             # Enviar mensaje de handoff con botones interactivos
             try:
                 success = ChatbotRules.send_handoff_buttons(numero_telefono)
@@ -1030,6 +1032,8 @@ Responde con el número del campo que deseas modificar."""
                 conversacion = conversation_manager.get_conversacion(numero_telefono)
                 conversacion.atendido_por_humano = True
                 conversacion.handoff_started_at = __import__('datetime').datetime.utcnow()
+                # Agregar a la cola de handoffs
+                conversation_manager.add_to_handoff_queue(numero_telefono)
                 return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
             
             # Para otras consultas, usar flujo secuencial conversacional
@@ -1053,6 +1057,8 @@ Responde con el número del campo que deseas modificar."""
                     conversacion = conversation_manager.get_conversacion(numero_telefono)
                     conversacion.atendido_por_humano = True
                     conversacion.handoff_started_at = __import__('datetime').datetime.utcnow()
+                    # Agregar a la cola de handoffs
+                    conversation_manager.add_to_handoff_queue(numero_telefono)
                     return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
                 
                 # Para otras consultas, usar flujo secuencial conversacional
