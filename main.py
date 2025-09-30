@@ -10,7 +10,7 @@ import logging
 from typing import Optional
 from chatbot.rules import ChatbotRules
 from chatbot.states import conversation_manager
-from chatbot.models import EstadoConversacion
+from chatbot.models import EstadoConversacion, ConversacionData
 from services.twilio_service import twilio_service
 from services.whatsapp_handoff_service import whatsapp_handoff_service
 from services.email_service import email_service
