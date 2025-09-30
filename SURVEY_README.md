@@ -12,20 +12,25 @@ Sistema de encuesta de satisfacción con **opt-in explícito** que se activa cua
 # Habilitar/deshabilitar encuestas
 SUMMARY=true
 
-# Nombre de la hoja en Google Sheets (opcional)
+# Nombres de las hojas en Google Sheets (opcionales)
 SHEETS_SURVEY_SHEET_NAME=ENCUESTA_RESULTADOS
+SHEETS_KPI_SHEET_NAME=KPIs
 ```
 
 ### Google Sheets
 
-Crear una hoja llamada `ENCUESTA_RESULTADOS` con las siguientes columnas:
+Crear dos hojas en el mismo spreadsheet:
+
+#### Hoja 1: `ENCUESTA_RESULTADOS` 
+
+Contiene las respuestas individuales de cada encuesta:
 
 | Columna | Nombre | Descripción | Valores |
 |---------|--------|-------------|---------|
 | A | `fecha` | Fecha y hora de finalización de encuesta | `2025-01-15 14:30:22` |
 | B | `telefono_masked` | Número de teléfono enmascarado | `***1234` |
 | C | `resolvio_problema` | Respuesta a "¿Pudiste resolver el motivo?" | `Sí` / `Parcialmente` / `No` |
-| D | `amabilidad` | Respuesta a "¿Cómo calificarías la amabilidad?" | `Muy buena` / `Regular` / `Mala` |
+| D | `satisfaccion_atencion` | Respuesta a "¿Qué tan satisfecho quedaste con la atención?" | `Muy insatisfecho` / `Insatisfecho` / `Neutral` / `Satisfecho` / `Muy satisfecho` |
 | E | `volveria_contactar` | Respuesta a "¿Volverías a utilizar esta vía?" | `Sí` / `No` |
 | F | `duracion_handoff_minutos` | Duración del handoff en minutos | `15` (número) |
 | G | `survey_offered` | Si se ofreció la encuesta al cliente | `true` / `false` |
@@ -33,6 +38,23 @@ Crear una hoja llamada `ENCUESTA_RESULTADOS` con las siguientes columnas:
 | I | `nombre_cliente` | Nombre del cliente (nombre + inicial) | `Juan P.` |
 
 **Nota importante**: Esta estructura reemplaza la columna anterior `fecha_handoff` con `duracion_handoff_minutos` para evitar redundancia y facilitar análisis directo.
+
+#### Hoja 2: `KPIs`
+
+Contiene métricas consolidadas calculadas automáticamente después de cada encuesta completada:
+
+| Columna | Nombre | Descripción | Fórmula/Valores |
+|---------|--------|-------------|-----------------|
+| A | `fecha` | Fecha y hora de cálculo | `2025-01-15 14:30:22` |
+| B | `goal_completion_rate` | Tasa de resolución | `1.0` (Sí), `0.5` (Parcialmente), `0.0` (No) |
+| C | `fallback_rate` | Tasa de fallback a humano | `0.0` (placeholder - calcular en Sheets) |
+| D | `avg_user_rating` | Calificación de satisfacción | `1-5` (escala de Muy insatisfecho a Muy satisfecho) |
+| E | `avg_conversation_duration_min` | Duración del handoff en minutos | `15` (número) |
+| F | `total_surveys_completed` | Encuestas completadas | `1` (por cada fila) |
+| G | `survey_opt_in_rate` | Tasa de aceptación de encuesta | `1.0` (aceptó), `0.0` (rechazó/timeout) |
+| H | `customer_retention_intent` | Intención de retención | `1.0` (Sí), `0.0` (No) |
+
+**Uso de KPIs**: Estos datos individuales permiten calcular promedios y tendencias en Sheets usando fórmulas como `=AVERAGE(D:D)` para el rating promedio o `=COUNTIF(B:B,">=0.5")/COUNTA(B:B)` para la tasa de resolución total/parcial.
 
 ## Funcionamiento
 
@@ -74,11 +96,13 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente.
 
 #### 3. **Segunda Pregunta**
 ```
-¿Cómo calificarías la amabilidad en la atención?
+¿Qué tan satisfecho quedaste con la atención?
 
-1️⃣ Muy buena
-2️⃣ Regular
-3️⃣ Mala
+1️⃣ Muy insatisfecho
+2️⃣ Insatisfecho
+3️⃣ Neutral
+4️⃣ Satisfecho
+5️⃣ Muy satisfecho
 ```
 
 #### 4. **Tercera Pregunta**
@@ -99,9 +123,12 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente.
 
 El sistema acepta múltiples formatos de respuesta:
 
-- **Números**: `1`, `2`, `3`
-- **Emojis**: `1️⃣`, `2️⃣`, `3️⃣`
-- **Texto**: `sí`, `si`, `parcialmente`, `no`, `muy buena`, `regular`, `mala`
+- **Números**: `1`, `2`, `3`, `4`, `5`
+- **Emojis**: `1️⃣`, `2️⃣`, `3️⃣`, `4️⃣`, `5️⃣`
+- **Texto**: 
+  - Pregunta 1: `sí`, `si`, `parcialmente`, `no`
+  - Pregunta 2: `muy insatisfecho`, `insatisfecho`, `neutral`, `satisfecho`, `muy satisfecho`, `pésimo`, `malo`, `ok`, `bueno`, `bien`, `excelente`, `perfecto`
+  - Pregunta 3: `sí`, `si`, `no`
 
 ### Estados de Conversación
 
@@ -126,9 +153,10 @@ El sistema acepta múltiples formatos de respuesta:
    - Indica efectividad del agente
    - Correlacionar con `duracion_handoff_minutos`
 
-3. **Calidad de Atención**
-   - `Muy buena` / Total de respuestas
-   - Indica satisfacción con el servicio
+3. **Calidad de Atención (CSAT - Customer Satisfaction Score)**
+   - Promedio de escala 1-5 convertido a porcentaje: `(avg - 1) / 4 * 100`
+   - O contar solo respuestas positivas: (`Satisfecho` + `Muy satisfecho`) / Total
+   - Indica satisfacción con el servicio en escala más granular
 
 4. **Retención de Clientes**
    - `Sí` / Total de respuestas (pregunta 3)
@@ -140,11 +168,13 @@ El sistema acepta múltiples formatos de respuesta:
 
 ### Interpretación de Resultados
 
-- **Alta satisfacción**: >80% "Muy buena" en amabilidad
+- **Alta satisfacción**: Promedio ≥4.0 (escala 1-5) o >70% "Satisfecho"/"Muy satisfecho"
+- **Satisfacción media**: Promedio 3.0-3.9 o mayoría "Neutral"
+- **Baja satisfacción**: Promedio <3.0 o >30% "Insatisfecho"/"Muy insatisfecho"
 - **Baja resolución**: >30% "No" en resolución de problemas
 - **Riesgo de abandono**: >20% "No" en volvería a contactar
 - **Buen opt-in rate**: >60% accepted
-- **Handoff eficiente**: Promedio <20 minutos con satisfacción "Muy buena"
+- **Handoff eficiente**: Promedio <20 minutos con satisfacción ≥4.0
 
 ## Implementación Técnica
 
@@ -166,7 +196,9 @@ El sistema acepta múltiples formatos de respuesta:
    - **Timeout** → Cierra conversación silenciosamente
 5. Si acepta: Cliente responde preguntas → `survey_service.process_survey_response()`
 6. Procesa respuesta → Envía siguiente pregunta o finaliza
-7. Guarda resultados → `sheets_service.append_row('survey', data)`
+7. Al completar la última pregunta:
+   - Guarda respuestas individuales → `sheets_service.append_row('survey', data)`
+   - Calcula y guarda KPIs → `survey_service._save_kpis()` → `sheets_service.append_row('kpis', data)`
 8. Cierra conversación y activa siguiente en cola
 
 ## Troubleshooting
@@ -195,8 +227,9 @@ El sistema acepta múltiples formatos de respuesta:
 
 5. **Datos no se guardan en Sheets**
    - Verificar configuración de Google Sheets
-   - Verificar que la hoja `ENCUESTA_RESULTADOS` exista
+   - Verificar que las hojas `ENCUESTA_RESULTADOS` y `KPIs` existan
    - Revisar permisos del service account
+   - Revisar logs: debe aparecer "✅ Resultados de encuesta guardados" y "✅ KPIs guardados"
 
 ### Logs Importantes
 
@@ -207,6 +240,7 @@ El sistema acepta múltiples formatos de respuesta:
 ⏱️ Timeout de oferta de encuesta para +5491123456789
 ✅ Encuesta enviada al cliente +5491123456789
 ✅ Resultados de encuesta guardados para +5491123456789
+✅ KPIs guardados para conversación +5491123456789
 ✅ Encuesta completada y conversación finalizada para +5491123456789
 ```
 
@@ -214,8 +248,9 @@ El sistema acepta múltiples formatos de respuesta:
 
 1. **Configuración**
    - Habilitar solo en producción cuando esté listo
-   - Configurar hoja de Google Sheets antes de activar
+   - Configurar hojas de Google Sheets (`ENCUESTA_RESULTADOS` y `KPIs`) antes de activar
    - Testear flujo completo: aceptación, rechazo y timeout
+   - Verificar que ambas hojas tengan los headers correctos en la fila 1
 
 2. **Monitoreo**
    - Revisar regularmente los resultados en Google Sheets
@@ -241,6 +276,7 @@ El sistema acepta múltiples formatos de respuesta:
 # Encuesta de satisfacción
 SUMMARY=true
 SHEETS_SURVEY_SHEET_NAME=ENCUESTA_RESULTADOS
+SHEETS_KPI_SHEET_NAME=KPIs
 
 # Google Sheets (requerido)
 ENABLE_SHEETS_METRICS=true
