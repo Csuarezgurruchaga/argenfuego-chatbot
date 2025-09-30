@@ -170,10 +170,9 @@ class WhatsAppHandoffService:
         """
         Formatea el mensaje de notificación de handoff para el agente.
         """
-        message = f"🔄 *Nueva solicitud de agente humano*\n\n"
+        message = f"🔄 *Solicitud de handoff*\n\n"
         message += f"Cliente: {client_name or 'Sin nombre'} ({client_phone})\n\n"
         message += f"📝 *Mensaje que disparó el handoff:*\n{handoff_message}\n\n"
-        message += f"💬 *Último mensaje:*\n{current_message}\n\n"
         message += f"ℹ️ *Instrucciones:*\n"
         message += f"• Responde en este mismo chat y enviaremos tu mensaje al cliente automáticamente.\n"
         message += f"• No es necesario escribirle al número del cliente.\n"
