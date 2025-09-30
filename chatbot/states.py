@@ -336,9 +336,7 @@ class ConversationManager:
         if not self.handoff_queue:
             return "📋 *COLA DE HANDOFFS*\n\n✅ No hay conversaciones activas.\n\nTodas las consultas han sido atendidas."
 
-        lines = ["┌────────────────────────────────────────┐"]
-        lines.append("│ 📋 *COLA DE HANDOFFS*                   │")
-        lines.append("│                                        │")
+        lines = ["📋 *COLA DE HANDOFFS*\n"]
 
         for i, numero in enumerate(self.handoff_queue):
             conversacion = self.get_conversacion(numero)
@@ -367,30 +365,32 @@ class ConversationManager:
                     minutos = segundos // 60
                     tiempo_ultimo_mensaje = f"{minutos} min"
 
+            nombre = conversacion.nombre_usuario or "Sin nombre"
+
             if is_active:
-                lines.append("│ [ACTIVO] 🟢 " + (conversacion.nombre_usuario or "Sin nombre")[:20].ljust(20) + " │")
-                lines.append("│           " + numero[:25].ljust(25) + " │")
+                lines.append(f"🟢 *[ACTIVO]* {nombre}")
+                lines.append(f"   📞 {numero}")
                 if tiempo_desde_inicio:
-                    lines.append("│           Iniciado hace " + tiempo_desde_inicio.ljust(13) + " │")
+                    lines.append(f"   ⏱️ Iniciado hace {tiempo_desde_inicio}")
                 if tiempo_ultimo_mensaje:
-                    lines.append("│           Último msj hace " + tiempo_ultimo_mensaje.ljust(11) + " │")
+                    lines.append(f"   💬 Último mensaje hace {tiempo_ultimo_mensaje}")
             else:
-                lines.append(f"│ [#{i+1}] ⏳ " + (conversacion.nombre_usuario or "Sin nombre")[:20].ljust(20) + " │")
-                lines.append("│      " + numero[:30].ljust(30) + " │")
+                lines.append(f"\n⏳ *[#{i+1}]* {nombre}")
+                lines.append(f"   📞 {numero}")
                 if tiempo_desde_inicio:
-                    lines.append("│      Esperando hace " + tiempo_desde_inicio.ljust(15) + " │")
+                    lines.append(f"   ⏱️ Esperando hace {tiempo_desde_inicio}")
 
                 # Mostrar fragmento del mensaje inicial
                 if conversacion.mensaje_handoff_contexto:
-                    fragmento = conversacion.mensaje_handoff_contexto[:30]
-                    if len(conversacion.mensaje_handoff_contexto) > 30:
+                    fragmento = conversacion.mensaje_handoff_contexto[:40]
+                    if len(conversacion.mensaje_handoff_contexto) > 40:
                         fragmento += "..."
-                    lines.append("│      Mensaje: \"" + fragmento[:22].ljust(22) + "\" │")
+                    lines.append(f"   💭 \"{fragmento}\"")
 
-            lines.append("│                                        │")
+            lines.append("")  # Línea en blanco
 
-        lines.append("│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │")
-        lines.append(f"│ Total: {len(self.handoff_queue)} conversación(es)".ljust(40) + " │")
+        lines.append("─" * 30)
+        lines.append(f"📊 Total: {len(self.handoff_queue)} conversación(es)")
 
         # Calcular tiempo promedio de espera
         if len(self.handoff_queue) > 1:
@@ -403,9 +403,7 @@ class ConversationManager:
 
             if tiempos_espera:
                 promedio = int(sum(tiempos_espera) / len(tiempos_espera))
-                lines.append(f"│ Tiempo promedio espera: {promedio} min".ljust(40) + " │")
-
-        lines.append("└────────────────────────────────────────┘")
+                lines.append(f"⏰ Tiempo promedio espera: {promedio} min")
 
         return "\n".join(lines)
 
