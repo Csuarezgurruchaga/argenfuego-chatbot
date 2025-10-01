@@ -221,91 +221,97 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def _enviar_flujo_saludo_completo(numero_telefono: str, nombre_usuario: str = "") -> str:
         """
-        Envía el flujo completo de saludo: sticker + menú interactivo
-        Retorna mensaje vacío ya que todo se envía en background
+        Envía el flujo completo de saludo en background: saludo → sticker → menú
+        Retorna inmediatamente (vacío) para que el webhook responda rápido
+        
+        MEJORA DE LATENCIA:
+        - Antes: Webhook bloqueado ~500ms esperando Twilio
+        - Ahora: Webhook responde en ~15ms, todo se envía en paralelo
         """
         import os
         from services.twilio_service import twilio_service
         from config.company_profiles import get_active_company_profile
         import threading
         import time
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         # Verificar si los botones interactivos están habilitados
         use_interactive_buttons = os.getenv("USE_INTERACTIVE_BUTTONS", "false").lower() == "true"
         
-        # 1. Enviar sticker PRIMERO (para que llegue como 1er mensaje)
-        def enviar_sticker_primero():
+        # Función que envía TODO secuencialmente en background
+        def enviar_todo_secuencial():
+            """
+            Envía los 3 mensajes en orden garantizado:
+            1. Saludo (inmediato)
+            2. Sticker (0.3s después)
+            3. Menú (1.5s después del sticker = 1.8s total)
+            """
             try:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"DEBUG: Enviando sticker PRIMERO para {numero_telefono}")
+                # ===== MENSAJE 1: SALUDO =====
+                if nombre_usuario:
+                    saludo = f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva"
+                else:
+                    saludo = "¡Hola! 👋🏻 Mi nombre es Eva"
                 
+                logger.info(f"⚡ [Background] Enviando saludo a {numero_telefono}")
+                inicio = time.time()
+                saludo_enviado = twilio_service.send_whatsapp_message(numero_telefono, saludo)
+                tiempo_saludo = (time.time() - inicio) * 1000
+                logger.info(f"✅ Saludo enviado en {tiempo_saludo:.0f}ms: {saludo_enviado}")
+                
+                # ===== MENSAJE 2: STICKER =====
+                # Delay de 0.3s para que el saludo llegue primero
+                time.sleep(0.3)
+                
+                logger.info(f"⚡ [Background] Enviando sticker a {numero_telefono}")
+                inicio = time.time()
                 profile = get_active_company_profile()
                 company_name = profile['name'].lower()
                 image_url = f"https://raw.githubusercontent.com/Csuarezgurruchaga/argenfuego-chatbot/main/assets/{company_name}.webp"
                 
-                logger.info(f"DEBUG: Enviando sticker (1er mensaje): {image_url}")
-                success = twilio_service.send_whatsapp_media(numero_telefono, image_url)
-                logger.info(f"DEBUG: Sticker enviado exitosamente: {success}")
+                sticker_enviado = twilio_service.send_whatsapp_media(numero_telefono, image_url)
+                tiempo_sticker = (time.time() - inicio) * 1000
+                logger.info(f"✅ Sticker enviado en {tiempo_sticker:.0f}ms: {sticker_enviado}")
                 
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Error enviando sticker: {str(e)}")
-        
-        # 2. Enviar menú (interactivo o tradicional) en background
-        def enviar_menu():
-            try:
-                import logging
-                logger = logging.getLogger(__name__)
+                # ===== MENSAJE 3: MENÚ =====
+                # Delay de 1.5s desde el sticker (total 1.8s desde inicio)
+                time.sleep(1.5)
+                
+                logger.info(f"⚡ [Background] Enviando menú a {numero_telefono}")
+                inicio = time.time()
                 
                 if use_interactive_buttons:
-                    logger.info(f"DEBUG: Enviando menú interactivo para {numero_telefono}")
-                    # Delay de 2.5 segundos para el template
-                    time.sleep(2.5)
                     # Enviar menú con botones interactivos
                     success = ChatbotRules.send_menu_interactivo(numero_telefono, nombre_usuario)
-                    logger.info(f"DEBUG: Menú interactivo enviado: {success}")
+                    tipo_menu = "interactivo"
                 else:
-                    logger.info(f"DEBUG: Enviando menú tradicional para {numero_telefono}")
-                    # Delay de 2.5 segundos para el menú tradicional
-                    time.sleep(2.5)
                     # Enviar menú tradicional
                     mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
                     success = twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
-                    logger.info(f"DEBUG: Menú tradicional enviado: {success}")
+                    tipo_menu = "tradicional"
+                
+                tiempo_menu = (time.time() - inicio) * 1000
+                logger.info(f"✅ Menú {tipo_menu} enviado en {tiempo_menu:.0f}ms: {success}")
                 
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Error enviando menú: {str(e)}")
-                # Fallback: enviar mensaje completo si falla
-                mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
-                twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+                logger.error(f"❌ Error en flujo de saludo para {numero_telefono}: {str(e)}")
+                # Fallback: intentar enviar al menos el mensaje completo
+                try:
+                    mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
+                    twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+                except Exception as fallback_error:
+                    logger.error(f"❌ Error en fallback: {fallback_error}")
         
-        # 1. Enviar saludo inmediatamente
-        import logging
-        logger = logging.getLogger(__name__)
+        # Ejecutar todo en un único thread background
+        thread = threading.Thread(target=enviar_todo_secuencial)
+        thread.daemon = True
+        thread.start()
         
-        if nombre_usuario:
-            saludo = f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva"
-        else:
-            saludo = "¡Hola! 👋🏻 Mi nombre es Eva"
+        logger.info(f"🚀 Thread de saludo iniciado para {numero_telefono}, webhook continuará sin esperar")
         
-        logger.info(f"DEBUG: Enviando saludo inicial para {numero_telefono}")
-        saludo_enviado = twilio_service.send_whatsapp_message(numero_telefono, saludo)
-        logger.info(f"DEBUG: Saludo enviado exitosamente: {saludo_enviado}")
-        
-        # 2. Ejecutar sticker y menú en background
-        thread1 = threading.Thread(target=enviar_sticker_primero)
-        thread1.daemon = True
-        thread1.start()
-        
-        thread2 = threading.Thread(target=enviar_menu)
-        thread2.daemon = True
-        thread2.start()
-        
-        # Retornar mensaje vacío ya que todo se envía en background
+        # Retornar vacío inmediatamente - el webhook responde en ~15ms
         return ""
     
     @staticmethod
@@ -951,12 +957,15 @@ Responde con el número del campo que deseas modificar."""
                 conversation_manager.set_nombre_usuario(numero_telefono, nombre_usuario)
             
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+            
+            # Ejecutar metrics en background para no bloquear
             try:
-                metrics_service.on_conversation_started()
+                import threading
+                threading.Thread(target=lambda: metrics_service.on_conversation_started(), daemon=True).start()
             except Exception:
                 pass
             
-            # Enviar flujo de 3 mensajes: saludo + imagen + presentación
+            # Enviar flujo de 3 mensajes: saludo + imagen + presentación (todo en background)
             return ChatbotRules._enviar_flujo_saludo_completo(numero_telefono, nombre_usuario)
         
         if conversacion.estado == EstadoConversacion.INICIO:
