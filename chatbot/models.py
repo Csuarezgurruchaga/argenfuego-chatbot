@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from enum import Enum
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 class TipoConsulta(str, Enum):
@@ -66,6 +66,8 @@ class ConversacionData(BaseModel):
     survey_sent_at: Optional[datetime] = None  # Timestamp de cuando se envió la encuesta
     survey_responses: dict = Field(default_factory=dict)  # Respuestas de la encuesta
     survey_question_number: int = 0  # Número de pregunta actual (1, 2, 3)
+    # Historial de mensajes durante handoff
+    message_history: List[Dict[str, Any]] = Field(default_factory=list)  # [{timestamp, sender, message}]
     
     class Config:
         use_enum_values = True

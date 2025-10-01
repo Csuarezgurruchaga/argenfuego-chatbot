@@ -15,7 +15,8 @@ class AgentCommandService:
         'next': ['next', 'n', 'siguiente', 'sig', 'skip'],
         'queue': ['queue', 'q', 'cola', 'list', 'lista'],
         'help': ['help', 'h', 'ayuda', '?', 'comandos'],
-        'active': ['active', 'current', 'a', 'activo', 'actual']
+        'active': ['active', 'current', 'a', 'activo', 'actual'],
+        'historial': ['historial', 'history', 'contexto', 'context', 'chat', 'recap', 'mensajes', 'messages']
     }
 
     def is_command(self, message: str) -> bool:
@@ -244,7 +245,12 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente."""
    Muestra qué conversación está activa actualmente.
    Ejemplo: /active
 
-**/help** (o /h, /ayuda)
+**/historial** (o /h, /contexto, /chat)
+   Muestra los últimos 5 mensajes de la conversación activa.
+   Útil para recordar qué se habló antes de cambiar con /next.
+   Ejemplo: /historial
+
+**/help** (o /ayuda)
    Muestra este mensaje de ayuda.
    Ejemplo: /help
 
@@ -319,6 +325,130 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente."""
         except Exception as e:
             logger.error(f"Error ejecutando comando /active: {e}")
             return f"❌ Error obteniendo conversación activa: {str(e)}"
+    
+    def execute_historial_command(self, agent_phone: str, numero_especifico: Optional[str] = None) -> str:
+        """
+        Ejecuta el comando /historial: muestra los últimos mensajes de la conversación activa.
+
+        Args:
+            agent_phone: Número del agente (para logs)
+            numero_especifico: Opcional - número específico si el agente pone /historial +549...
+
+        Returns:
+            str: Mensaje de respuesta con el historial
+        """
+        try:
+            # Determinar de qué conversación mostrar historial
+            if numero_especifico:
+                numero_telefono = numero_especifico
+                conversacion = conversation_manager.get_conversacion(numero_telefono)
+                
+                # Verificar que esté en handoff
+                if not (conversacion.atendido_por_humano or conversacion.estado.value == 'atendido_por_humano'):
+                    return f"⚠️ El número {numero_telefono} no está en handoff actualmente."
+            else:
+                # Usar conversación activa
+                active_phone = conversation_manager.get_active_handoff()
+                
+                if not active_phone:
+                    return "⚠️ No hay conversación activa.\n\nUsa /queue para ver las conversaciones en cola."
+                
+                numero_telefono = active_phone
+                conversacion = conversation_manager.get_conversacion(numero_telefono)
+            
+            # Obtener historial (últimos 5 mensajes)
+            historial = conversation_manager.get_message_history(numero_telefono, limit=5)
+            
+            if not historial:
+                nombre = conversacion.nombre_usuario or "Cliente"
+                return f"📜 *HISTORIAL - {nombre}*\n\n⚠️ No hay mensajes registrados en esta conversación aún.\n\nEl historial comienza a guardarse después del primer mensaje durante el handoff."
+            
+            # Construir mensaje de historial
+            nombre = conversacion.nombre_usuario or "Cliente"
+            lines = [f"📜 *HISTORIAL - {nombre}*\n"]
+            
+            # Formatear mensajes
+            from datetime import datetime
+            now = datetime.utcnow()
+            
+            for msg in historial:
+                timestamp = msg.get('timestamp')
+                sender = msg.get('sender')
+                message = msg.get('message', '')
+                
+                # Calcular tiempo relativo
+                if timestamp:
+                    delta = now - timestamp
+                    segundos = int(delta.total_seconds())
+                    
+                    if segundos < 60:
+                        tiempo = f"{segundos} seg"
+                    elif segundos < 3600:
+                        minutos = segundos // 60
+                        tiempo = f"{minutos} min"
+                    else:
+                        horas = segundos // 3600
+                        tiempo = f"{horas} h"
+                    
+                    hora_str = timestamp.strftime('%H:%M')
+                    tiempo_display = f"🕐 {hora_str} (hace {tiempo})"
+                else:
+                    tiempo_display = "🕐 --:--"
+                
+                # Icono según quién habló
+                if sender == "client":
+                    emisor = "Cliente"
+                    icono = "👤"
+                elif sender == "agent":
+                    emisor = "Agente"
+                    icono = "👨🏻‍💼"
+                else:
+                    emisor = "Sistema"
+                    icono = "🤖"
+                
+                # Truncar mensaje si es muy largo
+                if len(message) > 150:
+                    message = message[:150] + "..."
+                
+                lines.append(f"{tiempo_display} - {icono} *{emisor}:*")
+                lines.append(f'"{message}"')
+                lines.append("")  # Línea en blanco entre mensajes
+            
+            # Agregar info de tiempo activo
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━")
+            
+            if conversacion.handoff_started_at:
+                delta = datetime.utcnow() - conversacion.handoff_started_at
+                minutos = int(delta.total_seconds() / 60)
+                if minutos < 60:
+                    tiempo_activo = f"{minutos} min"
+                else:
+                    horas = minutos // 60
+                    mins_restantes = minutos % 60
+                    tiempo_activo = f"{horas}h {mins_restantes}min"
+                
+                lines.append(f"⏱️ Conversación activa desde hace {tiempo_activo}")
+            
+            if conversacion.last_client_message_at:
+                delta = datetime.utcnow() - conversacion.last_client_message_at
+                segundos = int(delta.total_seconds())
+                if segundos < 60:
+                    tiempo_ultimo = f"{segundos} seg"
+                elif segundos < 3600:
+                    minutos = segundos // 60
+                    tiempo_ultimo = f"{minutos} min"
+                else:
+                    horas = segundos // 3600
+                    tiempo_ultimo = f"{horas} h"
+                
+                lines.append(f"📨 Último mensaje del cliente: hace {tiempo_ultimo}")
+            
+            logger.info(f"✅ Agente {agent_phone} solicitó historial de {numero_telefono}")
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.error(f"Error ejecutando comando /historial: {e}")
+            return f"❌ Error obteniendo historial: {str(e)}"
 
 
 # Instancia global del servicio

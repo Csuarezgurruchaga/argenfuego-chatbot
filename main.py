@@ -455,6 +455,9 @@ async def webhook_whatsapp(request: Request):
                                 caption = f"[#{position}] {caption}"
                             twilio_service.send_whatsapp_media(agent_number, media_url, caption=caption)
                 else:
+                    # Guardar mensaje del cliente en historial
+                    conversation_manager.add_message_to_history(numero_telefono, "client", mensaje_usuario)
+                    
                     # Enviar notificación de mensaje con indicador de posición
                     notification = _format_client_message_notification(
                         numero_telefono,
@@ -876,6 +879,12 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
                 response = agent_command_service.execute_active_command(agent_phone)
                 twilio_service.send_whatsapp_message(agent_phone, response)
                 return
+            
+            elif command == 'historial':
+                # Mostrar historial de mensajes
+                response = agent_command_service.execute_historial_command(agent_phone)
+                twilio_service.send_whatsapp_message(agent_phone, response)
+                return
 
         # PASO 2: Es un mensaje normal, enviar a conversación activa
         active_phone = conversation_manager.get_active_handoff()
@@ -889,6 +898,9 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
             twilio_service.send_whatsapp_message(agent_phone, no_active_msg)
             return
 
+        # Guardar mensaje del agente en historial
+        conversation_manager.add_message_to_history(active_phone, "agent", message)
+        
         # Enviar mensaje al cliente activo
         success = whatsapp_handoff_service.send_agent_response_to_client(
             active_phone,

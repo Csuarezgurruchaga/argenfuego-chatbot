@@ -406,5 +406,50 @@ class ConversationManager:
                 lines.append(f"⏰ Tiempo promedio espera: {promedio} min")
 
         return "\n".join(lines)
+    
+    def add_message_to_history(self, numero_telefono: str, sender: str, message: str, max_messages: int = 10):
+        """
+        Agrega un mensaje al historial de la conversación.
+        
+        Args:
+            numero_telefono: Número de teléfono del cliente
+            sender: "client" o "agent"
+            message: Contenido del mensaje
+            max_messages: Máximo de mensajes a mantener en historial (default: 10)
+        """
+        conversacion = self.get_conversacion(numero_telefono)
+        
+        # Solo guardar historial si está en handoff
+        if not (conversacion.atendido_por_humano or conversacion.estado == EstadoConversacion.ATENDIDO_POR_HUMANO):
+            return
+        
+        # Agregar mensaje al historial
+        mensaje_entry = {
+            "timestamp": datetime.utcnow(),
+            "sender": sender,  # "client" o "agent"
+            "message": message[:500]  # Limitar longitud para no consumir mucha memoria
+        }
+        
+        conversacion.message_history.append(mensaje_entry)
+        
+        # Mantener solo los últimos N mensajes
+        if len(conversacion.message_history) > max_messages:
+            conversacion.message_history = conversacion.message_history[-max_messages:]
+    
+    def get_message_history(self, numero_telefono: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Obtiene el historial de mensajes de una conversación.
+        
+        Args:
+            numero_telefono: Número de teléfono del cliente
+            limit: Cantidad máxima de mensajes a retornar (default: 5)
+            
+        Returns:
+            List: Lista de mensajes [{timestamp, sender, message}]
+        """
+        conversacion = self.get_conversacion(numero_telefono)
+        
+        # Retornar los últimos N mensajes
+        return conversacion.message_history[-limit:] if conversacion.message_history else []
 
 conversation_manager = ConversationManager()
