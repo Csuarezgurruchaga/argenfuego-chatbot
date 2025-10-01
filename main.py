@@ -604,9 +604,7 @@ def _format_handoff_activated_notification(conversacion: ConversacionData, posit
     if len(mensaje_contexto) > 100:
         mensaje_contexto = mensaje_contexto[:100] + "..."
 
-    return f"""┌────────────────────────────────────────┐
-│ 🔔 *HANDOFF ACTIVADO* [{position}/{total}]      │
-└────────────────────────────────────────┘
+    return f"""💬 *HANDOFF ACTIVADO* [{position}/{total}]
 
 *Cliente:* {nombre}
 *Tel:* {conversacion.numero_telefono}
@@ -644,9 +642,7 @@ def _format_handoff_queued_notification(conversacion: ConversacionData, position
 
     nombre_activo = active_conv.nombre_usuario or "Cliente actual"
 
-    return f"""┌────────────────────────────────────────┐
-│ 🔔 *NUEVO HANDOFF EN COLA* [#{position}/{total}] │
-└────────────────────────────────────────┘
+    return f"""💬 *NUEVO HANDOFF EN COLA* [#{position}/{total}]
 
 *Cliente:* {nombre}
 *Tel:* {conversacion.numero_telefono}
