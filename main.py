@@ -313,7 +313,14 @@ async def webhook_whatsapp(request: Request):
                         numero_telefono,
                         "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
                     )
-                    conversation_manager.close_active_handoff()
+                    
+                    # Verificar si esta conversación es la activa antes de cerrar
+                    active_phone = conversation_manager.get_active_handoff()
+                    if active_phone == numero_telefono:
+                        conversation_manager.close_active_handoff()
+                    else:
+                        conversation_manager.remove_from_handoff_queue(numero_telefono)
+                        conversation_manager.finalizar_conversacion(numero_telefono)
 
                 return PlainTextResponse("", status_code=200)
 
@@ -327,20 +334,30 @@ async def webhook_whatsapp(request: Request):
                     "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
                 )
 
-                # Cerrar conversación activa (esto automáticamente activa la siguiente)
-                next_phone = conversation_manager.close_active_handoff()
+                # Verificar si esta conversación es la activa
+                active_phone = conversation_manager.get_active_handoff()
+                
+                if active_phone == numero_telefono:
+                    # Es la conversación activa, usar close_active_handoff
+                    next_phone = conversation_manager.close_active_handoff()
 
-                logger.info(f"✅ Cliente {numero_telefono} rechazó encuesta, conversación cerrada")
+                    logger.info(f"✅ Cliente {numero_telefono} rechazó encuesta, conversación cerrada (era activa)")
 
-                # Notificar al agente si hay siguiente conversación
-                if next_phone:
-                    agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
-                    if agent_number:
-                        next_conv = conversation_manager.get_conversacion(next_phone)
-                        position = 1
-                        total = conversation_manager.get_queue_size()
-                        notification = _format_handoff_activated_notification(next_conv, position, total)
-                        twilio_service.send_whatsapp_message(agent_number, notification)
+                    # Notificar al agente si hay siguiente conversación
+                    if next_phone:
+                        agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                        if agent_number:
+                            next_conv = conversation_manager.get_conversacion(next_phone)
+                            position = 1
+                            total = conversation_manager.get_queue_size()
+                            notification = _format_handoff_activated_notification(next_conv, position, total)
+                            twilio_service.send_whatsapp_message(agent_number, notification)
+                else:
+                    # NO es la conversación activa, solo removerla de la cola sin afectar la activa
+                    conversation_manager.remove_from_handoff_queue(numero_telefono)
+                    conversation_manager.finalizar_conversacion(numero_telefono)
+                    
+                    logger.info(f"✅ Cliente {numero_telefono} rechazó encuesta, conversación cerrada (NO era activa)")
 
                 return PlainTextResponse("", status_code=200)
             else:
@@ -366,8 +383,31 @@ async def webhook_whatsapp(request: Request):
             
             if survey_complete:
                 # Encuesta completada, finalizar conversación
-                conversation_manager.finalizar_conversacion(numero_telefono)
-                logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono}")
+                # Verificar si esta conversación es la activa
+                active_phone = conversation_manager.get_active_handoff()
+                
+                if active_phone == numero_telefono:
+                    # Es la conversación activa, cerrar y activar siguiente
+                    next_phone = conversation_manager.close_active_handoff()
+                    logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono} (era activa)")
+                    
+                    # Notificar al agente si hay siguiente conversación
+                    if next_phone:
+                        agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                        if agent_number:
+                            try:
+                                next_conv = conversation_manager.get_conversacion(next_phone)
+                                position = 1
+                                total = conversation_manager.get_queue_size()
+                                notification = _format_handoff_activated_notification(next_conv, position, total)
+                                twilio_service.send_whatsapp_message(agent_number, notification)
+                            except Exception as e:
+                                logger.error(f"Error notificando siguiente handoff después de encuesta: {e}")
+                else:
+                    # NO es la conversación activa, solo removerla de la cola sin afectar la activa
+                    conversation_manager.remove_from_handoff_queue(numero_telefono)
+                    conversation_manager.finalizar_conversacion(numero_telefono)
+                    logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono} (NO era activa)")
             
             return PlainTextResponse("", status_code=200)
 
