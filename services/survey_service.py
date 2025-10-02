@@ -33,16 +33,20 @@ class SurveyService:
                 }
             },
             2: {
-                'text': '¿Cómo calificarías la amabilidad en la atención?',
+                'text': '¿Qué tan satisfecho quedaste con la atención?',
                 'options': {
-                    '1': 'Muy buena',
-                    '2': 'Regular',
-                    '3': 'Mala'
+                    '1': 'Muy insatisfecho',
+                    '2': 'Insatisfecho',
+                    '3': 'Neutral',
+                    '4': 'Satisfecho',
+                    '5': 'Muy satisfecho'
                 },
                 'emojis': {
                     '1': '1️⃣',
                     '2': '2️⃣',
-                    '3': '3️⃣'
+                    '3': '3️⃣',
+                    '4': '4️⃣',
+                    '5': '5️⃣'
                 }
             },
             3: {
@@ -82,11 +86,15 @@ class SurveyService:
             conversation.survey_sent = True
             conversation.survey_sent_at = datetime.utcnow()
             conversation.survey_question_number = 1
-            
-            # Construir mensaje de la primera pregunta
+
+            # Cambiar estado a ENCUESTA_SATISFACCION
+            from chatbot.models import EstadoConversacion
+            conversation.estado = EstadoConversacion.ENCUESTA_SATISFACCION
+
+            # Construir mensaje de la primera pregunta (sin preámbulo, ya viene del opt-in)
             question_data = self.questions[1]
-            message = self._build_question_message(question_data)
-            
+            message = self._build_question_message(question_data, first_question=True)
+
             # Enviar mensaje
             success = twilio_service.send_whatsapp_message(client_phone, message)
             
@@ -135,8 +143,9 @@ class SurveyService:
             
             # Verificar si es la última pregunta
             if current_question >= len(self.questions):
-                # Encuesta completa, guardar resultados y finalizar
+                # Encuesta completa, guardar resultados y KPIs, luego finalizar
                 self._save_survey_results(client_phone, conversation)
+                self._save_kpis(conversation)
                 return True, self._build_completion_message()
             else:
                 # Enviar siguiente pregunta
@@ -149,18 +158,24 @@ class SurveyService:
             logger.error(f"Error procesando respuesta de encuesta: {e}")
             return False, None
     
-    def _build_question_message(self, question_data: Dict, include_instructions: bool = False) -> str:
+    def _build_question_message(self, question_data: Dict, include_instructions: bool = False, first_question: bool = False) -> str:
         """Construye el mensaje de una pregunta de la encuesta"""
-        message = question_data['text'] + '\n\n'
-        
+        message = ""
+
+        # Solo agregar preámbulo en la primera pregunta
+        if first_question:
+            message += "¡Perfecto! Comencemos:\n\n"
+
+        message += question_data['text'] + '\n\n'
+
         # Agregar opciones con emojis
         for key, emoji in question_data['emojis'].items():
             option_text = question_data['options'][key]
             message += f"{emoji} {option_text}\n"
-        
+
         if include_instructions:
             message += '\nResponde con el número (1, 2 o 3)'
-        
+
         return message
     
     def _build_completion_message(self) -> str:
@@ -192,20 +207,32 @@ class SurveyService:
         
         # Buscar por palabras clave
         keyword_mapping = {
+            # Pregunta 1: ¿Pudiste resolver?
             'si': 'Sí',
-            'sí': 'Sí', 
+            'sí': 'Sí',
             'yes': 'Sí',
             'parcialmente': 'Parcialmente',
             'partial': 'Parcialmente',
             'no': 'No',
-            'muy buena': 'Muy buena',
-            'muy bueno': 'Muy buena',
-            'excelente': 'Muy buena',
-            'regular': 'Regular',
-            'normal': 'Regular',
-            'mala': 'Mala',
-            'malo': 'Mala',
-            'terrible': 'Mala'
+            # Pregunta 2: ¿Qué tan satisfecho? (escala 1-5)
+            'muy insatisfecho': 'Muy insatisfecho',
+            'pesimo': 'Muy insatisfecho',
+            'pésimo': 'Muy insatisfecho',
+            'horrible': 'Muy insatisfecho',
+            'insatisfecho': 'Insatisfecho',
+            'malo': 'Insatisfecho',
+            'mala': 'Insatisfecho',
+            'neutral': 'Neutral',
+            'normal': 'Neutral',
+            'ok': 'Neutral',
+            'satisfecho': 'Satisfecho',
+            'bueno': 'Satisfecho',
+            'buena': 'Satisfecho',
+            'bien': 'Satisfecho',
+            'muy satisfecho': 'Muy satisfecho',
+            'excelente': 'Muy satisfecho',
+            'perfecto': 'Muy satisfecho',
+            'genial': 'Muy satisfecho'
         }
         
         for keyword, response in keyword_mapping.items():
@@ -219,18 +246,43 @@ class SurveyService:
     def _save_survey_results(self, client_phone: str, conversation: ConversacionData) -> bool:
         """
         Guarda los resultados de la encuesta en Google Sheets
-        
+
         Args:
             client_phone: Número de teléfono del cliente
             conversation: Datos de la conversación
-            
+
         Returns:
             bool: True si se guardó exitosamente
         """
         try:
             # Obtener respuestas
             responses = conversation.survey_responses
-            
+
+            # Calcular duración del handoff en minutos
+            duracion_minutos = 0
+            if conversation.handoff_started_at:
+                delta = datetime.utcnow() - conversation.handoff_started_at
+                duracion_minutos = int(delta.total_seconds() / 60)
+
+            # Formatear survey_accepted como string para claridad
+            survey_accepted_str = ''
+            if conversation.survey_accepted is True:
+                survey_accepted_str = 'accepted'
+            elif conversation.survey_accepted is False:
+                survey_accepted_str = 'declined'
+            elif conversation.survey_accepted is None:
+                survey_accepted_str = 'timeout'
+
+            # Formatear nombre del cliente (nombre + inicial de apellido)
+            nombre_cliente = ''
+            if conversation.nombre_usuario:
+                partes = conversation.nombre_usuario.strip().split()
+                if len(partes) == 1:
+                    nombre_cliente = partes[0]  # Solo nombre
+                elif len(partes) >= 2:
+                    # Nombre + inicial de apellido
+                    nombre_cliente = f"{partes[0]} {partes[1][0]}."
+
             # Preparar datos para la hoja
             row_data = [
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),  # fecha
@@ -238,9 +290,12 @@ class SurveyService:
                 responses.get('pregunta_1', ''),  # resolvio_problema
                 responses.get('pregunta_2', ''),  # amabilidad
                 responses.get('pregunta_3', ''),  # volveria_contactar
-                self._mask_phone(conversation.handoff_started_at.strftime('%Y-%m-%d %H:%M:%S') if conversation.handoff_started_at else '')  # fecha_handoff
+                duracion_minutos,  # duracion_handoff_minutos
+                str(conversation.survey_offered).lower(),  # survey_offered (true/false)
+                survey_accepted_str,  # survey_accepted (accepted/declined/timeout)
+                nombre_cliente  # nombre_cliente (formato: "Juan P.")
             ]
-            
+
             # Enviar a Google Sheets
             success = sheets_service.append_row('survey', row_data)
             
@@ -259,9 +314,89 @@ class SurveyService:
         """Enmascara el número de teléfono para privacidad"""
         if not phone or len(phone) < 4:
             return phone
-        
+
         # Mantener los últimos 4 dígitos
         return '*' * (len(phone) - 4) + phone[-4:]
+
+    def _save_kpis(self, conversation: ConversacionData) -> bool:
+        """
+        Calcula y guarda KPIs consolidados en la hoja KPIs.
+
+        Args:
+            conversation: Datos de la conversación con encuesta completada
+
+        Returns:
+            bool: True si se guardó exitosamente
+        """
+        try:
+            from services.metrics_service import metrics_service
+
+            # Obtener respuestas de la encuesta
+            responses = conversation.survey_responses
+
+            # KPI #1: Goal Completion Rate (de esta encuesta específica)
+            # Valores: Sí=1, Parcialmente=0.5, No=0
+            resolvio = responses.get('pregunta_1', '')
+            if resolvio == 'Sí':
+                goal_completion = 1.0
+            elif resolvio == 'Parcialmente':
+                goal_completion = 0.5
+            else:
+                goal_completion = 0.0
+
+            # KPI #2: Fallback Rate (del día actual)
+            # Necesitamos leer METRICS_BUSINESS del día, pero por simplicidad usamos 0
+            # (se puede calcular manualmente en Sheets con fórmulas)
+            fallback_rate = 0.0  # Placeholder - calcular en Sheets
+
+            # KPI #3: User Rating (convertir respuesta a escala 1-5)
+            satisfaccion = responses.get('pregunta_2', '')
+            rating_map = {
+                'Muy insatisfecho': 1,
+                'Insatisfecho': 2,
+                'Neutral': 3,
+                'Satisfecho': 4,
+                'Muy satisfecho': 5
+            }
+            user_rating = rating_map.get(satisfaccion, 0)
+
+            # KPI #4: Conversation Duration (en minutos)
+            duracion_minutos = 0
+            if conversation.handoff_started_at:
+                delta = datetime.utcnow() - conversation.handoff_started_at
+                duracion_minutos = int(delta.total_seconds() / 60)
+
+            # Métricas adicionales
+            survey_opt_in_rate = 1.0 if conversation.survey_accepted else 0.0
+
+            volveria = responses.get('pregunta_3', '')
+            retention_intent = 1.0 if volveria == 'Sí' else 0.0
+
+            # Preparar fila de KPIs
+            kpi_row = [
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),  # fecha
+                goal_completion,  # goal_completion_rate
+                fallback_rate,  # fallback_rate (placeholder)
+                user_rating,  # avg_user_rating (1-5)
+                duracion_minutos,  # avg_conversation_duration_min
+                1,  # total_surveys_completed (esta encuesta)
+                survey_opt_in_rate,  # survey_opt_in_rate
+                retention_intent  # customer_retention_intent
+            ]
+
+            # Enviar a Google Sheets
+            success = sheets_service.append_row('kpis', kpi_row)
+
+            if success:
+                logger.info(f"✅ KPIs guardados para conversación {conversation.numero_telefono}")
+            else:
+                logger.error(f"❌ Error guardando KPIs")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error guardando KPIs: {e}")
+            return False
 
 # Instancia global del servicio
 survey_service = SurveyService()

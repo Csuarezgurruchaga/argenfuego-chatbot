@@ -10,7 +10,7 @@ import logging
 from typing import Optional
 from chatbot.rules import ChatbotRules
 from chatbot.states import conversation_manager
-from chatbot.models import EstadoConversacion
+from chatbot.models import EstadoConversacion, ConversacionData
 from services.twilio_service import twilio_service
 from services.whatsapp_handoff_service import whatsapp_handoff_service
 from services.email_service import email_service
@@ -60,13 +60,19 @@ async def handoff_ttl_sweep(token: str = Form(...)):
         if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
             should_close = False
             close_reason = ""
-            
+
+            # Verificar timeout de oferta de encuesta (2 minutos)
+            if conv.estado == EstadoConversacion.ESPERANDO_RESPUESTA_ENCUESTA and conv.survey_offer_sent_at:
+                if (ahora - conv.survey_offer_sent_at) > timedelta(minutes=2):
+                    should_close = True
+                    close_reason = "Oferta de encuesta sin respuesta"
+
             # Verificar timeout de encuesta de satisfacción (15 minutos)
-            if conv.estado == EstadoConversacion.ENCUESTA_SATISFACCION and conv.survey_sent_at:
+            elif conv.estado == EstadoConversacion.ENCUESTA_SATISFACCION and conv.survey_sent_at:
                 if (ahora - conv.survey_sent_at) > timedelta(minutes=15):
                     should_close = True
                     close_reason = "Encuesta de satisfacción sin completar"
-            
+
             # Verificar timeout de pregunta de resolución (10 minutos)
             elif conv.resolution_question_sent and conv.resolution_question_sent_at:
                 if (ahora - conv.resolution_question_sent_at) > timedelta(minutes=resolution_timeout_minutes):
@@ -82,7 +88,12 @@ async def handoff_ttl_sweep(token: str = Form(...)):
             
             if should_close:
                 try:
-                    if close_reason == "Encuesta de satisfacción sin completar":
+                    # Enviar mensaje de cierre al cliente
+                    if close_reason == "Oferta de encuesta sin respuesta":
+                        # Cierre silencioso cuando no responde a oferta de encuesta (no enviar mensaje)
+                        conv.survey_accepted = None  # Registrar como timeout
+                        logger.info(f"⏱️ Timeout de oferta de encuesta para {conv.numero_telefono}")
+                    elif close_reason == "Encuesta de satisfacción sin completar":
                         twilio_service.send_whatsapp_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
                     elif close_reason == "Pregunta de resolución sin respuesta":
                         twilio_service.send_whatsapp_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
@@ -90,8 +101,31 @@ async def handoff_ttl_sweep(token: str = Form(...)):
                         twilio_service.send_whatsapp_message(conv.numero_telefono, "Esta conversación se finalizará por inactividad. ¡Muchas gracias por contactarnos! 🕒")
                 except Exception:
                     pass
-                conversation_manager.finalizar_conversacion(conv.numero_telefono)
-                cerradas += 1
+
+                # Verificar si es la conversación activa en la cola
+                active_phone = conversation_manager.get_active_handoff()
+                if active_phone == conv.numero_telefono:
+                    # Era la conversación activa, usar close_active_handoff
+                    next_phone = conversation_manager.close_active_handoff()
+                    cerradas += 1
+
+                    # Si hay siguiente conversación, notificar al agente
+                    if next_phone:
+                        try:
+                            next_conv = conversation_manager.get_conversacion(next_phone)
+                            position = 1
+                            total = conversation_manager.get_queue_size()
+                            notification = _format_handoff_activated_notification(next_conv, position, total)
+                            agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                            twilio_service.send_whatsapp_message(agent_number, notification)
+                        except Exception as e:
+                            logger.error(f"Error notificando siguiente handoff después de TTL: {e}")
+                else:
+                    # No es la activa, solo remover de cola
+                    conversation_manager.remove_from_handoff_queue(conv.numero_telefono)
+                    conversation_manager.finalizar_conversacion(conv.numero_telefono)
+                    cerradas += 1
+
                 logger.info(f"Conversación {conv.numero_telefono} cerrada por: {close_reason}")
     
     return {"closed": cerradas}
@@ -249,7 +283,91 @@ async def webhook_whatsapp(request: Request):
         
         # Obtener conversación actual
         conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
-        
+
+        # Verificar si está esperando respuesta de encuesta (PRIORIDAD MUY ALTA)
+        if conversacion_actual.estado == EstadoConversacion.ESPERANDO_RESPUESTA_ENCUESTA:
+            from services.survey_service import survey_service
+            from datetime import datetime
+
+            # Parsear respuesta (1=sí, 2=no)
+            respuesta = mensaje_usuario.strip().lower()
+
+            # Keywords de aceptación
+            acepta_keywords = ['1', '1️⃣', 'si', 'sí', 'yes', 'ok', 'dale', 'con gusto', 'acepto']
+            # Keywords de rechazo
+            rechaza_keywords = ['2', '2️⃣', 'no', 'nope', 'no gracias', 'no quiero', 'paso']
+
+            if any(kw in respuesta for kw in acepta_keywords):
+                # Cliente acepta la encuesta
+                conversacion_actual.survey_accepted = True
+
+                # Iniciar encuesta
+                success = survey_service.send_survey(numero_telefono, conversacion_actual)
+
+                if success:
+                    logger.info(f"✅ Cliente {numero_telefono} aceptó encuesta, primera pregunta enviada")
+                else:
+                    logger.error(f"❌ Error enviando primera pregunta de encuesta a {numero_telefono}")
+                    # Fallback: cerrar conversación
+                    twilio_service.send_whatsapp_message(
+                        numero_telefono,
+                        "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
+                    )
+                    
+                    # Verificar si esta conversación es la activa antes de cerrar
+                    active_phone = conversation_manager.get_active_handoff()
+                    if active_phone == numero_telefono:
+                        conversation_manager.close_active_handoff()
+                    else:
+                        conversation_manager.remove_from_handoff_queue(numero_telefono)
+                        conversation_manager.finalizar_conversacion(numero_telefono)
+
+                return PlainTextResponse("", status_code=200)
+
+            elif any(kw in respuesta for kw in rechaza_keywords):
+                # Cliente rechaza la encuesta
+                conversacion_actual.survey_accepted = False
+
+                # Enviar mensaje de agradecimiento y cerrar
+                twilio_service.send_whatsapp_message(
+                    numero_telefono,
+                    "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
+                )
+
+                # Verificar si esta conversación es la activa
+                active_phone = conversation_manager.get_active_handoff()
+                
+                if active_phone == numero_telefono:
+                    # Es la conversación activa, usar close_active_handoff
+                    next_phone = conversation_manager.close_active_handoff()
+
+                    logger.info(f"✅ Cliente {numero_telefono} rechazó encuesta, conversación cerrada (era activa)")
+
+                    # Notificar al agente si hay siguiente conversación
+                    if next_phone:
+                        agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                        if agent_number:
+                            next_conv = conversation_manager.get_conversacion(next_phone)
+                            position = 1
+                            total = conversation_manager.get_queue_size()
+                            notification = _format_handoff_activated_notification(next_conv, position, total)
+                            twilio_service.send_whatsapp_message(agent_number, notification)
+                else:
+                    # NO es la conversación activa, solo removerla de la cola sin afectar la activa
+                    conversation_manager.remove_from_handoff_queue(numero_telefono)
+                    conversation_manager.finalizar_conversacion(numero_telefono)
+                    
+                    logger.info(f"✅ Cliente {numero_telefono} rechazó encuesta, conversación cerrada (NO era activa)")
+
+                return PlainTextResponse("", status_code=200)
+            else:
+                # Respuesta no reconocida, pedir que responda con 1 o 2
+                twilio_service.send_whatsapp_message(
+                    numero_telefono,
+                    "Por favor responde con:\n1️⃣ para aceptar la encuesta\n2️⃣ para omitirla"
+                )
+                return PlainTextResponse("", status_code=200)
+
         # Verificar si está en encuesta de satisfacción (PRIORIDAD ALTA)
         if conversacion_actual.estado == EstadoConversacion.ENCUESTA_SATISFACCION:
             # Procesar respuesta de encuesta
@@ -265,8 +383,31 @@ async def webhook_whatsapp(request: Request):
             
             if survey_complete:
                 # Encuesta completada, finalizar conversación
-                conversation_manager.finalizar_conversacion(numero_telefono)
-                logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono}")
+                # Verificar si esta conversación es la activa
+                active_phone = conversation_manager.get_active_handoff()
+                
+                if active_phone == numero_telefono:
+                    # Es la conversación activa, cerrar y activar siguiente
+                    next_phone = conversation_manager.close_active_handoff()
+                    logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono} (era activa)")
+                    
+                    # Notificar al agente si hay siguiente conversación
+                    if next_phone:
+                        agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                        if agent_number:
+                            try:
+                                next_conv = conversation_manager.get_conversacion(next_phone)
+                                position = 1
+                                total = conversation_manager.get_queue_size()
+                                notification = _format_handoff_activated_notification(next_conv, position, total)
+                                twilio_service.send_whatsapp_message(agent_number, notification)
+                            except Exception as e:
+                                logger.error(f"Error notificando siguiente handoff después de encuesta: {e}")
+                else:
+                    # NO es la conversación activa, solo removerla de la cola sin afectar la activa
+                    conversation_manager.remove_from_handoff_queue(numero_telefono)
+                    conversation_manager.finalizar_conversacion(numero_telefono)
+                    logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono} (NO era activa)")
             
             return PlainTextResponse("", status_code=200)
 
@@ -284,7 +425,10 @@ async def webhook_whatsapp(request: Request):
                 except Exception:
                     pass
                 return PlainTextResponse("", status_code=200)
-            # Notificar al agente vía WhatsApp
+            # Notificar al agente vía WhatsApp con indicación de posición en cola
+            active_phone = conversation_manager.get_active_handoff()
+            is_active = (active_phone == numero_telefono)
+
             if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:
                 # Es el primer mensaje del handoff, incluir contexto completo con botones
                 success = whatsapp_handoff_service.send_agent_buttons(
@@ -297,19 +441,38 @@ async def webhook_whatsapp(request: Request):
                     conversacion_actual.handoff_notified = True
             else:
                 # Es un mensaje posterior durante el handoff
+                # Obtener posición si no es activo
+                position = None if is_active else conversation_manager.get_queue_position(numero_telefono)
+
                 if num_media > 0:
                     # Reenviar media al agente
                     agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
                     for i in range(num_media):
                         media_url = form_dict.get(f'MediaUrl{i}')
                         if media_url and agent_number:
-                            twilio_service.send_whatsapp_media(agent_number, media_url, caption=mensaje_usuario or "")
+                            caption = mensaje_usuario or ""
+                            if not is_active and position:
+                                caption = f"[#{position}] {caption}"
+                            twilio_service.send_whatsapp_media(agent_number, media_url, caption=caption)
                 else:
-                    whatsapp_handoff_service.notify_agent_new_message(
+                    # Guardar mensaje del cliente en historial
+                    conversation_manager.add_message_to_history(numero_telefono, "client", mensaje_usuario)
+                    
+                    # Enviar notificación de mensaje con indicador de posición
+                    notification = _format_client_message_notification(
                         numero_telefono,
                         profile_name or '',
-                        mensaje_usuario
+                        mensaje_usuario,
+                        is_active,
+                        position
                     )
+                    agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                    twilio_service.send_whatsapp_message(agent_number, notification)
+
+                    # Si no es activo, agregar recordatorio
+                    if not is_active and position:
+                        reminder = f"ℹ️ Este mensaje es del cliente en posición #{position}. Los mensajes que escribas irán al cliente activo. Usa /next para cambiar o /queue para ver la cola completa."
+                        twilio_service.send_whatsapp_message(agent_number, reminder)
             try:
                 from datetime import datetime
                 conversacion_actual.last_client_message_at = datetime.utcnow()
@@ -329,23 +492,44 @@ async def webhook_whatsapp(request: Request):
         else:
             logger.info(f"Respuesta vacía, no se envía mensaje a {numero_telefono}")
         
-        # Si durante el procesamiento se activó el handoff, notificar al agente vía WhatsApp
+        # Si durante el procesamiento se activó el handoff, agregar a cola y notificar al agente
         try:
             conversacion_post = conversation_manager.get_conversacion(numero_telefono)
             if (
                 (conversacion_post.atendido_por_humano or conversacion_post.estado == EstadoConversacion.ATENDIDO_POR_HUMANO)
                 and not conversacion_post.handoff_notified
             ):
-                # Notificar al agente sobre el nuevo handoff
-                success = whatsapp_handoff_service.notify_agent_new_handoff(
-                    numero_telefono,
-                    profile_name or '',
-                    conversacion_post.mensaje_handoff_contexto or mensaje_usuario,
-                    mensaje_usuario
-                )
+                # Agregar a la cola (esto activa automáticamente si no hay activo)
+                position = conversation_manager.add_to_handoff_queue(numero_telefono)
+                total = conversation_manager.get_queue_size()
+
+                # Determinar tipo de notificación
+                agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+
+                if position == 1:
+                    # Es el activo, notificar como activado
+                    notification = _format_handoff_activated_notification(
+                        conversacion_post,
+                        position,
+                        total
+                    )
+                    success = twilio_service.send_whatsapp_message(agent_number, notification)
+                else:
+                    # Está en cola, notificar con contexto
+                    active_phone = conversation_manager.get_active_handoff()
+                    active_conv = conversation_manager.get_conversacion(active_phone)
+
+                    notification = _format_handoff_queued_notification(
+                        conversacion_post,
+                        position,
+                        total,
+                        active_conv
+                    )
+                    success = twilio_service.send_whatsapp_message(agent_number, notification)
+
                 if success:
                     conversacion_post.handoff_notified = True
-                    logger.info(f"✅ Handoff notificado al agente para cliente {numero_telefono}")
+                    logger.info(f"✅ Handoff notificado para cliente {numero_telefono} (posición {position}/{total})")
         except Exception as e:
             logger.error(f"Error notificando handoff al agente: {e}")
 
@@ -444,6 +628,105 @@ async def get_stats():
         "timestamp": "2024-01-01T00:00:00Z"  # Placeholder timestamp
     }
 
+def _format_handoff_activated_notification(conversacion: ConversacionData, position: int, total: int) -> str:
+    """
+    Genera notificación cuando se activa un handoff.
+
+    Args:
+        conversacion: Datos de la conversación
+        position: Posición en la cola (1-indexed)
+        total: Total de conversaciones en cola
+
+    Returns:
+        str: Mensaje formateado
+    """
+    nombre = conversacion.nombre_usuario or "Sin nombre"
+    mensaje_contexto = conversacion.mensaje_handoff_contexto or "N/A"
+
+    # Truncar mensaje si es muy largo
+    if len(mensaje_contexto) > 100:
+        mensaje_contexto = mensaje_contexto[:100] + "..."
+
+    return f"""💬 *HANDOFF ACTIVADO* [{position}/{total}]
+
+*Cliente:* {nombre}
+*Tel:* {conversacion.numero_telefono}
+*Mensaje inicial:* "{mensaje_contexto}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💬 Escribe tu mensaje para responder a {nombre}.
+
+*Comandos disponibles:*
+• `/done` - Finalizar y pasar al siguiente
+• `/queue` - Ver cola completa
+• `/help` - Ver todos los comandos"""
+
+
+def _format_handoff_queued_notification(conversacion: ConversacionData, position: int, total: int, active_conv: ConversacionData) -> str:
+    """
+    Genera notificación cuando un handoff entra en cola.
+
+    Args:
+        conversacion: Conversación que entra en cola
+        position: Posición en cola (1-indexed)
+        total: Total de conversaciones
+        active_conv: Conversación actualmente activa
+
+    Returns:
+        str: Mensaje formateado
+    """
+    nombre = conversacion.nombre_usuario or "Sin nombre"
+    mensaje_contexto = conversacion.mensaje_handoff_contexto or "N/A"
+
+    # Truncar mensaje si es muy largo
+    if len(mensaje_contexto) > 50:
+        mensaje_contexto = mensaje_contexto[:50] + "..."
+
+    nombre_activo = active_conv.nombre_usuario or "Cliente actual"
+
+    return f"""💬 *NUEVO HANDOFF EN COLA* [#{position}/{total}]
+
+*Cliente:* {nombre}
+*Tel:* {conversacion.numero_telefono}
+*Mensaje:* "{mensaje_contexto}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 *Cola actual:*
+  [ACTIVO] 🟢 {nombre_activo}
+  [#{position}] ⏳ {nombre} ← *NUEVA*
+
+Continúa con {nombre_activo} o usa `/next` para cambiar."""
+
+
+def _format_client_message_notification(numero_telefono: str, nombre: str, mensaje: str, is_active: bool, position: int = None) -> str:
+    """
+    Genera notificación de mensaje de cliente (activo o en cola).
+
+    Args:
+        numero_telefono: Número del cliente
+        nombre: Nombre del cliente
+        mensaje: Mensaje del cliente
+        is_active: Si es la conversación activa
+        position: Posición en cola si no es activo
+
+    Returns:
+        str: Mensaje formateado
+    """
+    nombre_display = nombre or "Cliente"
+
+    # Truncar mensaje si es muy largo
+    mensaje_display = mensaje
+    if len(mensaje) > 100:
+        mensaje_display = mensaje[:100] + "..."
+
+    if is_active:
+        return f"💬 *{nombre_display}:* \"{mensaje_display}\""
+    else:
+        return f"💬 *[#{position}] {nombre_display}:* \"{mensaje_display}\" (en cola)"
+
+
 async def handle_interactive_button(numero_telefono: str, button_id: str, profile_name: str = "") -> str:
     """
     Maneja las respuestas de botones interactivos
@@ -533,82 +816,103 @@ async def handle_interactive_button(numero_telefono: str, button_id: str, profil
 
 async def handle_agent_message(agent_phone: str, message: str, profile_name: str = ""):
     """
-    Maneja mensajes del agente humano.
-    
+    Maneja mensajes del agente humano con sistema de cola FIFO.
+
     Args:
         agent_phone: Número de teléfono del agente
         message: Mensaje del agente
         profile_name: Nombre del perfil del agente (si está disponible)
     """
     try:
-        # Import local para evitar NameError
-        from datetime import datetime
+        from services.agent_command_service import agent_command_service
+
         logger.info(f"Procesando mensaje del agente {agent_phone}: {message}")
-        
-        # Verificar si es un comando de resolución
-        if whatsapp_handoff_service.is_resolution_command(message):
-            # Buscar conversaciones activas en handoff
-            resolved_count = 0
-            # Tomar snapshot para evitar "dictionary changed size during iteration"
-            for phone, conv in list(conversation_manager.conversaciones.items()):
-                if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
-                    # En lugar de cerrar inmediatamente, enviar pregunta de resolución
-                    if not conv.resolution_question_sent:
-                        success = whatsapp_handoff_service.send_resolution_question_to_client(phone, conv)
-                        if success:
-                            conv.resolution_question_sent = True
-                            conv.resolution_question_sent_at = datetime.utcnow()
-                            resolved_count += 1
-                            
-                            # Notificar al agente
-                            confirmation_msg = f"✅ Pregunta de resolución enviada al cliente {phone}. Se cerrará automáticamente si no responde en 10 minutos."
-                            twilio_service.send_whatsapp_message(agent_phone, confirmation_msg)
-                    else:
-                        # Si ya se envió la pregunta, finalizar directamente
-                        conversation_manager.finalizar_conversacion(phone)
-                        cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
-                        twilio_service.send_whatsapp_message(phone, cierre_msg)
-                        whatsapp_handoff_service.notify_handoff_resolved(phone, conv.nombre_usuario or "")
-                        resolved_count += 1
+
+        # PASO 1: Verificar si es un comando
+        if agent_command_service.is_command(message):
+            command = agent_command_service.parse_command(message)
+
+            if command == 'done':
+                # Cerrar conversación activa y activar siguiente
+                response = agent_command_service.execute_done_command(agent_phone)
+                twilio_service.send_whatsapp_message(agent_phone, response)
+
+                # Si hay nuevo activo, notificar
+                new_active = conversation_manager.get_active_handoff()
+                if new_active:
+                    new_conv = conversation_manager.get_conversacion(new_active)
+                    position = 1
+                    total = conversation_manager.get_queue_size()
+                    notification = _format_handoff_activated_notification(new_conv, position, total)
+                    twilio_service.send_whatsapp_message(agent_phone, notification)
+                return
+
+            elif command == 'next':
+                # Mover al siguiente sin cerrar
+                response = agent_command_service.execute_next_command(agent_phone)
+                twilio_service.send_whatsapp_message(agent_phone, response)
+
+                # Notificar nuevo activo
+                new_active = conversation_manager.get_active_handoff()
+                if new_active:
+                    new_conv = conversation_manager.get_conversacion(new_active)
+                    position = 1
+                    total = conversation_manager.get_queue_size()
+                    notification = _format_handoff_activated_notification(new_conv, position, total)
+                    twilio_service.send_whatsapp_message(agent_phone, notification)
+                return
+
+            elif command == 'queue':
+                # Mostrar estado de cola
+                response = agent_command_service.execute_queue_command(agent_phone)
+                twilio_service.send_whatsapp_message(agent_phone, response)
+                return
+
+            elif command == 'help':
+                # Mostrar ayuda
+                response = agent_command_service.execute_help_command(agent_phone)
+                twilio_service.send_whatsapp_message(agent_phone, response)
+                return
+
+            elif command == 'active':
+                # Mostrar conversación activa
+                response = agent_command_service.execute_active_command(agent_phone)
+                twilio_service.send_whatsapp_message(agent_phone, response)
+                return
             
-            if resolved_count == 0:
-                no_handoff_msg = "ℹ️ No hay conversaciones activas en handoff para finalizar."
-                twilio_service.send_whatsapp_message(agent_phone, no_handoff_msg)
-            return
-        
-        # Si no es comando de resolución, buscar conversaciones en handoff para responder
-        # El agente debe especificar a qué cliente responder
-        # Por ahora, asumimos que el agente está respondiendo a la conversación más reciente en handoff
-        
-        # Buscar la conversación más reciente en handoff
-        latest_handoff_conv = None
-        latest_timestamp = None
-        
-        for phone, conv in conversation_manager.conversaciones.items():
-            if conv.atendido_por_humano or conv.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
-                if conv.handoff_started_at and (latest_timestamp is None or conv.handoff_started_at > latest_timestamp):
-                    latest_handoff_conv = conv
-                    latest_timestamp = conv.handoff_started_at
-        
-        if latest_handoff_conv:
-            # Enviar respuesta del agente al cliente
-            success = whatsapp_handoff_service.send_agent_response_to_client(
-                latest_handoff_conv.numero_telefono, 
-                message
+            elif command == 'historial':
+                # Mostrar historial de mensajes
+                response = agent_command_service.execute_historial_command(agent_phone)
+                twilio_service.send_whatsapp_message(agent_phone, response)
+                return
+
+        # PASO 2: Es un mensaje normal, enviar a conversación activa
+        active_phone = conversation_manager.get_active_handoff()
+
+        if not active_phone:
+            # No hay conversación activa
+            no_active_msg = (
+                "⚠️ No hay conversación activa.\n\n"
+                "Usa /queue para ver las conversaciones en cola."
             )
-            
-            if not success:
-                # Notificar error al agente
-                error_msg = f"❌ Error enviando mensaje al cliente {latest_handoff_conv.numero_telefono}"
-                twilio_service.send_whatsapp_message(agent_phone, error_msg)
-        else:
-            # No hay conversaciones en handoff
-            no_handoff_msg = "ℹ️ No hay conversaciones activas en handoff. Para finalizar conversaciones, usa: /resuelto"
-            twilio_service.send_whatsapp_message(agent_phone, no_handoff_msg)
-            
+            twilio_service.send_whatsapp_message(agent_phone, no_active_msg)
+            return
+
+        # Guardar mensaje del agente en historial
+        conversation_manager.add_message_to_history(active_phone, "agent", message)
+        
+        # Enviar mensaje al cliente activo
+        success = whatsapp_handoff_service.send_agent_response_to_client(
+            active_phone,
+            message
+        )
+
+        if not success:
+            error_msg = f"❌ Error enviando mensaje al cliente {active_phone}"
+            twilio_service.send_whatsapp_message(agent_phone, error_msg)
+
     except Exception as e:
         logger.error(f"Error en handle_agent_message: {e}")
-        # Enviar mensaje de error al agente
         try:
             error_msg = f"❌ Error procesando tu mensaje: {str(e)}"
             twilio_service.send_whatsapp_message(agent_phone, error_msg)
