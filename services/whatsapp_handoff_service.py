@@ -4,13 +4,13 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import json
 
-from .twilio_service import twilio_service
+from .meta_whatsapp_service import meta_whatsapp_service
 
 logger = logging.getLogger(__name__)
 
 
 class WhatsAppHandoffService:
-    """Servicio para manejar handoffs a agentes humanos vía WhatsApp usando Twilio."""
+    """Servicio para manejar handoffs a agentes humanos vía WhatsApp usando Meta Cloud API."""
 
     def __init__(self):
         self.agent_whatsapp_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
@@ -21,12 +21,12 @@ class WhatsAppHandoffService:
         if not self.agent_whatsapp_number.startswith('+'):
             self.agent_whatsapp_number = f'+{self.agent_whatsapp_number}'
         
-        logger.info(f"WhatsApp Handoff Service inicializado. Agente: {self.agent_whatsapp_number}")
+        logger.info(f"WhatsApp Handoff Service inicializado (Meta API). Agente: {self.agent_whatsapp_number}")
 
     def notify_agent_new_handoff(self, client_phone: str, client_name: str, 
                                 handoff_message: str, current_message: str) -> bool:
         """
-        Notifica al agente sobre una nueva solicitud de handoff usando Message Template.
+        Notifica al agente sobre una nueva solicitud de handoff.
         
         Args:
             client_phone: Número de teléfono del cliente
@@ -38,31 +38,19 @@ class WhatsAppHandoffService:
             bool: True si la notificación se envió exitosamente
         """
         try:
-            # Usar Message Template para iniciar conversación
-            success = twilio_service.send_whatsapp_template(
+            # Formatear mensaje de notificación
+            notification = self._format_handoff_notification(
+                client_phone, client_name, handoff_message, current_message
+            )
+            
+            # Enviar notificación al agente
+            success = meta_whatsapp_service.send_text_message(
                 self.agent_whatsapp_number,
-                "handoff_notification",  # Nombre del template
-                [
-                    client_name or "Sin nombre",  # {{1}}
-                    client_phone,                 # {{2}}
-                    handoff_message,              # {{3}}
-                    current_message               # {{4}}
-                ]
+                notification
             )
             
             if success:
                 logger.info(f"✅ Notificación de handoff enviada al agente para cliente {client_phone}")
-                # Enviar instrucción clara: responder en este chat para que el bot reenvíe al cliente
-                try:
-                    instruction = (
-                        "ℹ️ Instrucciones:\n\n"
-                        "• Responde en este mismo chat y enviaremos tu mensaje al cliente automáticamente.\n"
-                        "• No es necesario escribirle al número del cliente.\n"
-                        "• Para cerrar la conversación, responde con: /resuelto"
-                    )
-                    twilio_service.send_whatsapp_message(self.agent_whatsapp_number, instruction)
-                except Exception:
-                    pass
             else:
                 logger.error(f"❌ Error enviando notificación de handoff al agente para cliente {client_phone}")
             
@@ -90,7 +78,7 @@ class WhatsAppHandoffService:
             agent_message += f"Cliente: {client_name or 'Sin nombre'} ({client_phone})\n"
             agent_message += f"Mensaje: {message}"
             
-            success = twilio_service.send_whatsapp_message(
+            success = meta_whatsapp_service.send_text_message(
                 self.agent_whatsapp_number, 
                 agent_message
             )
@@ -118,9 +106,8 @@ class WhatsAppHandoffService:
             bool: True si el mensaje se envió exitosamente
         """
         try:
-            # Formatear mensaje del agente
             # Enviar el mensaje del agente tal cual, sin prefijo ni formato adicional
-            success = twilio_service.send_whatsapp_message(client_phone, agent_message)
+            success = meta_whatsapp_service.send_text_message(client_phone, agent_message)
             
             if success:
                 logger.info(f"✅ Respuesta del agente enviada al cliente {client_phone}")
@@ -149,7 +136,7 @@ class WhatsAppHandoffService:
             agent_message += f"Cliente: {client_name or 'Sin nombre'} ({client_phone})\n"
             agent_message += f"La conversación ha sido finalizada exitosamente."
             
-            success = twilio_service.send_whatsapp_message(
+            success = meta_whatsapp_service.send_text_message(
                 self.agent_whatsapp_number, 
                 agent_message
             )
@@ -216,7 +203,7 @@ class WhatsAppHandoffService:
     def send_agent_buttons(self, client_phone: str, client_name: str, 
                           handoff_message: str, current_message: str) -> bool:
         """
-        Envía notificación al agente con botones interactivos de WhatsApp.
+        Envía notificación al agente con opciones de respuesta.
         
         Args:
             client_phone: Número de teléfono del cliente
@@ -234,25 +221,13 @@ class WhatsAppHandoffService:
             )
             
             # Enviar mensaje principal
-            success = twilio_service.send_whatsapp_message(
+            success = meta_whatsapp_service.send_text_message(
                 self.agent_whatsapp_number, 
                 main_message
             )
             
             if success:
-                # Enviar botones como mensaje separado
-                buttons_message = (
-                    f"📱 *Opciones de respuesta:*\n\n"
-                    f"• Escribe tu respuesta para enviar al cliente\n"
-                    f"• Envía '/resuelto' o '/r' para marcar como resuelto"
-                )
-                
-                twilio_service.send_whatsapp_message(
-                    self.agent_whatsapp_number, 
-                    buttons_message
-                )
-                
-                logger.info(f"✅ Notificación con botones enviada al agente para cliente {client_phone}")
+                logger.info(f"✅ Notificación enviada al agente para cliente {client_phone}")
             
             return success
             
@@ -299,7 +274,7 @@ class WhatsAppHandoffService:
                     f"Si no necesitas más ayuda, simplemente no respondas y la conversación se cerrará automáticamente en unos minutos."
                 )
                 
-                success = twilio_service.send_whatsapp_message(client_phone, question_message)
+                success = meta_whatsapp_service.send_text_message(client_phone, question_message)
                 
                 if success:
                     logger.info(f"✅ Pregunta de resolución enviada al cliente {client_phone}")

@@ -12,6 +12,7 @@ from chatbot.rules import ChatbotRules
 from chatbot.states import conversation_manager
 from chatbot.models import EstadoConversacion, ConversacionData
 from services.twilio_service import twilio_service
+from services.meta_whatsapp_service import meta_whatsapp_service
 from services.whatsapp_handoff_service import whatsapp_handoff_service
 from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
@@ -158,6 +159,391 @@ async def webhook_status(request: Request):
         
     except Exception as e:
         logger.error(f"Error en webhook de status: {str(e)}")
+        return PlainTextResponse("Error", status_code=500)
+
+@app.get("/webhook/whatsapp")
+async def webhook_whatsapp_verify(request: Request):
+    """
+    Webhook GET para verificación de WhatsApp Cloud API (Meta).
+    Meta envía este request para validar el webhook durante la configuración inicial.
+    """
+    try:
+        # Extraer parámetros de query
+        params = request.query_params
+        mode = params.get('hub.mode', '')
+        token = params.get('hub.verify_token', '')
+        challenge = params.get('hub.challenge', '')
+        
+        logger.info(f"=== WEBHOOK VERIFICATION REQUEST ===")
+        logger.info(f"Mode: {mode}")
+        logger.info(f"Token provided: {token[:10]}..." if token else "Token: None")
+        logger.info(f"Challenge: {challenge}")
+        
+        # Verificar con el servicio
+        verified_challenge = meta_whatsapp_service.verify_webhook_token(mode, token, challenge)
+        
+        if verified_challenge:
+            # Retornar el challenge como texto plano
+            logger.info("✅ Webhook verificado exitosamente")
+            return PlainTextResponse(verified_challenge, status_code=200)
+        else:
+            # Verificación fallida
+            logger.error("❌ Verificación de webhook fallida")
+            return PlainTextResponse("Forbidden", status_code=403)
+            
+    except Exception as e:
+        logger.error(f"Error en verificación de webhook: {str(e)}")
+        return PlainTextResponse("Error", status_code=500)
+
+@app.post("/webhook/whatsapp")
+async def webhook_whatsapp_receive(request: Request):
+    """
+    Webhook POST para recibir mensajes y actualizaciones de WhatsApp Cloud API (Meta).
+    """
+    try:
+        # Leer el cuerpo del request como bytes (necesario para validar firma)
+        body_bytes = await request.body()
+        
+        # Obtener firma del header
+        signature = request.headers.get('X-Hub-Signature-256', '')
+        
+        # Validar firma HMAC
+        if not meta_whatsapp_service.validate_webhook_signature(body_bytes, signature):
+            logger.error("❌ Firma de webhook inválida - request rechazado")
+            return PlainTextResponse("Forbidden", status_code=403)
+        
+        # Parsear JSON
+        webhook_data = json.loads(body_bytes.decode('utf-8'))
+        
+        logger.info(f"=== WEBHOOK WHATSAPP RECIBIDO ===")
+        logger.info(f"Data: {json.dumps(webhook_data, indent=2)}")
+        
+        # Extraer datos de mensaje
+        message_data = meta_whatsapp_service.extract_message_data(webhook_data)
+        
+        if message_data:
+            numero_telefono, mensaje_usuario, message_id, profile_name = message_data
+            
+            logger.info(f"Mensaje recibido de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}")
+            
+            # Verificar si es un mensaje vacío (media no soportado)
+            if not mensaje_usuario or not mensaje_usuario.strip():
+                logger.info(f"Mensaje sin texto (posible media) de {numero_telefono}")
+                # Por ahora, enviar fallback para media no soportado
+                meta_whatsapp_service.send_text_message(
+                    numero_telefono,
+                    "Recibí tu mensaje, pero actualmente este canal solo procesa texto. Por favor, escribe tu consulta."
+                )
+                return PlainTextResponse("", status_code=200)
+            
+            # Verificar si el mensaje viene del agente
+            if whatsapp_handoff_service.is_agent_message(numero_telefono):
+                # Procesar mensaje del agente
+                await handle_agent_message(numero_telefono, mensaje_usuario, profile_name)
+                return PlainTextResponse("", status_code=200)
+            
+            # Obtener conversación actual
+            conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
+            
+            # Verificar si está esperando respuesta de encuesta (PRIORIDAD MUY ALTA)
+            if conversacion_actual.estado == EstadoConversacion.ESPERANDO_RESPUESTA_ENCUESTA:
+                from services.survey_service import survey_service
+                from datetime import datetime
+                
+                # Parsear respuesta (1=sí, 2=no)
+                respuesta = mensaje_usuario.strip().lower()
+                
+                # Keywords de aceptación
+                acepta_keywords = ['1', '1️⃣', 'si', 'sí', 'yes', 'ok', 'dale', 'con gusto', 'acepto']
+                # Keywords de rechazo
+                rechaza_keywords = ['2', '2️⃣', 'no', 'nope', 'no gracias', 'no quiero', 'paso']
+                
+                if any(kw in respuesta for kw in acepta_keywords):
+                    # Cliente acepta la encuesta
+                    conversacion_actual.survey_accepted = True
+                    
+                    # Iniciar encuesta
+                    success = survey_service.send_survey(numero_telefono, conversacion_actual)
+                    
+                    if success:
+                        logger.info(f"✅ Cliente {numero_telefono} aceptó encuesta, primera pregunta enviada")
+                    else:
+                        logger.error(f"❌ Error enviando primera pregunta de encuesta a {numero_telefono}")
+                        # Fallback: cerrar conversación
+                        meta_whatsapp_service.send_text_message(
+                            numero_telefono,
+                            "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
+                        )
+                        
+                        # Verificar si esta conversación es la activa antes de cerrar
+                        active_phone = conversation_manager.get_active_handoff()
+                        if active_phone == numero_telefono:
+                            conversation_manager.close_active_handoff()
+                        else:
+                            conversation_manager.remove_from_handoff_queue(numero_telefono)
+                            conversation_manager.finalizar_conversacion(numero_telefono)
+                    
+                    return PlainTextResponse("", status_code=200)
+                
+                elif any(kw in respuesta for kw in rechaza_keywords):
+                    # Cliente rechaza la encuesta
+                    conversacion_actual.survey_accepted = False
+                    
+                    # Enviar mensaje de agradecimiento y cerrar
+                    meta_whatsapp_service.send_text_message(
+                        numero_telefono,
+                        "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
+                    )
+                    
+                    # Verificar si esta conversación es la activa
+                    active_phone = conversation_manager.get_active_handoff()
+                    
+                    if active_phone == numero_telefono:
+                        # Es la conversación activa, usar close_active_handoff
+                        next_phone = conversation_manager.close_active_handoff()
+                        
+                        logger.info(f"✅ Cliente {numero_telefono} rechazó encuesta, conversación cerrada (era activa)")
+                        
+                        # Notificar al agente si hay siguiente conversación
+                        if next_phone:
+                            agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                            if agent_number:
+                                next_conv = conversation_manager.get_conversacion(next_phone)
+                                position = 1
+                                total = conversation_manager.get_queue_size()
+                                notification = _format_handoff_activated_notification(next_conv, position, total)
+                                meta_whatsapp_service.send_text_message(agent_number, notification)
+                    else:
+                        # NO es la conversación activa, solo removerla de la cola sin afectar la activa
+                        conversation_manager.remove_from_handoff_queue(numero_telefono)
+                        conversation_manager.finalizar_conversacion(numero_telefono)
+                        
+                        logger.info(f"✅ Cliente {numero_telefono} rechazó encuesta, conversación cerrada (NO era activa)")
+                    
+                    return PlainTextResponse("", status_code=200)
+                else:
+                    # Respuesta no reconocida, pedir que responda con 1 o 2
+                    meta_whatsapp_service.send_text_message(
+                        numero_telefono,
+                        "Por favor responde con:\n1️⃣ para aceptar la encuesta\n2️⃣ para omitirla"
+                    )
+                    return PlainTextResponse("", status_code=200)
+            
+            # Verificar si está en encuesta de satisfacción (PRIORIDAD ALTA)
+            if conversacion_actual.estado == EstadoConversacion.ENCUESTA_SATISFACCION:
+                # Procesar respuesta de encuesta
+                from services.survey_service import survey_service
+                
+                survey_complete, next_message = survey_service.process_survey_response(
+                    numero_telefono, mensaje_usuario, conversacion_actual
+                )
+                
+                if next_message:
+                    # Enviar siguiente pregunta o mensaje de finalización
+                    meta_whatsapp_service.send_text_message(numero_telefono, next_message)
+                
+                if survey_complete:
+                    # Encuesta completada, finalizar conversación
+                    # Verificar si esta conversación es la activa
+                    active_phone = conversation_manager.get_active_handoff()
+                    
+                    if active_phone == numero_telefono:
+                        # Es la conversación activa, cerrar y activar siguiente
+                        next_phone = conversation_manager.close_active_handoff()
+                        logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono} (era activa)")
+                        
+                        # Notificar al agente si hay siguiente conversación
+                        if next_phone:
+                            agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                            if agent_number:
+                                try:
+                                    next_conv = conversation_manager.get_conversacion(next_phone)
+                                    position = 1
+                                    total = conversation_manager.get_queue_size()
+                                    notification = _format_handoff_activated_notification(next_conv, position, total)
+                                    meta_whatsapp_service.send_text_message(agent_number, notification)
+                                except Exception as e:
+                                    logger.error(f"Error notificando siguiente handoff después de encuesta: {e}")
+                    else:
+                        # NO es la conversación activa, solo removerla de la cola sin afectar la activa
+                        conversation_manager.remove_from_handoff_queue(numero_telefono)
+                        conversation_manager.finalizar_conversacion(numero_telefono)
+                        logger.info(f"✅ Encuesta completada y conversación finalizada para {numero_telefono} (NO era activa)")
+                
+                return PlainTextResponse("", status_code=200)
+            
+            # Si está en handoff, reenviar al agente
+            if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
+                # Notificar al agente vía WhatsApp con indicación de posición en cola
+                active_phone = conversation_manager.get_active_handoff()
+                is_active = (active_phone == numero_telefono)
+                
+                if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:
+                    # Es el primer mensaje del handoff, incluir contexto completo
+                    # TODO: Implementar envío de botones con Meta API si es necesario
+                    # Por ahora, enviar notificación simple
+                    agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                    if agent_number:
+                        notification = f"""🔄 *Solicitud de handoff*
+
+Cliente: {profile_name or 'Sin nombre'} ({numero_telefono})
+
+📝 *Mensaje que disparó el handoff:*
+{conversacion_actual.mensaje_handoff_contexto or mensaje_usuario}
+
+ℹ️ *Instrucciones:*
+• Responde en este mismo chat y enviaremos tu mensaje al cliente automáticamente.
+• No es necesario escribirle al número del cliente.
+• Para cerrar la conversación, responde con: /resuelto"""
+                        
+                        meta_whatsapp_service.send_text_message(agent_number, notification)
+                        conversacion_actual.handoff_notified = True
+                else:
+                    # Es un mensaje posterior durante el handoff
+                    # Obtener posición si no es activo
+                    position = None if is_active else conversation_manager.get_queue_position(numero_telefono)
+                    
+                    # Guardar mensaje del cliente en historial
+                    conversation_manager.add_message_to_history(numero_telefono, "client", mensaje_usuario)
+                    
+                    # Enviar notificación de mensaje con indicador de posición
+                    notification = _format_client_message_notification(
+                        numero_telefono,
+                        profile_name or '',
+                        mensaje_usuario,
+                        is_active,
+                        position
+                    )
+                    agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                    meta_whatsapp_service.send_text_message(agent_number, notification)
+                    
+                    # Si no es activo, agregar recordatorio
+                    if not is_active and position:
+                        reminder = f"ℹ️ Este mensaje es del cliente en posición #{position}. Los mensajes que escribas irán al cliente activo. Usa /next para cambiar o /queue para ver la cola completa."
+                        meta_whatsapp_service.send_text_message(agent_number, reminder)
+                
+                try:
+                    from datetime import datetime
+                    conversacion_actual.last_client_message_at = datetime.utcnow()
+                except Exception:
+                    pass
+                
+                return PlainTextResponse("", status_code=200)
+            
+            # Procesar el mensaje con el chatbot (incluyendo nombre del perfil)
+            respuesta = ChatbotRules.procesar_mensaje(numero_telefono, mensaje_usuario, profile_name)
+            
+            # Enviar respuesta via WhatsApp solo si no está vacía
+            if respuesta and respuesta.strip():
+                mensaje_enviado = meta_whatsapp_service.send_text_message(numero_telefono, respuesta)
+                
+                if not mensaje_enviado:
+                    logger.error(f"Error enviando mensaje a {numero_telefono}")
+            else:
+                logger.info(f"Respuesta vacía, no se envía mensaje a {numero_telefono}")
+            
+            # Si durante el procesamiento se activó el handoff, agregar a cola y notificar al agente
+            try:
+                conversacion_post = conversation_manager.get_conversacion(numero_telefono)
+                if (
+                    (conversacion_post.atendido_por_humano or conversacion_post.estado == EstadoConversacion.ATENDIDO_POR_HUMANO)
+                    and not conversacion_post.handoff_notified
+                ):
+                    # Agregar a la cola (esto activa automáticamente si no hay activo)
+                    position = conversation_manager.add_to_handoff_queue(numero_telefono)
+                    total = conversation_manager.get_queue_size()
+                    
+                    # Determinar tipo de notificación
+                    agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                    
+                    if position == 1:
+                        # Es el activo, notificar como activado
+                        notification = _format_handoff_activated_notification(
+                            conversacion_post,
+                            position,
+                            total
+                        )
+                        success = meta_whatsapp_service.send_text_message(agent_number, notification)
+                    else:
+                        # Está en cola, notificar con contexto
+                        active_phone = conversation_manager.get_active_handoff()
+                        active_conv = conversation_manager.get_conversacion(active_phone)
+                        
+                        notification = _format_handoff_queued_notification(
+                            conversacion_post,
+                            position,
+                            total,
+                            active_conv
+                        )
+                        success = meta_whatsapp_service.send_text_message(agent_number, notification)
+                    
+                    if success:
+                        conversacion_post.handoff_notified = True
+                        logger.info(f"✅ Handoff notificado para cliente {numero_telefono} (posición {position}/{total})")
+            except Exception as e:
+                logger.error(f"Error notificando handoff al agente: {e}")
+            
+            # Verificar si necesitamos enviar email
+            conversacion = conversation_manager.get_conversacion(numero_telefono)
+            
+            if conversacion.estado == EstadoConversacion.ENVIANDO:
+                # Enviar email con los datos del lead
+                email_enviado = email_service.enviar_lead_email(conversacion)
+                
+                if email_enviado:
+                    try:
+                        metrics_service.on_lead_sent()
+                    except Exception:
+                        pass
+                    # Enviar mensaje de confirmación
+                    mensaje_final = ChatbotRules.get_mensaje_final_exito()
+                    meta_whatsapp_service.send_text_message(numero_telefono, mensaje_final)
+                    
+                    # Finalizar la conversación
+                    conversation_manager.finalizar_conversacion(numero_telefono)
+                    
+                    logger.info(f"Lead procesado exitosamente para {numero_telefono}")
+                else:
+                    # Error enviando email
+                    error_msg = "❌ Hubo un error procesando tu solicitud. Por favor intenta nuevamente más tarde."
+                    meta_whatsapp_service.send_text_message(numero_telefono, error_msg)
+                    logger.error(f"Error enviando email para {numero_telefono}")
+        
+        # Extraer datos de estado de mensaje (opcional, para métricas)
+        status_data = meta_whatsapp_service.extract_status_data(webhook_data)
+        
+        if status_data:
+            message_status = status_data.get('status', '')
+            message_id = status_data.get('message_id', '')
+            
+            logger.info(f"Status update recibido - ID: {message_id}, Status: {message_status}")
+            
+            # Registrar métricas
+            if message_status == 'sent':
+                metrics_service.on_message_sent()
+            elif message_status == 'delivered':
+                metrics_service.on_message_delivered()
+            elif message_status == 'failed':
+                metrics_service.on_message_failed()
+            elif message_status == 'read':
+                metrics_service.on_message_read()
+        
+        # Siempre retornar 200 para que Meta no reintente
+        return PlainTextResponse("", status_code=200)
+        
+    except Exception as e:
+        logger.error(f"Error en webhook de WhatsApp: {str(e)}")
+        # Reporte estructurado de excepción
+        try:
+            error_reporter.capture_exception(
+                e,
+                {
+                    "webhook_type": "whatsapp_meta",
+                    "error": str(e)
+                }
+            )
+        except Exception:
+            pass
         return PlainTextResponse("Error", status_code=500)
 
 @app.post("/webhook")
