@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from chatbot.states import conversation_manager
-from services.twilio_service import twilio_service
+from services.meta_whatsapp_service import meta_whatsapp_service
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class AgentCommandService:
             if survey_service.is_enabled():
                 # Enviar mensaje opt-in/opt-out de encuesta
                 survey_message = self._build_survey_offer_message(nombre_cliente)
-                success = twilio_service.send_whatsapp_message(active_phone, survey_message)
+                success = meta_whatsapp_service.send_text_message(active_phone, survey_message)
 
                 if success:
                     # Cambiar estado a esperar respuesta de encuesta
@@ -109,7 +109,7 @@ class AgentCommandService:
                     return f"❌ Error enviando mensaje al cliente. Intenta nuevamente."
             else:
                 # Encuestas deshabilitadas: comportamiento original (cerrar inmediatamente)
-                twilio_service.send_whatsapp_message(
+                meta_whatsapp_service.send_text_message(
                     active_phone,
                     "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
                 )

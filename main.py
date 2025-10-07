@@ -95,11 +95,11 @@ async def handoff_ttl_sweep(token: str = Form(...)):
                         conv.survey_accepted = None  # Registrar como timeout
                         logger.info(f"⏱️ Timeout de oferta de encuesta para {conv.numero_telefono}")
                     elif close_reason == "Encuesta de satisfacción sin completar":
-                        twilio_service.send_whatsapp_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
+                        meta_whatsapp_service.send_text_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
                     elif close_reason == "Pregunta de resolución sin respuesta":
-                        twilio_service.send_whatsapp_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
+                        meta_whatsapp_service.send_text_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
                     else:
-                        twilio_service.send_whatsapp_message(conv.numero_telefono, "Esta conversación se finalizará por inactividad. ¡Muchas gracias por contactarnos! 🕒")
+                        meta_whatsapp_service.send_text_message(conv.numero_telefono, "Esta conversación se finalizará por inactividad. ¡Muchas gracias por contactarnos! 🕒")
                 except Exception:
                     pass
 
@@ -118,7 +118,7 @@ async def handoff_ttl_sweep(token: str = Form(...)):
                             total = conversation_manager.get_queue_size()
                             notification = _format_handoff_activated_notification(next_conv, position, total)
                             agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
-                            twilio_service.send_whatsapp_message(agent_number, notification)
+                            meta_whatsapp_service.send_text_message(agent_number, notification)
                         except Exception as e:
                             logger.error(f"Error notificando siguiente handoff después de TTL: {e}")
                 else:
@@ -571,7 +571,7 @@ async def webhook_whatsapp(request: Request):
             
             # Enviar respuesta si hay una
             if respuesta:
-                mensaje_enviado = twilio_service.send_whatsapp_message(numero_telefono, respuesta)
+                mensaje_enviado = meta_whatsapp_service.send_text_message(numero_telefono, respuesta)
                 if not mensaje_enviado:
                     logger.error(f"Error enviando respuesta a botón a {numero_telefono}")
             
@@ -613,7 +613,7 @@ async def webhook_whatsapp(request: Request):
             if num_media > 0 or message_type in ['image', 'audio', 'video', 'document', 'file', 'sticker', 'media', 'location']:
                 # Caso especial: primer mensaje del usuario es media (aún no se mostró el menú)
                 if conv_check.estado == EstadoConversacion.INICIO:
-                    twilio_service.send_whatsapp_message(
+                    meta_whatsapp_service.send_text_message(
                         numero_telefono,
                         "Gracias por tu mensaje 😊 Para continuar, mandá un texto breve (por ejemplo: 'Hola') y verás el menú 📲"
                     )
@@ -621,7 +621,7 @@ async def webhook_whatsapp(request: Request):
 
                 # Si el usuario está en el menú principal, enviar mensaje corto específico
                 if conv_check.estado in [EstadoConversacion.ESPERANDO_OPCION, EstadoConversacion.MENU_PRINCIPAL]:
-                    twilio_service.send_whatsapp_message(
+                    meta_whatsapp_service.send_text_message(
                         numero_telefono,
                         "Actualmente este canal solo recibe mensajes de texto. Por favor, selecciona la opcion que desees del menu"
                     )
@@ -639,7 +639,7 @@ async def webhook_whatsapp(request: Request):
                     "Recibí tu mensaje, pero lamentablemente el contenido no es compatible con mis herramientas actuales. "
                     "Por este canal solo puedo procesar texto. Por favor, escribí en 1–2 frases lo que necesitás y te ayudo enseguida." + fallback_email
                 )
-                twilio_service.send_whatsapp_message(numero_telefono, fallback_msg)
+                meta_whatsapp_service.send_text_message(numero_telefono, fallback_msg)
                 return PlainTextResponse("", status_code=200)
         
         # Verificar si el mensaje viene del agente
@@ -659,7 +659,7 @@ async def webhook_whatsapp(request: Request):
                         for i in range(num_media):
                             media_url = form_dict.get(f'MediaUrl{i}')
                             if media_url:
-                                twilio_service.send_whatsapp_media(latest_handoff_conv.numero_telefono, media_url, caption=mensaje_usuario or "")
+                                meta_whatsapp_service.send_media_message(latest_handoff_conv.numero_telefono, media_url, caption=mensaje_usuario or "")
                         return PlainTextResponse("", status_code=200)
             except Exception:
                 pass
@@ -695,7 +695,7 @@ async def webhook_whatsapp(request: Request):
                 else:
                     logger.error(f"❌ Error enviando primera pregunta de encuesta a {numero_telefono}")
                     # Fallback: cerrar conversación
-                    twilio_service.send_whatsapp_message(
+                    meta_whatsapp_service.send_text_message(
                         numero_telefono,
                         "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
                     )
@@ -715,7 +715,7 @@ async def webhook_whatsapp(request: Request):
                 conversacion_actual.survey_accepted = False
 
                 # Enviar mensaje de agradecimiento y cerrar
-                twilio_service.send_whatsapp_message(
+                meta_whatsapp_service.send_text_message(
                     numero_telefono,
                     "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
                 )
@@ -737,7 +737,7 @@ async def webhook_whatsapp(request: Request):
                             position = 1
                             total = conversation_manager.get_queue_size()
                             notification = _format_handoff_activated_notification(next_conv, position, total)
-                            twilio_service.send_whatsapp_message(agent_number, notification)
+                            meta_whatsapp_service.send_text_message(agent_number, notification)
                 else:
                     # NO es la conversación activa, solo removerla de la cola sin afectar la activa
                     conversation_manager.remove_from_handoff_queue(numero_telefono)
@@ -748,7 +748,7 @@ async def webhook_whatsapp(request: Request):
                 return PlainTextResponse("", status_code=200)
             else:
                 # Respuesta no reconocida, pedir que responda con 1 o 2
-                twilio_service.send_whatsapp_message(
+                meta_whatsapp_service.send_text_message(
                     numero_telefono,
                     "Por favor responde con:\n1️⃣ para aceptar la encuesta\n2️⃣ para omitirla"
                 )
@@ -765,7 +765,7 @@ async def webhook_whatsapp(request: Request):
             
             if next_message:
                 # Enviar siguiente pregunta o mensaje de finalización
-                twilio_service.send_whatsapp_message(numero_telefono, next_message)
+                meta_whatsapp_service.send_text_message(numero_telefono, next_message)
             
             if survey_complete:
                 # Encuesta completada, finalizar conversación
@@ -786,7 +786,7 @@ async def webhook_whatsapp(request: Request):
                                 position = 1
                                 total = conversation_manager.get_queue_size()
                                 notification = _format_handoff_activated_notification(next_conv, position, total)
-                                twilio_service.send_whatsapp_message(agent_number, notification)
+                                meta_whatsapp_service.send_text_message(agent_number, notification)
                             except Exception as e:
                                 logger.error(f"Error notificando siguiente handoff después de encuesta: {e}")
                 else:
@@ -801,7 +801,7 @@ async def webhook_whatsapp(request: Request):
         if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
             # Si el cliente envía no-texto durante handoff, responder con fallback y no reenviar al agente
             if num_media > 0 or message_type in ['image', 'audio', 'video', 'document', 'file', 'sticker', 'media', 'location']:
-                twilio_service.send_whatsapp_message(
+                meta_whatsapp_service.send_text_message(
                     numero_telefono,
                     "Actualmente este canal solo recibe mensajes de texto. Disculpe las molestias ocasionadas"
                 )
@@ -839,7 +839,7 @@ async def webhook_whatsapp(request: Request):
                             caption = mensaje_usuario or ""
                             if not is_active and position:
                                 caption = f"[#{position}] {caption}"
-                            twilio_service.send_whatsapp_media(agent_number, media_url, caption=caption)
+                            meta_whatsapp_service.send_media_message(agent_number, media_url, caption=caption)
                 else:
                     # Guardar mensaje del cliente en historial
                     conversation_manager.add_message_to_history(numero_telefono, "client", mensaje_usuario)
@@ -853,12 +853,12 @@ async def webhook_whatsapp(request: Request):
                         position
                     )
                     agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
-                    twilio_service.send_whatsapp_message(agent_number, notification)
+                    meta_whatsapp_service.send_text_message(agent_number, notification)
 
                     # Si no es activo, agregar recordatorio
                     if not is_active and position:
                         reminder = f"ℹ️ Este mensaje es del cliente en posición #{position}. Los mensajes que escribas irán al cliente activo. Usa /next para cambiar o /queue para ver la cola completa."
-                        twilio_service.send_whatsapp_message(agent_number, reminder)
+                        meta_whatsapp_service.send_text_message(agent_number, reminder)
             try:
                 from datetime import datetime
                 conversacion_actual.last_client_message_at = datetime.utcnow()
@@ -871,7 +871,7 @@ async def webhook_whatsapp(request: Request):
         
         # Enviar respuesta via WhatsApp solo si no está vacía
         if respuesta and respuesta.strip():
-            mensaje_enviado = twilio_service.send_whatsapp_message(numero_telefono, respuesta)
+            mensaje_enviado = meta_whatsapp_service.send_text_message(numero_telefono, respuesta)
             
             if not mensaje_enviado:
                 logger.error(f"Error enviando mensaje a {numero_telefono}")
@@ -899,7 +899,7 @@ async def webhook_whatsapp(request: Request):
                         position,
                         total
                     )
-                    success = twilio_service.send_whatsapp_message(agent_number, notification)
+                    success = meta_whatsapp_service.send_text_message(agent_number, notification)
                 else:
                     # Está en cola, notificar con contexto
                     active_phone = conversation_manager.get_active_handoff()
@@ -911,7 +911,7 @@ async def webhook_whatsapp(request: Request):
                         total,
                         active_conv
                     )
-                    success = twilio_service.send_whatsapp_message(agent_number, notification)
+                    success = meta_whatsapp_service.send_text_message(agent_number, notification)
 
                 if success:
                     conversacion_post.handoff_notified = True
@@ -933,7 +933,7 @@ async def webhook_whatsapp(request: Request):
                     pass
                 # Enviar mensaje de confirmación
                 mensaje_final = ChatbotRules.get_mensaje_final_exito()
-                twilio_service.send_whatsapp_message(numero_telefono, mensaje_final)
+                meta_whatsapp_service.send_text_message(numero_telefono, mensaje_final)
                 
                 # Finalizar la conversación
                 conversation_manager.finalizar_conversacion(numero_telefono)
@@ -942,7 +942,7 @@ async def webhook_whatsapp(request: Request):
             else:
                 # Error enviando email
                 error_msg = "❌ Hubo un error procesando tu solicitud. Por favor intenta nuevamente más tarde."
-                twilio_service.send_whatsapp_message(numero_telefono, error_msg)
+                meta_whatsapp_service.send_text_message(numero_telefono, error_msg)
                 logger.error(f"Error enviando email para {numero_telefono}")
         
         return PlainTextResponse("", status_code=200)
@@ -976,7 +976,7 @@ async def agent_reply(to: str = Form(...), body: str = Form(...), token: str = F
     if token != os.getenv("AGENT_API_TOKEN", ""):
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
-        sent = twilio_service.send_whatsapp_message(to, body)
+        sent = meta_whatsapp_service.send_text_message(to, body)
         if not sent:
             raise HTTPException(status_code=500, detail="Failed to send message")
         return {"status": "ok"}
@@ -992,7 +992,7 @@ async def agent_close(to: str = Form(...), token: str = Form(...)):
     try:
         conversation_manager.finalizar_conversacion(to)
         cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
-        twilio_service.send_whatsapp_message(to, cierre_msg)
+        meta_whatsapp_service.send_text_message(to, cierre_msg)
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"agent_close error: {e}")
@@ -1221,7 +1221,7 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
             if command == 'done':
                 # Cerrar conversación activa y activar siguiente
                 response = agent_command_service.execute_done_command(agent_phone)
-                twilio_service.send_whatsapp_message(agent_phone, response)
+                meta_whatsapp_service.send_text_message(agent_phone, response)
 
                 # Si hay nuevo activo, notificar
                 new_active = conversation_manager.get_active_handoff()
@@ -1230,13 +1230,13 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
                     position = 1
                     total = conversation_manager.get_queue_size()
                     notification = _format_handoff_activated_notification(new_conv, position, total)
-                    twilio_service.send_whatsapp_message(agent_phone, notification)
+                    meta_whatsapp_service.send_text_message(agent_phone, notification)
                 return
 
             elif command == 'next':
                 # Mover al siguiente sin cerrar
                 response = agent_command_service.execute_next_command(agent_phone)
-                twilio_service.send_whatsapp_message(agent_phone, response)
+                meta_whatsapp_service.send_text_message(agent_phone, response)
 
                 # Notificar nuevo activo
                 new_active = conversation_manager.get_active_handoff()
@@ -1245,31 +1245,31 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
                     position = 1
                     total = conversation_manager.get_queue_size()
                     notification = _format_handoff_activated_notification(new_conv, position, total)
-                    twilio_service.send_whatsapp_message(agent_phone, notification)
+                    meta_whatsapp_service.send_text_message(agent_phone, notification)
                 return
 
             elif command == 'queue':
                 # Mostrar estado de cola
                 response = agent_command_service.execute_queue_command(agent_phone)
-                twilio_service.send_whatsapp_message(agent_phone, response)
+                meta_whatsapp_service.send_text_message(agent_phone, response)
                 return
 
             elif command == 'help':
                 # Mostrar ayuda
                 response = agent_command_service.execute_help_command(agent_phone)
-                twilio_service.send_whatsapp_message(agent_phone, response)
+                meta_whatsapp_service.send_text_message(agent_phone, response)
                 return
 
             elif command == 'active':
                 # Mostrar conversación activa
                 response = agent_command_service.execute_active_command(agent_phone)
-                twilio_service.send_whatsapp_message(agent_phone, response)
+                meta_whatsapp_service.send_text_message(agent_phone, response)
                 return
             
             elif command == 'historial':
                 # Mostrar historial de mensajes
                 response = agent_command_service.execute_historial_command(agent_phone)
-                twilio_service.send_whatsapp_message(agent_phone, response)
+                meta_whatsapp_service.send_text_message(agent_phone, response)
                 return
 
         # PASO 2: Es un mensaje normal, enviar a conversación activa
@@ -1281,7 +1281,7 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
                 "⚠️ No hay conversación activa.\n\n"
                 "Usa /queue para ver las conversaciones en cola."
             )
-            twilio_service.send_whatsapp_message(agent_phone, no_active_msg)
+            meta_whatsapp_service.send_text_message(agent_phone, no_active_msg)
             return
 
         # Guardar mensaje del agente en historial
@@ -1295,13 +1295,13 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
 
         if not success:
             error_msg = f"❌ Error enviando mensaje al cliente {active_phone}"
-            twilio_service.send_whatsapp_message(agent_phone, error_msg)
+            meta_whatsapp_service.send_text_message(agent_phone, error_msg)
 
     except Exception as e:
         logger.error(f"Error en handle_agent_message: {e}")
         try:
             error_msg = f"❌ Error procesando tu mensaje: {str(e)}"
-            twilio_service.send_whatsapp_message(agent_phone, error_msg)
+            meta_whatsapp_service.send_text_message(agent_phone, error_msg)
         except Exception:
             pass
 
@@ -1341,7 +1341,7 @@ Mensaje: 'quiero hablar con un humano'
 Timestamp: {datetime.utcnow().isoformat()}"""
 
         # Enviar mensaje directo al agente
-        success = twilio_service.send_whatsapp_message(agent_number, test_message)
+        success = meta_whatsapp_service.send_text_message(agent_number, test_message)
         
         if success:
             return {
@@ -1421,7 +1421,7 @@ async def test_bot_flow(test_number: str = Form(...)):
         
         # Enviar respuesta
         if respuesta:
-            success = twilio_service.send_whatsapp_message(test_number, respuesta)
+            success = meta_whatsapp_service.send_text_message(test_number, respuesta)
             if success:
                 return {
                     "message": "Flujo de bot probado exitosamente",
@@ -1481,7 +1481,7 @@ async def simulate_client_message(test_number: str = Form(...), message: str = F
         
         # Enviar respuesta
         if respuesta:
-            success = twilio_service.send_whatsapp_message(test_number, respuesta)
+            success = meta_whatsapp_service.send_text_message(test_number, respuesta)
             if success:
                 return {
                     "message": "Mensaje de cliente simulado exitosamente",
@@ -1525,7 +1525,7 @@ async def test_complete_flow():
         
         # Enviar respuesta
         if respuesta:
-            success = twilio_service.send_whatsapp_message(test_number, respuesta)
+            success = meta_whatsapp_service.send_text_message(test_number, respuesta)
             if success:
                 return {
                     "message": "Flujo completo probado exitosamente",

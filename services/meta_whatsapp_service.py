@@ -140,6 +140,46 @@ class MetaWhatsAppService:
             logger.error(f"❌ Error enviando media a {to_number}: {str(e)}")
             return False
     
+    def send_sticker(self, to_number: str, sticker_url: str) -> bool:
+        """
+        Envía un sticker a través de WhatsApp Cloud API.
+        
+        Args:
+            to_number: Número de destino en formato E.164
+            sticker_url: URL pública del sticker (formato WebP recomendado)
+            
+        Returns:
+            bool: True si se envió exitosamente
+        """
+        try:
+            normalized_number = self._normalize_phone_number(to_number)
+            
+            url = f"{self.base_url}/{self.phone_number_id}/messages"
+            payload = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": normalized_number,
+                "type": "sticker",
+                "sticker": {
+                    "link": sticker_url
+                }
+            }
+            
+            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            
+            if response.status_code in [200, 201]:
+                response_data = response.json()
+                message_id = response_data.get('messages', [{}])[0].get('id', 'N/A')
+                logger.info(f"✅ Sticker enviado exitosamente a {normalized_number}. Message ID: {message_id}")
+                return True
+            else:
+                logger.error(f"❌ Error enviando sticker a {normalized_number}: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error enviando sticker a {to_number}: {str(e)}")
+            return False
+    
     def send_template_message(self, to_number: str, template_name: str, language_code: str, 
                             components: Optional[list] = None) -> bool:
         """

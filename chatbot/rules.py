@@ -96,7 +96,7 @@ Responde con el número de la opción que necesitas 📱"""
         """
         Envía el menú principal con botones interactivos reales
         """
-        from services.twilio_service import twilio_service
+        from services.meta_whatsapp_service import meta_whatsapp_service
         import logging
         logger = logging.getLogger(__name__)
         
@@ -127,7 +127,7 @@ Responde con el número de la opción que necesitas 📱"""
 └─────────────────────────────┘
 
 💡 *Responde con el número de la opción que necesitas*"""
-            twilio_service.send_whatsapp_message(numero_telefono, mensaje_fallback)
+            meta_whatsapp_service.send_text_message(numero_telefono, mensaje_fallback)
         
         return success
     
@@ -136,7 +136,7 @@ Responde con el número de la opción que necesitas 📱"""
         """
         Envía botones de navegación después del handoff
         """
-        from services.twilio_service import twilio_service
+        from services.meta_whatsapp_service import meta_whatsapp_service
         import logging
         logger = logging.getLogger(__name__)
         
@@ -151,7 +151,7 @@ Un asesor continuará la conversación en este mismo chat.
 💡 *Responde con el número de la opción que necesitas*"""
         
         # Enviar mensaje
-        success = twilio_service.send_whatsapp_message(numero_telefono, mensaje)
+        success = meta_whatsapp_service.send_text_message(numero_telefono, mensaje)
         
         if success:
             logger.info(f"✅ Botones de handoff enviados a {numero_telefono}")
@@ -165,7 +165,7 @@ Un asesor continuará la conversación en este mismo chat.
         """
         Envía botones de confirmación (Sí/No)
         """
-        from services.twilio_service import twilio_service
+        from services.meta_whatsapp_service import meta_whatsapp_service
         import logging
         logger = logging.getLogger(__name__)
         
@@ -180,7 +180,7 @@ Un asesor continuará la conversación en este mismo chat.
 💡 *Responde con el número de la opción que necesitas*"""
         
         # Enviar mensaje
-        success = twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+        success = meta_whatsapp_service.send_text_message(numero_telefono, mensaje_completo)
         
         if success:
             logger.info(f"✅ Botones de confirmación enviados a {numero_telefono}")
@@ -229,7 +229,7 @@ Responde con el número de la opción que necesitas 📱"""
         - Ahora: Webhook responde en ~15ms, todo se envía en paralelo
         """
         import os
-        from services.twilio_service import twilio_service
+        from services.meta_whatsapp_service import meta_whatsapp_service
         from config.company_profiles import get_active_company_profile
         import threading
         import time
@@ -257,7 +257,7 @@ Responde con el número de la opción que necesitas 📱"""
                 
                 logger.info(f"⚡ [Background] Enviando saludo a {numero_telefono}")
                 inicio = time.time()
-                saludo_enviado = twilio_service.send_whatsapp_message(numero_telefono, saludo)
+                saludo_enviado = meta_whatsapp_service.send_text_message(numero_telefono, saludo)
                 tiempo_saludo = (time.time() - inicio) * 1000
                 logger.info(f"✅ Saludo enviado en {tiempo_saludo:.0f}ms: {saludo_enviado}")
                 
@@ -269,9 +269,9 @@ Responde con el número de la opción que necesitas 📱"""
                 inicio = time.time()
                 profile = get_active_company_profile()
                 company_name = profile['name'].lower()
-                image_url = f"https://raw.githubusercontent.com/Csuarezgurruchaga/argenfuego-chatbot/main/assets/{company_name}.webp"
+                sticker_url = f"https://raw.githubusercontent.com/Csuarezgurruchaga/argenfuego-chatbot/main/assets/{company_name}.webp"
                 
-                sticker_enviado = twilio_service.send_whatsapp_media(numero_telefono, image_url)
+                sticker_enviado = meta_whatsapp_service.send_sticker(numero_telefono, sticker_url)
                 tiempo_sticker = (time.time() - inicio) * 1000
                 logger.info(f"✅ Sticker enviado en {tiempo_sticker:.0f}ms: {sticker_enviado}")
                 
@@ -289,7 +289,7 @@ Responde con el número de la opción que necesitas 📱"""
                 else:
                     # Enviar menú tradicional
                     mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
-                    success = twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+                    success = meta_whatsapp_service.send_text_message(numero_telefono, mensaje_completo)
                     tipo_menu = "tradicional"
                 
                 tiempo_menu = (time.time() - inicio) * 1000
@@ -300,7 +300,7 @@ Responde con el número de la opción que necesitas 📱"""
                 # Fallback: intentar enviar al menos el mensaje completo
                 try:
                     mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
-                    twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+                    meta_whatsapp_service.send_text_message(numero_telefono, mensaje_completo)
                 except Exception as fallback_error:
                     logger.error(f"❌ Error en fallback: {fallback_error}")
         
@@ -407,7 +407,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         """
         Envía mensaje de confirmación con botones interactivos
         """
-        from services.twilio_service import twilio_service
+        from services.meta_whatsapp_service import meta_whatsapp_service
         import logging
         logger = logging.getLogger(__name__)
         
