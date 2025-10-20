@@ -14,15 +14,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def verificar_variables_entorno():
-    """Verificar que todas las variables de entorno estén configuradas"""
+    """Verificar que todas las variables de entorno críticas estén configuradas"""
     print("🔍 VERIFICANDO VARIABLES DE ENTORNO")
     print("=" * 50)
     
     variables_requeridas = [
         "AGENT_WHATSAPP_NUMBER",
-        "TWILIO_ACCOUNT_SID", 
-        "TWILIO_AUTH_TOKEN",
-        "TWILIO_WHATSAPP_NUMBER",
+        "META_WA_ACCESS_TOKEN",
+        "META_WA_PHONE_NUMBER_ID",
+        "META_WA_APP_SECRET",
+        "META_WA_VERIFY_TOKEN",
         "AGENT_API_TOKEN"
     ]
     
@@ -69,43 +70,13 @@ def verificar_formato_numero_agente():
     print()
     return True
 
-def test_twilio_conexion():
-    """Probar conexión con Twilio"""
-    print("🌐 PROBANDO CONEXIÓN CON TWILIO")
-    print("=" * 50)
-    
-    try:
-        from twilio.rest import Client
-        
-        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        
-        if not account_sid or not auth_token:
-            print("❌ Credenciales de Twilio no configuradas")
-            return False
-        
-        client = Client(account_sid, auth_token)
-        
-        # Intentar obtener información de la cuenta
-        account = client.api.accounts(account_sid).fetch()
-        print(f"✅ Conexión exitosa con Twilio")
-        print(f"   Account SID: {account.sid}")
-        print(f"   Account Status: {account.status}")
-        print()
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error conectando con Twilio: {str(e)}")
-        print()
-        return False
-
 def test_envio_mensaje_directo():
     """Probar envío directo de mensaje al agente"""
     print("📤 PROBANDO ENVÍO DIRECTO AL AGENTE")
     print("=" * 50)
     
     try:
-        from services.twilio_service import twilio_service
+        from services.meta_whatsapp_service import meta_whatsapp_service
         
         agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
         if not agent_number:
@@ -117,7 +88,7 @@ def test_envio_mensaje_directo():
         print(f"Enviando mensaje a: {agent_number}")
         print(f"Mensaje: {test_message}")
         
-        success = twilio_service.send_whatsapp_message(agent_number, test_message)
+        success = meta_whatsapp_service.send_text_message(agent_number, test_message)
         
         if success:
             print("✅ Mensaje enviado exitosamente")
@@ -217,52 +188,6 @@ def test_handoff_completo():
         print()
         return False
 
-def verificar_webhook_twilio():
-    """Verificar configuración de webhook en Twilio"""
-    print("🔗 VERIFICANDO CONFIGURACIÓN DE WEBHOOK")
-    print("=" * 50)
-    
-    try:
-        from twilio.rest import Client
-        
-        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        whatsapp_number = os.getenv("TWILIO_WHATSAPP_NUMBER", "")
-        
-        if not all([account_sid, auth_token, whatsapp_number]):
-            print("❌ Variables de Twilio no configuradas")
-            return False
-        
-        client = Client(account_sid, auth_token)
-        
-        # Limpiar prefijo whatsapp: si existe
-        if whatsapp_number.startswith('whatsapp:'):
-            whatsapp_number = whatsapp_number[9:]
-        
-        # Obtener información del número WhatsApp
-        incoming_phone_numbers = client.incoming_phone_numbers.list()
-        
-        whatsapp_configured = False
-        for number in incoming_phone_numbers:
-            if number.phone_number == whatsapp_number:
-                whatsapp_configured = True
-                print(f"✅ Número WhatsApp encontrado: {number.phone_number}")
-                print(f"   Webhook URL: {number.sms_url or 'No configurado'}")
-                print(f"   Webhook Method: {number.sms_method or 'No configurado'}")
-                break
-        
-        if not whatsapp_configured:
-            print(f"⚠️  Número WhatsApp {whatsapp_number} no encontrado en la cuenta")
-            print("💡 Verifica que el número esté configurado en Twilio Console")
-        
-        print()
-        return whatsapp_configured
-        
-    except Exception as e:
-        print(f"❌ Error verificando webhook: {str(e)}")
-        print()
-        return False
-
 def generar_reporte_diagnostico():
     """Generar reporte completo de diagnóstico"""
     print("📊 REPORTE DE DIAGNÓSTICO COMPLETO")
@@ -271,9 +196,7 @@ def generar_reporte_diagnostico():
     resultados = {
         "variables_entorno": verificar_variables_entorno(),
         "formato_numero": verificar_formato_numero_agente(),
-        "conexion_twilio": test_twilio_conexion(),
         "deteccion_handoff": test_deteccion_handoff(),
-        "webhook_twilio": verificar_webhook_twilio(),
         "envio_directo": test_envio_mensaje_directo(),
         "handoff_completo": test_handoff_completo()
     }
@@ -297,14 +220,8 @@ def generar_reporte_diagnostico():
     if not resultados["formato_numero"]:
         print("• Verifica que AGENT_WHATSAPP_NUMBER tenga formato +5491135722871")
     
-    if not resultados["conexion_twilio"]:
-        print("• Verifica credenciales de Twilio en Railway")
-    
-    if not resultados["webhook_twilio"]:
-        print("• Configura webhook en Twilio Console apuntando a tu dominio Railway")
-    
     if not resultados["envio_directo"]:
-        print("• El problema está en el envío de mensajes - revisa logs de Twilio")
+        print("• El problema está en el envío de mensajes - revisa logs de Meta Cloud API")
     
     if not resultados["handoff_completo"]:
         print("• El problema está en el flujo de handoff - revisa logs de la aplicación")
@@ -314,7 +231,7 @@ def generar_reporte_diagnostico():
     print("=" * 20)
     print("1. Ejecuta este script en Railway con todas las variables configuradas")
     print("2. Revisa los logs de Railway para errores específicos")
-    print("3. Verifica en Twilio Console que el webhook esté configurado")
+    print("3. Confirma en Meta Business Manager que el webhook esté suscrito")
     print("4. Prueba enviando un mensaje real al bot")
 
 if __name__ == "__main__":

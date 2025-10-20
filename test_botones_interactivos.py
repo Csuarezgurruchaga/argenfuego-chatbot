@@ -12,7 +12,7 @@ load_dotenv()
 def test_quick_reply():
     """Probar envío de Quick Reply (botones)"""
     try:
-        from services.twilio_service import twilio_service
+        from services.meta_whatsapp_service import meta_whatsapp_service
         
         # Número de prueba (cambiar por tu número)
         test_number = "+5491123456789"  # Cambiar por tu número real
@@ -37,8 +37,13 @@ def test_quick_reply():
             print(f"  - {button['id']}: {button['title']}")
         print()
         
-        # Enviar mensaje con botones
-        success = twilio_service.send_whatsapp_quick_reply(test_number, mensaje, buttons)
+        success = meta_whatsapp_service.send_interactive_buttons(
+            test_number,
+            body_text=mensaje,
+            buttons=buttons,
+            header_text="Seleccioná una opción",
+            footer_text="Respuesta de prueba"
+        )
         
         if success:
             print("✅ Quick Reply enviado exitosamente")
@@ -55,7 +60,7 @@ def test_quick_reply():
 def test_list_picker():
     """Probar envío de List Picker (lista desplegable)"""
     try:
-        from services.twilio_service import twilio_service
+        from services.meta_whatsapp_service import meta_whatsapp_service
         
         # Número de prueba (cambiar por tu número)
         test_number = "+5491123456789"  # Cambiar por tu número real
@@ -97,8 +102,14 @@ def test_list_picker():
                 print(f"    - {row['id']}: {row['title']}")
         print()
         
-        # Enviar mensaje con lista
-        success = twilio_service.send_whatsapp_list_picker(test_number, mensaje, button_text, sections)
+        success = meta_whatsapp_service.send_interactive_list(
+            test_number,
+            body_text=mensaje,
+            button_text=button_text,
+            sections=sections,
+            header_text="Opciones disponibles",
+            footer_text="Demo de lista"
+        )
         
         if success:
             print("✅ List Picker enviado exitosamente")
@@ -175,8 +186,16 @@ def main():
     print()
     
     # Verificar variables de entorno
-    if not os.getenv("TWILIO_ACCOUNT_SID"):
-        print("❌ Variables de entorno de Twilio no configuradas")
+    required_meta = [
+        "META_WA_ACCESS_TOKEN",
+        "META_WA_PHONE_NUMBER_ID",
+        "META_WA_APP_SECRET",
+        "META_WA_VERIFY_TOKEN",
+    ]
+
+    missing = [var for var in required_meta if not os.getenv(var)]
+    if missing:
+        print("❌ Variables de entorno faltantes para Meta:", ", ".join(missing))
         return
     
     print("⚠️  IMPORTANTE: Cambia el número de prueba en el código antes de ejecutar")

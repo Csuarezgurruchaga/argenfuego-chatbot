@@ -2,7 +2,8 @@ import os
 import logging
 from typing import Dict, Optional, Tuple
 from datetime import datetime
-from services.twilio_service import twilio_service
+
+from services.meta_whatsapp_service import meta_whatsapp_service
 from services.sheets_service import sheets_service
 from chatbot.models import ConversacionData, EstadoConversacion
 
@@ -96,7 +97,7 @@ class SurveyService:
             message = self._build_question_message(question_data, first_question=True)
 
             # Enviar mensaje
-            success = twilio_service.send_whatsapp_message(client_phone, message)
+            success = meta_whatsapp_service.send_text_message(client_phone, message)
             
             if success:
                 logger.info(f"✅ Encuesta enviada al cliente {client_phone}")

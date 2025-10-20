@@ -95,12 +95,13 @@ Usuario: [Clic en 📋 Presupuesto] (imposible equivocarse)
 
 ### **Variables de Entorno Requeridas**
 ```bash
-TWILIO_ACCOUNT_SID=your_account_sid
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
+META_WA_ACCESS_TOKEN=<token_de_acceso>
+META_WA_PHONE_NUMBER_ID=<phone_number_id>
+META_WA_APP_SECRET=<app_secret>
+META_WA_VERIFY_TOKEN=<verify_token>
 ```
 
-### **Métodos del Servicio Twilio**
+### **Métodos del Servicio Meta**
 - `send_whatsapp_quick_reply()` - Envía botones simples
 - `send_whatsapp_list_picker()` - Envía lista desplegable
 - `extract_interactive_data()` - Extrae datos de botones
@@ -150,7 +151,7 @@ buttons = [
 
 ### **Botones No Aparecen**
 1. **Verificar** que el número tenga WhatsApp Business
-2. **Revisar logs** de Twilio para errores
+2. **Revisar logs** de Meta Cloud API para errores
 3. **Confirmar** que la conversación fue iniciada por el usuario
 
 ### **Error 63016 (Fuera de Ventana)**
@@ -158,7 +159,7 @@ buttons = [
 - **Implementado**: Template `handoff_notification` ya configurado
 
 ### **Botones No Responden**
-1. **Verificar** webhook de Twilio configurado correctamente
+1. **Verificar** webhook de Meta configurado correctamente
 2. **Revisar** función `handle_interactive_button()`
 3. **Confirmar** que `ButtonText` se extrae correctamente
 
@@ -186,5 +187,5 @@ buttons = [
 Para problemas o dudas:
 1. **Revisar logs** de Railway
 2. **Probar** con script de testing
-3. **Verificar** configuración de Twilio
+3. **Verificar** configuración de Meta
 4. **Consultar** documentación de WhatsApp Business API

@@ -1,5 +1,7 @@
 # Guía para Botones Interactivos con Plantillas de Twilio
 
+> ⚠️ **Aviso**: Este documento se conserva solo como referencia histórica. El proyecto actual utiliza la WhatsApp Cloud API de Meta y no depende de Twilio. Usa esta guía únicamente si necesitas revisar el enfoque anterior.
+
 ## 🎯 **SOLUCIÓN SIMPLIFICADA: PLANTILLAS DE TWILIO**
 
 En lugar de configurar variables complejas de Facebook, puedes usar **plantillas de Twilio** que son mucho más simples.

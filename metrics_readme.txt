@@ -15,11 +15,11 @@ What you will see in Google Sheets
      - intent_otras: mapped to “Otras”
      - geo_caba: addresses tagged as CABA
      - geo_provincia: addresses tagged as Provincia de Buenos Aires
-     - messages_sent: number of messages sent (Twilio status: sent)
-     - messages_delivered: number of messages delivered (Twilio status: delivered)
-     - messages_failed: number of messages failed (Twilio status: failed)
-     - messages_undelivered: number of messages undelivered (Twilio status: undelivered)
-     - messages_read: number of messages read (Twilio status: read)
+     - messages_sent: number of messages sent (Meta status: sent)
+     - messages_delivered: number of messages delivered (Meta status: delivered)
+     - messages_failed: number of messages failed (Meta status: failed)
+     - messages_undelivered: number of messages undelivered (Meta status: undelivered)
+     - messages_read: number of messages read (Meta status: read)
 
    • How to read it:
      - Conversion proxy: leads_sent / conversations_started.
@@ -34,7 +34,7 @@ What you will see in Google Sheets
    • Columns:
      - date: YYYY-MM-DD
      - nlu_unclear: cases where the system could not map the user intent
-     - exceptions: technical errors captured (e.g., webhook/SendGrid/Twilio/OpenAI)
+     - exceptions: technical errors captured (e.g., webhook/SendGrid/Meta/OpenAI)
      - validation_fail_email: failed email validations (count)
      - validation_fail_direccion: failed address validations (count)
      - validation_fail_horario_visita: failed schedule validations (count)
@@ -63,8 +63,8 @@ Common interpretations
 • Performance: leads_sent rising with flat conversations_started = better conversion.
 • Funnel friction: high human_requests implies UX/content fixes.
 • Geography: geo_caba vs geo_provincia mix supports routing/logistics decisions.
-• Reliability: sustained exceptions require provider or infra review.
-• Message delivery: low delivery rates may indicate Twilio/WhatsApp issues.
+• Reliability: sustained exceptions require provider (Meta) or infra review.
+• Message delivery: low delivery rates may indicate WhatsApp Cloud API issues.
 • User engagement: low read rates may indicate message timing or content issues.
 • Validation issues: high validation_fail_* in TECH metrics indicate form UX problems.
 
@@ -82,11 +82,8 @@ Environment variables (for reference)
 • GOOGLE_SERVICE_ACCOUNT_JSON=<service_account_json (base64 or raw)>
 • METRICS_FLUSH_SECONDS=3600 (recommended for low traffic)
 • (Optional) ENABLE_ERROR_REPORTS=true and ERROR_LOG_EMAIL=<dev_email>
-• (Optional) TWILIO_STATUS_CALLBACK_URL=<your_webhook_url>/webhook/status
 
 FAQ
 • Why some days have zeros? No traffic or the service was idle.
 • Can we change granularity? Yes, we can add hourly sheets or per-intent tabs later.
 • Can we export to BI tools? Yes, Sheets can be connected to Data Studio/Looker.
-
-

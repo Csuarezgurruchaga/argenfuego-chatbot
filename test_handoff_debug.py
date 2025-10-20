@@ -20,9 +20,17 @@ def test_env_variables():
     print("=" * 50)
     print("ℹ️  Variables configuradas en Railway (no disponibles localmente)")
     print("✅ AGENT_WHATSAPP_NUMBER: +5491135722871 (según tu configuración)")
-    print("✅ TWILIO_ACCOUNT_SID: Configurado en Railway")
-    print("✅ TWILIO_AUTH_TOKEN: Configurado en Railway") 
-    print("✅ TWILIO_WHATSAPP_NUMBER: Configurado en Railway")
+    required = [
+        "META_WA_ACCESS_TOKEN",
+        "META_WA_PHONE_NUMBER_ID",
+        "META_WA_APP_SECRET",
+        "META_WA_VERIFY_TOKEN",
+    ]
+    missing = [var for var in required if not os.getenv(var)]
+    if missing:
+        print("❌ Variables META faltantes:", ", ".join(missing))
+    else:
+        print("✅ Variables META configuradas en Railway")
     print()
 
 def test_handoff_detection():

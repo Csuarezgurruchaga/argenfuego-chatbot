@@ -30,11 +30,11 @@ Se agregó en `main.py`:
 
 Todos los métodos ahora usan `meta_whatsapp_service` en lugar de `twilio_service`.
 
-### 4. TwilioService (Intacto)
+### 4. Limpieza de dependencias de Twilio
 
-`twilio_service.py` se mantiene **sin cambios** y sigue siendo usado para:
-- Email (si aplicaba)
-- Cualquier otro canal no relacionado con WhatsApp
+- Se retiraron `twilio_service.py` y los endpoints asociados.
+- Los scripts heredados y pruebas que dependían de Twilio se migraron o quedaron obsoletos.
+- Todo el flujo de WhatsApp opera exclusivamente con `MetaWhatsAppService`.
 
 ---
 
@@ -69,9 +69,7 @@ META_WA_VERIFY_TOKEN=mi_token_secreto_123
 # WhatsApp - General
 AGENT_WHATSAPP_NUMBER=+5491135722871  # Número del agente humano
 
-# Email (Twilio o SendGrid)
-TWILIO_ACCOUNT_SID=...
-TWILIO_AUTH_TOKEN=...
+# Email (SendGrid u otro proveedor)
 # ... resto de config de email si aplica
 ```
 
@@ -187,18 +185,11 @@ Envía: "quiero hablar con un humano"
 
 ## Rollback (si fuera necesario)
 
-Si necesitas volver a Twilio temporalmente:
+El soporte para Twilio fue retirado del repositorio. Para un rollback temporal deberías:
 
-1. Revierte los cambios en `WhatsAppHandoffService`:
-   ```python
-   from .twilio_service import twilio_service
-   # ... reemplazar meta_whatsapp_service por twilio_service
-   ```
-
-2. Revierte el webhook en `main.py`:
-   - Usa `/webhook` en lugar de `/webhook/whatsapp`
-
-3. Reconfigura el webhook de Twilio en su consola
+1. Recuperar `services/twilio_service.py` y los endpoints antiguos (`/webhook`, `/webhook/status`) desde un commit anterior.
+2. Volver a configurar las variables `TWILIO_*` y el webhook en la consola de Twilio.
+3. Deshabilitar las variables `META_WA_*` o aislar el tráfico para evitar envíos duplicados.
 
 ---
 
@@ -262,4 +253,3 @@ Los siguientes eventos se registran en `metrics_service`:
 ## Contacto / Soporte
 
 Para issues o preguntas técnicas sobre esta migración, contactar al equipo de desarrollo.
-

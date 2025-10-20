@@ -37,12 +37,14 @@ def diagnosticar_problema_inicio():
         print("   3. Usar los endpoints de debug que agregamos")
         return
     
-    # 3. Verificar otras configuraciones
-    twilio_number = os.getenv("TWILIO_WHATSAPP_NUMBER", "")
-    print(f"3. TWILIO_WHATSAPP_NUMBER: {twilio_number}")
+    # 3. Verificar configuración de Meta
+    phone_id = os.getenv("META_WA_PHONE_NUMBER_ID", "")
+    access_token = os.getenv("META_WA_ACCESS_TOKEN", "")
+    print(f"3. META_WA_PHONE_NUMBER_ID: {phone_id}")
+    print(f"4. META_WA_ACCESS_TOKEN presente: {bool(access_token)}")
     
-    if not twilio_number:
-        print("❌ PROBLEMA: TWILIO_WHATSAPP_NUMBER no está configurado")
+    if not phone_id or not access_token:
+        print("❌ PROBLEMA: Variables de Meta (META_WA_PHONE_NUMBER_ID / META_WA_ACCESS_TOKEN) faltantes")
         return
     
     print("✅ Configuración básica parece correcta")
@@ -65,7 +67,6 @@ def probar_con_numero_diferente():
     print("💡 NÚMEROS DE PRUEBA SUGERIDOS:")
     print("   - Tu número personal (si es diferente al agente)")
     print("   - Número de un familiar/amigo")
-    print("   - Número de prueba de Twilio")
 
 def probar_con_endpoints_debug():
     """Explica cómo usar los endpoints de debug"""

@@ -2,7 +2,7 @@
 
 ## Overview
 
-El sistema de handoff ha sido migrado de Slack a WhatsApp usando Twilio. Ahora los agentes humanos reciben notificaciones directamente en su WhatsApp y pueden responder a los clientes desde la misma plataforma.
+El sistema de handoff usa la WhatsApp Cloud API de Meta. Los agentes humanos reciben notificaciones directamente en su WhatsApp y pueden responder a los clientes desde la misma plataforma.
 
 ## Configuration
 
@@ -12,10 +12,11 @@ El sistema de handoff ha sido migrado de Slack a WhatsApp usando Twilio. Ahora l
 # WhatsApp Agent Configuration
 AGENT_WHATSAPP_NUMBER=+5491135722871  # Número del agente (formato internacional)
 
-# Twilio Configuration (existing)
-TWILIO_ACCOUNT_SID=your_account_sid
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886  # Número de Twilio WhatsApp
+# Meta WhatsApp Cloud API
+META_WA_ACCESS_TOKEN=<token_de_acceso>
+META_WA_PHONE_NUMBER_ID=<phone_number_id>
+META_WA_APP_SECRET=<app_secret>
+META_WA_VERIFY_TOKEN=<verify_token>
 ```
 
 ## How It Works
@@ -171,12 +172,12 @@ To test the handoff system:
 
 1. **Agent not receiving notifications**
    - Check `AGENT_WHATSAPP_NUMBER` is set correctly
-   - Verify Twilio credentials are valid
+   - Verify Meta credentials (`META_WA_*`) are valid
    - Check logs for error messages
 
 2. **Agent messages not reaching clients**
    - Verify agent's WhatsApp number matches `AGENT_WHATSAPP_NUMBER`
-   - Check Twilio webhook configuration
+   - Check que el webhook de Meta esté verificado y activo
    - Review error logs
 
 3. **Resolution commands not working**

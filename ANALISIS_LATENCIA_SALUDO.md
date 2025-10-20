@@ -33,7 +33,7 @@ if mensaje_limpio in ['hola', 'hi', 'hello', 'inicio', 'empezar']:
 ```python
 # 1. ENVÍO INMEDIATO del saludo (SÍNCRONO - BLOQUEA EL WEBHOOK)
 saludo = "¡Hola {nombre}! 👋🏻 Mi nombre es Eva"
-saludo_enviado = twilio_service.send_whatsapp_message(numero_telefono, saludo)  # ❸
+saludo_enviado = meta_whatsapp_service.send_text_message(numero_telefono, saludo)  # ❸
 # ⏱️ Esta llamada HTTP a Twilio API bloquea el webhook ~200-500ms
 
 # 2. Crear threads para sticker y menú (ASÍNCRONOS)
@@ -55,7 +55,7 @@ def enviar_sticker_primero():
     profile = get_active_company_profile()  # ❻ (lectura de config)
     company_name = profile['name'].lower()
     image_url = f"https://raw.githubusercontent.com/..."
-    twilio_service.send_whatsapp_media(numero_telefono, image_url)  # ❼
+    meta_whatsapp_service.send_media_message(numero_telefono, image_url)  # ❼
     # ⏱️ Llamada HTTP a Twilio ~300-800ms
 ```
 
@@ -71,7 +71,7 @@ def enviar_menu():
     else:
         # Enviar menú tradicional
         mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
-        twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)  # ❿
+        meta_whatsapp_service.send_text_message(numero_telefono, mensaje_completo)  # ❿
         # ⏱️ Llamada HTTP a Twilio ~200-500ms
 ```
 
@@ -80,7 +80,7 @@ def enviar_menu():
 ### 1. **CAUSA PRINCIPAL: El saludo se envía SÍNCRONO en el hilo principal** ⚠️
 - **Impacto:** ALTO (200-500ms)
 - **Ubicación:** `chatbot/rules.py` línea 296
-- **Problema:** La llamada `twilio_service.send_whatsapp_message()` para el saludo inicial bloquea el webhook hasta que Twilio responde
+- **Problema:** La llamada `meta_whatsapp_service.send_text_message()` para el saludo inicial bloquea el webhook hasta que Meta responde
 - **Efecto usuario:** El primer mensaje tarda en aparecer porque el servidor está esperando la respuesta de Twilio
 
 ### 2. **Llamada a metrics_service.on_conversation_started()** 
@@ -104,7 +104,7 @@ except Exception:
 
 ### 4. **No hay lazy initialization de cliente Twilio**
 - **Impacto:** BAJO (~10-50ms solo en cold start)
-- **Ubicación:** `services/twilio_service.py` línea 21
+- **Ubicación:** `services/meta_whatsapp_service.py` línea 35
 - **Problema:** El cliente de Twilio se instancia cada vez (aunque es singleton)
 
 ### 5. **Lectura de variables de entorno en cada flujo**
@@ -154,14 +154,14 @@ def _enviar_flujo_saludo_completo(numero_telefono: str, nombre_usuario: str = ""
         else:
             saludo = "¡Hola! 👋🏻 Mi nombre es Eva"
         
-        twilio_service.send_whatsapp_message(numero_telefono, saludo)
+        meta_whatsapp_service.send_text_message(numero_telefono, saludo)
         
         # 2. Sticker (mini-delay de 0.3s para que saludo llegue primero)
         time.sleep(0.3)
         profile = get_active_company_profile()
         company_name = profile['name'].lower()
         image_url = f"https://raw.githubusercontent.com/..."
-        twilio_service.send_whatsapp_media(numero_telefono, image_url)
+        meta_whatsapp_service.send_media_message(numero_telefono, image_url)
         
         # 3. Menú (delay de 1.5s desde el sticker = 1.8s total)
         time.sleep(1.5)
@@ -169,7 +169,7 @@ def _enviar_flujo_saludo_completo(numero_telefono: str, nombre_usuario: str = ""
             ChatbotRules.send_menu_interactivo(numero_telefono, nombre_usuario)
         else:
             mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
-            twilio_service.send_whatsapp_message(numero_telefono, mensaje_completo)
+            meta_whatsapp_service.send_text_message(numero_telefono, mensaje_completo)
     
     # Ejecutar todo en un solo thread secuencial
     thread = threading.Thread(target=enviar_todo_secuencial)
@@ -245,7 +245,7 @@ def _enviar_flujo_saludo_completo(...):
 
 **Cambios:**
 ```python
-# En services/twilio_service.py
+# En services/meta_whatsapp_service.py
 class TwilioService:
     def __init__(self):
         # ... existing code ...
@@ -347,4 +347,3 @@ FASE 3 (OPCIONAL):
 **Documento creado:** 2025-10-01
 **Autor:** AI Assistant (Claude)
 **Estado:** Pendiente de revisión e implementación
-

@@ -98,38 +98,35 @@ Responde con el número de la opción que necesitas 📱"""
         """
         from services.meta_whatsapp_service import meta_whatsapp_service
         import logging
+
         logger = logging.getLogger(__name__)
-        
-        # Enviar template con solo el menú (sin saludo)
+
         mensaje_menu = "¿En qué puedo ayudarte hoy?"
-        
-        # Botones interactivos reales
         buttons = [
             {"id": "presupuesto", "title": "📋 Presupuesto"},
             {"id": "urgencia", "title": "🚨 Urgencia"},
             {"id": "otras", "title": "❓ Otras consultas"}
         ]
-        
-        # Enviar template con botones interactivos
-        success = twilio_service.send_whatsapp_quick_reply(numero_telefono, mensaje_menu, buttons)
-        
+
+        header_text = f"¡Hola {nombre_usuario}!" if nombre_usuario else None
+        footer_text = "Seleccioná una opción para continuar"
+
+        success = meta_whatsapp_service.send_interactive_buttons(
+            numero_telefono,
+            body_text=mensaje_menu,
+            buttons=buttons,
+            header_text=header_text,
+            footer_text=footer_text
+        )
+
         if success:
             logger.info(f"✅ Menú interactivo enviado a {numero_telefono}")
-        else:
-            logger.error(f"❌ Error enviando menú interactivo a {numero_telefono}")
-            # Fallback a mensaje de texto normal
-            mensaje_fallback = f"""{mensaje}
+            return True
 
-┌─────────────────────────────┐
-│  📋 1. Solicitar presupuesto │
-│  🚨 2. Reportar urgencia     │
-│  ❓ 3. Otras consultas       │
-└─────────────────────────────┘
-
-💡 *Responde con el número de la opción que necesitas*"""
-            meta_whatsapp_service.send_text_message(numero_telefono, mensaje_fallback)
-        
-        return success
+        logger.error(f"❌ Error enviando menú interactivo a {numero_telefono}")
+        mensaje_fallback = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
+        meta_whatsapp_service.send_text_message(numero_telefono, mensaje_fallback)
+        return False
     
     @staticmethod
     def send_handoff_buttons(numero_telefono: str):
@@ -225,7 +222,7 @@ Responde con el número de la opción que necesitas 📱"""
         Retorna inmediatamente (vacío) para que el webhook responda rápido
         
         MEJORA DE LATENCIA:
-        - Antes: Webhook bloqueado ~500ms esperando Twilio
+        - Antes: Webhook bloqueado ~500ms esperando la API de WhatsApp
         - Ahora: Webhook responde en ~15ms, todo se envía en paralelo
         """
         import os
@@ -1022,6 +1019,7 @@ Responde con el número del campo que deseas modificar."""
             '1': TipoConsulta.PRESUPUESTO,
             '2': TipoConsulta.OTRAS,
             'presupuesto': TipoConsulta.PRESUPUESTO,
+            'urgencia': TipoConsulta.URGENCIA,
             'otras': TipoConsulta.OTRAS,
             'visita': TipoConsulta.OTRAS,  # Visitas técnicas ahora van a OTRAS
             'consulta': TipoConsulta.OTRAS

@@ -285,7 +285,8 @@ GOOGLE_SERVICE_ACCOUNT_JSON=your_service_account_json
 
 # WhatsApp Handoff (requerido)
 AGENT_WHATSAPP_NUMBER=+5491135722871
-TWILIO_ACCOUNT_SID=your_account_sid
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
+META_WA_ACCESS_TOKEN=<token_de_acceso>
+META_WA_PHONE_NUMBER_ID=<phone_number_id>
+META_WA_APP_SECRET=<app_secret>
+META_WA_VERIFY_TOKEN=<verify_token>
 ```

@@ -12,7 +12,7 @@ load_dotenv()
 def test_template_send():
     """Probar envío de template"""
     try:
-        from services.twilio_service import twilio_service
+        from services.meta_whatsapp_service import meta_whatsapp_service
         
         agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
         if not agent_number:
@@ -24,24 +24,31 @@ def test_template_send():
         print(f"Agente: {agent_number}")
         print()
         
-        # Parámetros del template
-        parameters = [
-            "Cliente Test",           # {{1}} - Nombre del cliente
-            "+5491123456789",        # {{2}} - Número del cliente
-            "quiero hablar con un humano",  # {{3}} - Mensaje que disparó handoff
-            "necesito ayuda urgente"  # {{4}} - Último mensaje
+        template_name = os.getenv("META_WA_TEMPLATE_NAME", "handoff_notification")
+        language_code = os.getenv("META_WA_TEMPLATE_LANG", "es_AR")
+
+        components = [
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": "Cliente Test"},
+                    {"type": "text", "text": "+5491123456789"},
+                    {"type": "text", "text": "quiero hablar con un humano"},
+                    {"type": "text", "text": "necesito ayuda urgente"},
+                ],
+            }
         ]
-        
-        print("Parámetros del template:")
-        for i, param in enumerate(parameters, 1):
-            print(f"  {{{{{i}}}}}: {param}")
+
+        print("Template:", template_name)
+        print("Idioma:", language_code)
+        print("Componentes:", components)
         print()
-        
-        # Enviar template
-        success = twilio_service.send_whatsapp_template(
+
+        success = meta_whatsapp_service.send_template_message(
             agent_number,
-            "handoff_notification",
-            parameters
+            template_name,
+            language_code,
+            components
         )
         
         if success:

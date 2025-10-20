@@ -430,7 +430,7 @@ class MetaWhatsAppService:
             logger.error(f"Error en verificación de webhook: {str(e)}")
             return None
     
-    def extract_message_data(self, webhook_data: dict) -> Optional[Tuple[str, str, str, str]]:
+    def extract_message_data(self, webhook_data: dict) -> Optional[Tuple[str, str, str, str, str]]:
         """
         Extrae datos de mensaje del webhook de Meta.
         
@@ -438,7 +438,7 @@ class MetaWhatsAppService:
             webhook_data: Payload del webhook
             
         Returns:
-            Optional[Tuple]: (numero_telefono, mensaje, message_id, profile_name) o None si no es válido
+            Optional[Tuple]: (numero_telefono, mensaje, message_id, profile_name, message_type) o None si no es válido
         """
         try:
             # Estructura: entry[0].changes[0].value
@@ -522,7 +522,7 @@ class MetaWhatsAppService:
             if from_number and not from_number.startswith('+'):
                 from_number = f'+{from_number}'
             
-            return (from_number, text_body, message_id, profile_name)
+            return (from_number, text_body, message_id, profile_name, message_type)
             
         except Exception as e:
             logger.error(f"Error extrayendo datos del webhook: {str(e)}")
@@ -592,4 +592,3 @@ class MetaWhatsAppService:
 
 # Instancia global del servicio
 meta_whatsapp_service = MetaWhatsAppService()
-
