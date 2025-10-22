@@ -177,16 +177,20 @@ async def webhook_whatsapp_receive(request: Request):
         # Obtener firma del header
         signature = request.headers.get('X-Hub-Signature-256', '')
         
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info("Webhook recibido desde %s", client_ip)
+        logger.debug("Headers: %s", dict(request.headers))
+
         # Validar firma HMAC
         if not meta_whatsapp_service.validate_webhook_signature(body_bytes, signature):
-            logger.error("❌ Firma de webhook inválida - request rechazado")
+            logger.error("❌ Firma de webhook inválida - request rechazado (client=%s)", client_ip)
             return PlainTextResponse("Forbidden", status_code=403)
         
         # Parsear JSON
         webhook_data = json.loads(body_bytes.decode('utf-8'))
         
-        logger.info(f"=== WEBHOOK WHATSAPP RECIBIDO ===")
-        logger.info(f"Data: {json.dumps(webhook_data, indent=2)}")
+        logger.info("=== WEBHOOK WHATSAPP RECIBIDO ===")
+        logger.debug("Payload completo: %s", json.dumps(webhook_data))
         
         # Extraer datos de mensaje
         message_data = meta_whatsapp_service.extract_message_data(webhook_data)

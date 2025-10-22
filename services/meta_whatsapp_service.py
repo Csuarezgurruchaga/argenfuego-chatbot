@@ -81,7 +81,7 @@ class MetaWhatsAppService:
             response = requests.post(url, headers=self.headers, json=payload, timeout=10)
             
             logger.info(f"Status code: {response.status_code}")
-            logger.info(f"Response: {response.text}")
+            logger.debug(f"Response: {response.text}")
             
             # Validar respuesta
             if response.status_code in [200, 201]:
@@ -458,7 +458,12 @@ class MetaWhatsAppService:
             phone_number_id = metadata.get('phone_number_id', '')
             
             if phone_number_id != self.phone_number_id:
-                logger.warning(f"Webhook de otro número ignorado: {phone_number_id}")
+                logger.warning(
+                    "Webhook de otro número ignorado: %s (esperado=%s)",
+                    phone_number_id,
+                    self.phone_number_id
+                )
+                logger.debug("Payload ignorado: %s", value)
                 return None
             
             # Extraer mensajes
@@ -503,19 +508,19 @@ class MetaWhatsAppService:
             
             elif message_type == 'image':
                 # Imagen (registrar pero no procesar por ahora)
-                logger.info(f"Mensaje de tipo imagen recibido de {from_number}")
+                logger.info("Mensaje de tipo imagen recibido de %s", from_number)
                 text_body = ''  # Vacío para que sea manejado como media
             
             elif message_type == 'audio':
-                logger.info(f"Mensaje de tipo audio recibido de {from_number}")
+                logger.info("Mensaje de tipo audio recibido de %s", from_number)
                 text_body = ''
             
             elif message_type == 'video':
-                logger.info(f"Mensaje de tipo video recibido de {from_number}")
+                logger.info("Mensaje de tipo video recibido de %s", from_number)
                 text_body = ''
             
             elif message_type == 'document':
-                logger.info(f"Mensaje de tipo documento recibido de {from_number}")
+                logger.info("Mensaje de tipo documento recibido de %s", from_number)
                 text_body = ''
             
             # Asegurar formato E.164 (agregar + si no lo tiene)
