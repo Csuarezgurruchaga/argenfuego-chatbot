@@ -10,8 +10,8 @@ COMPANY_PROFILES = {
         "address": "Av. Hipólito Yrigoyen 2020, El Talar, Provincia de Buenos Aires",
         "hours": "Lunes a Viernes de 8 a 17hs y Sábados de 9 a 13hs",
         "email": "csuarezgurruchaga@gmail.com",#"argenfuego@yahoo.com.ar",
-        "email_bot": "notificaciones.chatbot@gmail.com",
-        "website": "www.argenfuego.com.ar"
+        "email_bot": "bot@argenfuego.com",
+        "website": "www.argenfuego.com"
     },
     "empresa_ejemplo": {
         "name": "Empresa Ejemplo",
