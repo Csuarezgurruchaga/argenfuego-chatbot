@@ -68,10 +68,30 @@ META_WA_VERIFY_TOKEN=mi_token_secreto_123
 ```bash
 # WhatsApp - General
 AGENT_WHATSAPP_NUMBER=+5491135722871  # Número del agente humano
-
-# Email (SendGrid u otro proveedor)
-# ... resto de config de email si aplica
 ```
+
+### Email (Amazon SES via API boto3)
+
+```bash
+# Credenciales IAM con permiso ses:SendEmail
+# (si usás rol IAM no es necesario definirlas como variables)
+AWS_ACCESS_KEY_ID=AKIAXXXXX
+AWS_SECRET_ACCESS_KEY=abc123xxxx
+
+# Región de SES utilizada (us-east-1 confirmado para este proyecto)
+AWS_REGION=us-east-1
+
+# Remitentes y destino para los reportes de errores
+ERROR_FROM_EMAIL=notificaciones.chatbot@gmail.com   # opcional, default igual
+ERROR_LOG_EMAIL=alerts@tuempresa.com
+
+# Reply-To global opcional para todos los envíos
+REPLY_TO_EMAIL=ventas@tuempresa.com   # opcional
+
+# Emails de cada company profile se configuran en config/company_profiles.py
+```
+
+> Nota: No usamos `AWS_SESSION_TOKEN` en este despliegue. Las credenciales provienen de un IAM User de larga duración o de un rol adjunto al runtime.
 
 ---
 
@@ -134,6 +154,37 @@ AGENT_WHATSAPP_NUMBER=+5491135722871  # Número del agente humano
    ```
 
 4. **Deploy** → Railway desplegará automáticamente con las nuevas variables
+
+---
+
+## Email a través de Amazon SES
+
+1. **Verificar identidades**: en la consola de SES, verificá el dominio o los remitentes (`email_bot` de cada perfil y `ERROR_FROM_EMAIL`). Idealmente habilitá DKIM/SPF para el dominio.
+2. **Permisos IAM**: el runtime necesita `ses:SendEmail` (y opcionalmente `ses:SendRawEmail` si en el futuro se envían adjuntos). Política mínima:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ses:SendEmail",
+        "ses:SendRawEmail"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+3. **Variables**: definí `AWS_REGION`, `AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY` (omitílas si usás rol IAM). Para los reportes de errores, seteá `ERROR_LOG_EMAIL` y, si querés personalizar el remitente, `ERROR_FROM_EMAIL`.
+
+### Logging y monitoreo
+
+- Cada envío registra en los logs de la app: `provider=ses`, `message_id`, `from`, `to`, `subject`, `status_code`.
+- Ante errores, logea `error_type`, `message` y `request_id` (si lo provee AWS).
+- Recomendado: configurar **SES Event Destinations** → SNS para `bounces` y `complaints`, y suscribirte por email o webhook para accionar rápidamente ante rebotes/quejas.
 
 ---
 

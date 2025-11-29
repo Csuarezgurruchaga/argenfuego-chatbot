@@ -34,7 +34,7 @@ What you will see in Google Sheets
    • Columns:
      - date: YYYY-MM-DD
      - nlu_unclear: cases where the system could not map the user intent
-     - exceptions: technical errors captured (e.g., webhook/SendGrid/Meta/OpenAI)
+     - exceptions: technical errors captured (e.g., webhook/SES/Meta/OpenAI)
      - validation_fail_email: failed email validations (count)
      - validation_fail_direccion: failed address validations (count)
      - validation_fail_horario_visita: failed schedule validations (count)

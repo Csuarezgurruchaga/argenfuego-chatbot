@@ -5,8 +5,9 @@ import hashlib
 import logging
 from typing import Dict, Any, List
 
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, To, From, Subject, HtmlContent
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
 from services.sheets_service import sheets_service
 from config.company_profiles import get_active_company_profile
 
@@ -82,21 +83,24 @@ class ErrorReporter:
         # Use only ENABLE_ERROR_EMAILS (no legacy fallback)
         self.enabled = os.getenv("ENABLE_ERROR_EMAILS", "true").lower() == "true"
         self.error_email = os.getenv("ERROR_LOG_EMAIL", "").strip()
-        self.sg_api_key = os.getenv("SENDGRID_API_KEY", "").strip()
+        self.from_email = os.getenv("ERROR_FROM_EMAIL", "notificaciones.chatbot@gmail.com").strip()
+        self.region = os.getenv("AWS_REGION", "us-east-1")
+        self.reply_to = os.getenv("REPLY_TO_EMAIL", "").strip()
         self.rate_limiter = InMemoryRateLimiter(window_seconds=int(os.getenv("ERROR_RATE_WINDOW_SEC", "300")))
+        self.ses = boto3.client("ses", region_name=self.region)
 
-        if not self.sg_api_key:
-            logger.warning("SENDGRID_API_KEY not set - error emails disabled")
         if not self.error_email:
             logger.warning("ERROR_LOG_EMAIL not set - error emails disabled")
+        if not self.from_email:
+            logger.warning("ERROR_FROM_EMAIL not set - usando valor por defecto")
 
     def _should_send(self, key_parts: List[str], payload: Dict[str, Any]) -> bool:
-        if not self.enabled or not self.sg_api_key or not self.error_email:
+        if not self.enabled or not self.error_email:
             return False
         unique = "|".join([p for p in key_parts if p]) + "|" + _hash_payload(payload)[:16]
         return self.rate_limiter.allow(unique)
 
-    def _build_email(self, subject: str, summary_lines: List[str], details: Dict[str, Any]) -> Mail:
+    def _build_email(self, subject: str, summary_lines: List[str], details: Dict[str, Any]) -> Dict[str, str]:
         profile = get_active_company_profile()
 
         def render_kv(d: Dict[str, Any]) -> str:
@@ -122,21 +126,43 @@ class ErrorReporter:
         </div>
         """
 
-        mail = Mail(
-            from_email=From("notificaciones.chatbot@gmail.com", f"{profile['bot_name']} · Error Reporter"),
-            to_emails=To(self.error_email),
-            subject=Subject(subject),
-            html_content=HtmlContent(html)
-        )
-        return mail
+        return {
+            "subject": subject,
+            "html": html,
+            "from_name": f"{profile['bot_name']} · Error Reporter",
+        }
 
-    def _send_email(self, mail: Mail) -> bool:
+    def _send_email(self, subject: str, html: str, from_name: str) -> bool:
         try:
-            sg = SendGridAPIClient(api_key=self.sg_api_key)
-            resp = sg.send(mail)
-            return resp.status_code in (200, 202)
+            send_kwargs = {
+                "Source": f"{from_name} <{self.from_email or 'notificaciones.chatbot@gmail.com'}>",
+                "Destination": {"ToAddresses": [self.error_email]},
+                "Message": {
+                    "Subject": {"Data": subject, "Charset": "UTF-8"},
+                    "Body": {"Html": {"Data": html, "Charset": "UTF-8"}},
+                },
+            }
+
+            if self.reply_to:
+                send_kwargs["ReplyToAddresses"] = [self.reply_to]
+
+            resp = self.ses.send_email(**send_kwargs)
+            status = resp.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
+            if status == 200:
+                logger.info(
+                    "Error report email sent | message_id=%s status=%s",
+                    resp.get("MessageId", "unknown"),
+                    status,
+                )
+                return True
+
+            logger.error("SES error report send failed | status=%s resp=%s", status, resp)
+            return False
+        except (ClientError, BotoCoreError) as e:
+            logger.error("SES client error sending error report: %s", str(e))
+            return False
         except Exception as e:
-            logger.error(f"Error sending error report email: {str(e)}")
+            logger.error("Unexpected error sending error report: %s", str(e))
             return False
 
     def capture_experience_issue(self, trigger: str, context: Dict[str, Any]) -> None:
@@ -193,8 +219,8 @@ class ErrorReporter:
                 return
 
             subject = f"[Chatbot Error] {trigger} @{profile['name']}"
-            mail = self._build_email(subject, summary, details)
-            self._send_email(mail)
+            payload = self._build_email(subject, summary, details)
+            self._send_email(payload["subject"], payload["html"], payload["from_name"])
         except Exception as e:
             logger.error(f"Error building experience issue report: {str(e)}")
 
@@ -223,8 +249,8 @@ class ErrorReporter:
                 return
 
             subject = f"[Chatbot Error] exception @{profile['name']}"
-            mail = self._build_email(subject, summary, details)
-            self._send_email(mail)
+            payload = self._build_email(subject, summary, details)
+            self._send_email(payload["subject"], payload["html"], payload["from_name"])
         except Exception as e:
             logger.error(f"Error building exception report: {str(e)}")
 

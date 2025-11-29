@@ -1,17 +1,17 @@
 import os
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, From, To, Subject, HtmlContent
+import logging
+from datetime import datetime
+
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
 from chatbot.models import ConversacionData, TipoConsulta
 from config.company_profiles import get_active_company_profile
-from datetime import datetime
-import logging
 
 logger = logging.getLogger(__name__)
 
 class EmailService:
     def __init__(self):
-        self.api_key = os.getenv('SENDGRID_API_KEY')
-        
         # Obtener configuración de empresa activa
         company_profile = get_active_company_profile()
         
@@ -19,35 +19,67 @@ class EmailService:
         self.to_email = company_profile['email']
         self.company_name = company_profile['name']
         self.bot_name = company_profile['bot_name']
+        self.reply_to = os.getenv("REPLY_TO_EMAIL", "").strip()
+        self.region = os.getenv("AWS_REGION", "us-east-1")
         
-        if not self.api_key:
-            raise ValueError("SENDGRID_API_KEY es requerido")
+        if not self.from_email:
+            raise ValueError("email_bot no puede estar vacío para enviar correos")
+        if not self.to_email:
+            raise ValueError("email (destino) no puede estar vacío para enviar correos")
         
-        self.sg = SendGridAPIClient(api_key=self.api_key)
+        self.ses = boto3.client("ses", region_name=self.region)
     
     def enviar_lead_email(self, conversacion: ConversacionData) -> bool:
         try:
             subject = self._get_email_subject(conversacion.tipo_consulta)
             html_content = self._generate_email_html(conversacion)
             
-            message = Mail(
-                from_email=From(self.from_email, f"{self.bot_name} - Asistente Virtual {self.company_name}"),
-                to_emails=To(self.to_email),
-                subject=Subject(subject),
-                html_content=HtmlContent(html_content)
-            )
+            send_kwargs = {
+                "Source": f"{self.bot_name} - Asistente Virtual {self.company_name} <{self.from_email}>",
+                "Destination": {"ToAddresses": [self.to_email]},
+                "Message": {
+                    "Subject": {"Data": subject, "Charset": "UTF-8"},
+                    "Body": {"Html": {"Data": html_content, "Charset": "UTF-8"}},
+                },
+            }
             
-            response = self.sg.send(message)
+            if self.reply_to:
+                send_kwargs["ReplyToAddresses"] = [self.reply_to]
             
-            if response.status_code in [200, 202]:
-                logger.info(f"Email enviado exitosamente para {conversacion.numero_telefono}")
+            response = self.ses.send_email(**send_kwargs)
+            status_code = response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
+            
+            if status_code == 200:
+                message_id = response.get("MessageId", "unknown")
+                logger.info(
+                    "Email enviado exitosamente para %s | message_id=%s status=%s",
+                    conversacion.numero_telefono,
+                    message_id,
+                    status_code,
+                )
                 return True
-            else:
-                logger.error(f"Error enviando email. Status: {response.status_code}")
-                return False
+            
+            logger.error(
+                "Error enviando email para %s | status=%s response=%s",
+                conversacion.numero_telefono,
+                status_code,
+                response,
+            )
+            return False
                 
+        except (ClientError, BotoCoreError) as e:
+            logger.error(
+                "Error enviando email para %s con SES: %s",
+                conversacion.numero_telefono,
+                str(e),
+            )
+            return False
         except Exception as e:
-            logger.error(f"Error enviando email para {conversacion.numero_telefono}: {str(e)}")
+            logger.error(
+                "Error inesperado enviando email para %s: %s",
+                conversacion.numero_telefono,
+                str(e),
+            )
             return False
     
     def _get_email_subject(self, tipo_consulta: TipoConsulta) -> str:
