@@ -21,6 +21,55 @@ def mock_env_vars(monkeypatch):
     monkeypatch.setenv("AGENT_WHATSAPP_NUMBER", "+5491135722871")
 
 
+def _build_message_payload(text_body: str, from_number: str = "5491198765432"):
+    return {
+        "object": "whatsapp_business_account",
+        "entry": [{
+            "id": "123456789",
+            "changes": [{
+                "value": {
+                    "messaging_product": "whatsapp",
+                    "metadata": {
+                        "display_phone_number": "5491135722871",
+                        "phone_number_id": "123456789"
+                    },
+                    "contacts": [{
+                        "profile": {"name": "Usuario Test"},
+                        "wa_id": from_number
+                    }],
+                    "messages": [{
+                        "from": from_number,
+                        "id": "wamid.test123",
+                        "timestamp": "1234567890",
+                        "type": "text",
+                        "text": {"body": text_body}
+                    }]
+                },
+                "field": "messages"
+            }]
+        }]
+    }
+
+
+def _post_signed(client: TestClient, payload: dict):
+    body = json.dumps(payload)
+    secret = "test_secret"
+    signature_hash = hmac.new(
+        secret.encode('utf-8'),
+        body.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    signature = f"sha256={signature_hash}"
+    return client.post(
+        "/webhook/whatsapp",
+        data=body,
+        headers={
+            "X-Hub-Signature-256": signature,
+            "Content-Type": "application/json"
+        }
+    )
+
+
 def test_webhook_verification_success():
     """Test de verificación GET del webhook - caso exitoso"""
     from main import app
@@ -299,6 +348,49 @@ def test_meta_whatsapp_service_validate_signature():
     # Validar firma incorrecta
     wrong_signature = "sha256=wrong_hash"
     assert service.validate_webhook_signature(payload, wrong_signature) is False
+
+
+def test_gracias_post_finalizacion_no_reinicia():
+    """Si la conversación terminó y el usuario dice gracias, se responde con ack y no se reinicia."""
+    from main import app
+    from chatbot.states import conversation_manager
+    from chatbot.rules import ChatbotRules
+    
+    client = TestClient(app)
+    numero = "5491198765432"
+    conversation_manager.mark_recently_finalized(numero)
+    
+    payload = _build_message_payload("Gracias!!", from_number=numero)
+    
+    with patch('services.meta_whatsapp_service.meta_whatsapp_service.send_text_message') as mock_send, \
+            patch('chatbot.rules.ChatbotRules.procesar_mensaje') as mock_procesar:
+        mock_send.return_value = True
+        response = _post_signed(client, payload)
+    
+    assert response.status_code == 200
+    mock_procesar.assert_not_called()
+    mock_send.assert_any_call(numero, ChatbotRules.get_mensaje_post_finalizado_gracias())
+
+
+def test_nueva_consulta_post_finalizacion_reinicia():
+    """Si envía otro mensaje distinto, se limpia el estado y se procesa normalmente."""
+    from main import app
+    from chatbot.states import conversation_manager
+    
+    client = TestClient(app)
+    numero = "549117770000"
+    conversation_manager.mark_recently_finalized(numero)
+    
+    payload = _build_message_payload("Necesito otra cosa", from_number=numero)
+    
+    with patch('services.meta_whatsapp_service.meta_whatsapp_service.send_text_message') as mock_send, \
+            patch('chatbot.rules.ChatbotRules.procesar_mensaje', return_value="") as mock_procesar:
+        mock_send.return_value = True
+        response = _post_signed(client, payload)
+    
+    assert response.status_code == 200
+    mock_procesar.assert_called_once()
+    assert conversation_manager.was_finalized_recently(numero) is False
 
 
 if __name__ == "__main__":

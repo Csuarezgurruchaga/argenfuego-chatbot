@@ -1,3 +1,4 @@
+import os
 import unicodedata
 from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
@@ -5,6 +6,12 @@ from config.company_profiles import get_urgency_redirect_message, get_active_com
 from datetime import datetime, timedelta
 from services.error_reporter import error_reporter, ErrorTrigger
 from services.metrics_service import metrics_service
+
+POST_FINALIZADO_WINDOW_SECONDS = int(os.getenv("POST_FINALIZADO_WINDOW_SECONDS", "120"))
+POST_FINALIZADO_ACK_MESSAGE = os.getenv(
+    "POST_FINALIZADO_ACK_MESSAGE",
+    "¡Gracias por tu mensaje! Ya registramos tu solicitud. Si necesitás otra cosa, escribime \"hola\" para comenzar de nuevo. 🤖",
+)
 
 def normalizar_texto(texto: str) -> str:
     """
@@ -41,6 +48,71 @@ SINONIMOS_CABA_NORM = {normalizar_texto(s) for s in SINONIMOS_CABA}
 SINONIMOS_PROVINCIA_NORM = {normalizar_texto(s) for s in SINONIMOS_PROVINCIA}
 
 class ChatbotRules:
+    GRATITUDE_KEYWORDS = {
+        "gracias",
+        "muchas gracias",
+        "mil gracias",
+        "gracias totales",
+        "gracias eva",
+        "gracias genia",
+        "gracias por todo",
+        "gracias!!!",
+        "gracias!!",
+        "genial gracias",
+        "buenísimo gracias",
+        "graciass",
+        "graciasss",
+        "grac",
+        "thank you",
+        "thanks",
+    }
+    GRATITUDE_EMOJIS = {"🙏", "🤝", "👍", "🙌", "😊", "😁", "🤗", "👌"}
+    
+    @staticmethod
+    def _normalizar_agradecimiento(texto: str) -> str:
+        texto = texto.strip().lower()
+        texto = ''.join(
+            c for c in unicodedata.normalize('NFD', texto)
+            if unicodedata.category(c) != 'Mn'
+        )
+        texto = ''.join(c if c.isalnum() or c.isspace() else ' ' for c in texto)
+        texto = " ".join(texto.split())
+        return texto
+    
+    @staticmethod
+    def es_mensaje_agradecimiento(texto: str) -> bool:
+        if not texto:
+            return False
+        
+        raw = texto.strip()
+        # Emojis o reacciones cortas
+        if raw and len(raw) <= 8 and any(emoji in raw for emoji in ChatbotRules.GRATITUDE_EMOJIS):
+            return True
+        
+        normalizado = ChatbotRules._normalizar_agradecimiento(raw)
+        if not normalizado:
+            return False
+        
+        if normalizado in ChatbotRules.GRATITUDE_KEYWORDS:
+            return True
+        
+        compact = normalizado.replace(" ", "")
+        if compact in {"gracias", "muchasgracias", "milgracias", "graciass", "graciasss", "thankyou"}:
+            return True
+        
+        for keyword in ChatbotRules.GRATITUDE_KEYWORDS:
+            if keyword in normalizado:
+                return True
+        
+        palabras = set(normalizado.split())
+        if "gracias" in palabras or "thanks" in palabras:
+            return True
+        
+        return False
+    
+    @staticmethod
+    def get_mensaje_post_finalizado_gracias() -> str:
+        return POST_FINALIZADO_ACK_MESSAGE
     
     @staticmethod
     def _detectar_volver_menu(mensaje: str) -> bool:

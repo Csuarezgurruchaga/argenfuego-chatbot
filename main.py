@@ -237,6 +237,17 @@ async def webhook_whatsapp_receive(request: Request):
                 )
                 return PlainTextResponse("", status_code=200)
             
+            # Manejar mensajes posteriores a cierre reciente (agradecimientos)
+            if conversation_manager.was_finalized_recently(numero_telefono):
+                if ChatbotRules.es_mensaje_agradecimiento(mensaje_usuario):
+                    mensaje_gracias = ChatbotRules.get_mensaje_post_finalizado_gracias()
+                    if mensaje_gracias:
+                        meta_whatsapp_service.send_text_message(numero_telefono, mensaje_gracias)
+                    logger.info(f"🙏 Mensaje de agradecimiento ignorado para {numero_telefono}")
+                    return PlainTextResponse("", status_code=200)
+                else:
+                    conversation_manager.clear_recently_finalized(numero_telefono)
+            
             # Obtener conversación actual
             conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
             

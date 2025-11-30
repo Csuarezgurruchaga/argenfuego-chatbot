@@ -1,12 +1,16 @@
+import os
 from typing import Dict, Optional, List, Any
 from .models import ConversacionData, EstadoConversacion, TipoConsulta, DatosContacto, DatosConsultaGeneral
 from pydantic import ValidationError
 from services.metrics_service import metrics_service
-from datetime import datetime
+from datetime import datetime, timedelta
+
+POST_FINALIZADO_WINDOW_SECONDS = int(os.getenv("POST_FINALIZADO_WINDOW_SECONDS", "120"))
 
 class ConversationManager:
     def __init__(self):
         self.conversaciones: Dict[str, ConversacionData] = {}
+        self.recently_finalized: Dict[str, datetime] = {}
 
         # Sistema de cola FIFO para handoffs
         self.handoff_queue: List[str] = []  # Lista de números de teléfono en orden FIFO
@@ -100,16 +104,18 @@ class ConversationManager:
         conversacion.nombre_usuario = nombre
     
     def finalizar_conversacion(self, numero_telefono: str):
+        self.recently_finalized[numero_telefono] = datetime.utcnow()
         if numero_telefono in self.conversaciones:
             del self.conversaciones[numero_telefono]
-            try:
-                metrics_service.on_conversation_finished()
-            except Exception:
-                pass
+        try:
+            metrics_service.on_conversation_finished()
+        except Exception:
+            pass
     
     def reset_conversacion(self, numero_telefono: str):
         if numero_telefono in self.conversaciones:
             del self.conversaciones[numero_telefono]
+        self.recently_finalized.pop(numero_telefono, None)
     
     # Métodos para manejo secuencial de campos
     def get_campo_siguiente(self, numero_telefono: str) -> str:
@@ -435,6 +441,21 @@ class ConversationManager:
         # Mantener solo los últimos N mensajes
         if len(conversacion.message_history) > max_messages:
             conversacion.message_history = conversacion.message_history[-max_messages:]
+    
+    def mark_recently_finalized(self, numero_telefono: str):
+        self.recently_finalized[numero_telefono] = datetime.utcnow()
+    
+    def was_finalized_recently(self, numero_telefono: str) -> bool:
+        timestamp = self.recently_finalized.get(numero_telefono)
+        if not timestamp:
+            return False
+        if datetime.utcnow() - timestamp <= timedelta(seconds=POST_FINALIZADO_WINDOW_SECONDS):
+            return True
+        self.recently_finalized.pop(numero_telefono, None)
+        return False
+    
+    def clear_recently_finalized(self, numero_telefono: str):
+        self.recently_finalized.pop(numero_telefono, None)
     
     def get_message_history(self, numero_telefono: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
