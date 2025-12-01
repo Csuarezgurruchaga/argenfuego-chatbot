@@ -209,13 +209,11 @@ Responde con el número de la opción que necesitas 📱"""
         import logging
         logger = logging.getLogger(__name__)
         
-        mensaje = f"""Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼
-Un asesor continuará la conversación en este mismo chat.
+        mensaje = f"""Ya contacté al staff de Argenfuego; en breve uno de nuestros asesores se une a la charla. 🙌
 
-┌─────────────────────────────┐
-│  ⬅️ 1. Volver al menú        │
-│  ✋ 2. Finalizar chat        │
-└─────────────────────────────┘
+Si preferís no esperar, podés usar estas opciones:
+1️⃣ Volver al menú
+✋ Finalizar chat
 
 💡 *Responde con el número de la opción que necesitas*"""
         
@@ -992,7 +990,12 @@ Responde con el número del campo que deseas modificar."""
                     # Fallback a mensaje de texto normal
                     profile = get_active_company_profile()
                     fuera_horario = ChatbotRules._esta_fuera_de_horario(profile.get('hours', ''))
-                    base = "Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼\nUn asesor continuará la conversación en este mismo chat."
+                    base = (
+                        "Ya contacté al staff de Argenfuego; en breve uno de nuestros asesores se une a la charla. 🙌\n"
+                        "Si preferís no esperar, podés usar estas opciones:\n"
+                        "1️⃣ Volver al menú\n"
+                        "✋ Finalizar chat"
+                    )
                     if fuera_horario:
                         base += "\n\n🕒 En este momento estamos fuera de horario. Tomaremos tu caso y te responderemos a la brevedad."
                     return base
@@ -1003,7 +1006,12 @@ Responde con el número del campo que deseas modificar."""
                 # Fallback a mensaje de texto normal
                 profile = get_active_company_profile()
                 fuera_horario = ChatbotRules._esta_fuera_de_horario(profile.get('hours', ''))
-                base = "Te conecto con un agente humano ahora mismo. 👩🏻‍💼👨🏻‍💼\nUn asesor continuará la conversación en este mismo chat."
+                base = (
+                    "Ya contacté al staff de Argenfuego; en breve uno de nuestros asesores se une a la charla. 🙌\n"
+                    "Si preferís no esperar, podés usar estas opciones:\n"
+                    "1️⃣ Volver al menú\n"
+                    "✋ Finalizar chat"
+                )
                 if fuera_horario:
                     base += "\n\n🕒 En este momento estamos fuera de horario. Tomaremos tu caso y te responderemos a la brevedad."
                 return base
