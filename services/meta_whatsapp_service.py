@@ -6,6 +6,8 @@ import logging
 from typing import Optional, Dict, Any, Tuple
 import requests
 
+from services.otel_metrics_service import otel_metrics
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,14 +90,17 @@ class MetaWhatsAppService:
                 response_data = response.json()
                 message_id = response_data.get('messages', [{}])[0].get('id', 'N/A')
                 logger.info(f"✅ Mensaje enviado exitosamente a {normalized_number}. Message ID: {message_id}")
+                otel_metrics.record_whatsapp_sent()
                 return True
             else:
                 logger.error(f"❌ Error enviando mensaje a {normalized_number}: {response.status_code} - {response.text}")
+                otel_metrics.record_whatsapp_error(error_type="api_error")
                 return False
                 
         except Exception as e:
             logger.error(f"❌ Excepción enviando mensaje a {to_number}: {str(e)}")
             logger.error(f"Tipo de error: {type(e).__name__}")
+            otel_metrics.record_whatsapp_error(error_type="exception")
             return False
     
     def send_media_message(self, to_number: str, media_url: str, caption: str = "") -> bool:
@@ -131,13 +136,16 @@ class MetaWhatsAppService:
                 response_data = response.json()
                 message_id = response_data.get('messages', [{}])[0].get('id', 'N/A')
                 logger.info(f"✅ Media enviado exitosamente a {normalized_number}. Message ID: {message_id}")
+                otel_metrics.record_whatsapp_sent()
                 return True
             else:
                 logger.error(f"❌ Error enviando media a {normalized_number}: {response.status_code} - {response.text}")
+                otel_metrics.record_whatsapp_error(error_type="api_error")
                 return False
                 
         except Exception as e:
             logger.error(f"❌ Error enviando media a {to_number}: {str(e)}")
+            otel_metrics.record_whatsapp_error(error_type="exception")
             return False
     
     def send_sticker(self, to_number: str, sticker_url: str) -> bool:
@@ -171,13 +179,16 @@ class MetaWhatsAppService:
                 response_data = response.json()
                 message_id = response_data.get('messages', [{}])[0].get('id', 'N/A')
                 logger.info(f"✅ Sticker enviado exitosamente a {normalized_number}. Message ID: {message_id}")
+                otel_metrics.record_whatsapp_sent()
                 return True
             else:
                 logger.error(f"❌ Error enviando sticker a {normalized_number}: {response.status_code} - {response.text}")
+                otel_metrics.record_whatsapp_error(error_type="api_error")
                 return False
                 
         except Exception as e:
             logger.error(f"❌ Error enviando sticker a {to_number}: {str(e)}")
+            otel_metrics.record_whatsapp_error(error_type="exception")
             return False
     
     def send_template_message(self, to_number: str, template_name: str, language_code: str, 
@@ -223,13 +234,16 @@ class MetaWhatsAppService:
                 response_data = response.json()
                 message_id = response_data.get('messages', [{}])[0].get('id', 'N/A')
                 logger.info(f"✅ Template enviado exitosamente a {normalized_number}. Message ID: {message_id}")
+                otel_metrics.record_whatsapp_sent()
                 return True
             else:
                 logger.error(f"❌ Error enviando template a {normalized_number}: {response.status_code} - {response.text}")
+                otel_metrics.record_whatsapp_error(error_type="api_error")
                 return False
                 
         except Exception as e:
             logger.error(f"❌ Error enviando template a {to_number}: {str(e)}")
+            otel_metrics.record_whatsapp_error(error_type="exception")
             return False
     
     def send_interactive_buttons(self, to_number: str, body_text: str, 
@@ -295,13 +309,16 @@ class MetaWhatsAppService:
             
             if response.status_code in [200, 201]:
                 logger.info(f"✅ Botones interactivos enviados a {normalized_number}")
+                otel_metrics.record_whatsapp_sent()
                 return True
             else:
                 logger.error(f"❌ Error enviando botones a {normalized_number}: {response.status_code} - {response.text}")
+                otel_metrics.record_whatsapp_error(error_type="api_error")
                 return False
                 
         except Exception as e:
             logger.error(f"❌ Error enviando botones a {to_number}: {str(e)}")
+            otel_metrics.record_whatsapp_error(error_type="exception")
             return False
     
     def send_interactive_list(self, to_number: str, body_text: str, button_text: str,
@@ -356,13 +373,16 @@ class MetaWhatsAppService:
             
             if response.status_code in [200, 201]:
                 logger.info(f"✅ Lista interactiva enviada a {normalized_number}")
+                otel_metrics.record_whatsapp_sent()
                 return True
             else:
                 logger.error(f"❌ Error enviando lista a {normalized_number}: {response.status_code} - {response.text}")
+                otel_metrics.record_whatsapp_error(error_type="api_error")
                 return False
                 
         except Exception as e:
             logger.error(f"❌ Error enviando lista a {to_number}: {str(e)}")
+            otel_metrics.record_whatsapp_error(error_type="exception")
             return False
     
     def validate_webhook_signature(self, payload: bytes, signature: str) -> bool:
