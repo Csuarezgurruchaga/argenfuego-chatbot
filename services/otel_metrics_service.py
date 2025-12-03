@@ -2,7 +2,7 @@
 OpenTelemetry Metrics Service for Datadog integration.
 
 This service configures OpenTelemetry to send metrics directly to Datadog
-via OTLP/gRPC without requiring an Agent or Collector.
+via OTLP/HTTP without requiring an Agent or Collector.
 """
 
 import os
@@ -12,7 +12,7 @@ from typing import Optional
 from opentelemetry import metrics
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class OTelMetricsService:
     """
     Service to manage OpenTelemetry metrics export to Datadog.
     
-    Metrics are sent directly to Datadog via OTLP/gRPC.
+    Metrics are sent directly to Datadog via OTLP/HTTP.
     """
     
     def __init__(self):
@@ -66,9 +66,9 @@ class OTelMetricsService:
                 logger.error("DD_API_KEY not set, OpenTelemetry metrics will not be sent")
                 return
             
-            # Build the OTLP endpoint for Datadog
-            # For US1: otlp.datadoghq.com:4317
-            otlp_endpoint = f"https://otlp.{dd_site}:4317"
+            # Build the OTLP HTTP endpoint for Datadog
+            # HTTP endpoint is more reliable from Cloud Run than gRPC
+            otlp_endpoint = f"https://http-intake.logs.{dd_site}/api/v2/otlp/v1/metrics"
             
             logger.info(f"Configuring OpenTelemetry metrics for service '{dd_service}' -> {otlp_endpoint}")
             
@@ -79,11 +79,10 @@ class OTelMetricsService:
                 "service.version": dd_version,
             })
             
-            # Configure the OTLP exporter with Datadog API key
+            # Configure the OTLP HTTP exporter with Datadog API key
             exporter = OTLPMetricExporter(
                 endpoint=otlp_endpoint,
-                headers=(("dd-api-key", dd_api_key),),
-                insecure=False,  # Use TLS
+                headers={"dd-api-key": dd_api_key},
             )
             
             # Create a periodic reader that exports every 60 seconds
