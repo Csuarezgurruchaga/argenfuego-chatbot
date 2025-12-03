@@ -67,8 +67,8 @@ class OTelMetricsService:
                 return
             
             # Build the OTLP HTTP endpoint for Datadog
-            # HTTP endpoint is more reliable from Cloud Run than gRPC
-            otlp_endpoint = f"https://http-intake.logs.{dd_site}/api/v2/otlp/v1/metrics"
+            # Port 4318 is the standard OTLP HTTP port (4317 is gRPC)
+            otlp_endpoint = f"https://otlp.{dd_site}:4318/v1/metrics"
             
             logger.info(f"Configuring OpenTelemetry metrics for service '{dd_service}' -> {otlp_endpoint}")
             
