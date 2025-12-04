@@ -67,9 +67,9 @@ class OTelMetricsService:
                 return
             
             # Build the OTLP HTTP endpoint for Datadog
-            # Use the public API endpoint for OTLP metrics
-            # Note: The exporter automatically appends /v1/metrics to the endpoint
-            otlp_endpoint = f"https://api.{dd_site}/api/v2/otlp"
+            # Use the official OTLP intake endpoint with the correct path
+            # Path must end with /v1/metrics to prevent exporter from appending it again
+            otlp_endpoint = f"https://otlp-intake.{dd_site}/api/v1/metrics"
             
             logger.info(f"Configuring OpenTelemetry metrics for service '{dd_service}' -> {otlp_endpoint}")
             
