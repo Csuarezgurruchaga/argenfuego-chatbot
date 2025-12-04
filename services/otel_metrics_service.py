@@ -82,7 +82,7 @@ class OTelMetricsService:
             # Configure the OTLP HTTP exporter with Datadog API key
             exporter = OTLPMetricExporter(
                 endpoint=otlp_endpoint,
-                headers={"dd-api-key": dd_api_key},
+                headers={"DD-API-KEY": dd_api_key},
             )
             
             # Create a periodic reader that exports every 60 seconds
