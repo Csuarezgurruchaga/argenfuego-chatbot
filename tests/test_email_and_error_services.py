@@ -18,6 +18,8 @@ def _build_conversacion(tipo: TipoConsulta = TipoConsulta.PRESUPUESTO) -> Conver
         direccion="Calle Falsa 123",
         horario_visita="Lunes 9-12",
         descripcion="Necesito un presupuesto completo para planta industrial.",
+        razon_social="Empresa de Prueba SA",
+        cuit="30-12345678-9",
     )
     return ConversacionData(
         numero_telefono="+5491112345678",

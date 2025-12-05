@@ -32,6 +32,19 @@ class DatosContacto(BaseModel):
     direccion: str = Field(..., min_length=5, max_length=200, strip_whitespace=True)
     horario_visita: str = Field(..., min_length=3, max_length=100, strip_whitespace=True)
     descripcion: str = Field(..., min_length=10, max_length=500, strip_whitespace=True)
+    # Nuevos campos opcionales para datos fiscales / de facturación
+    razon_social: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        strip_whitespace=True,
+        description="Razón social de la empresa o nombre y apellido si es particular",
+    )
+    cuit: Optional[str] = Field(
+        default=None,
+        max_length=20,  # admite formatos con guiones
+        strip_whitespace=True,
+        description="CUIT para facturación (empresa o personal)",
+    )
 
 class DatosConsultaGeneral(BaseModel):
     """Modelo simplificado para consultas generales (TipoConsulta.OTRAS)"""

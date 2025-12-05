@@ -147,9 +147,27 @@ class EmailService:
                                 </a>
                             </td>
                         </tr>"""
-        
+
         # Campos adicionales solo para presupuestos y visitas técnicas
         if conversacion.tipo_consulta != TipoConsulta.OTRAS:
+            # Razón social (si existe)
+            razon_social = getattr(conversacion.datos_contacto, "razon_social", None)
+            if razon_social:
+                html_template += f"""
+                        <tr style="background-color: #ffffff;">
+                            <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 Razón social:</td>
+                            <td style="padding: 8px 0; color: #1f2937;">{razon_social}</td>
+                        </tr>"""
+
+            # CUIT (si existe)
+            cuit = getattr(conversacion.datos_contacto, "cuit", None)
+            if cuit:
+                html_template += f"""
+                        <tr style="background-color: #f9fafb;">
+                            <td style="padding: 8px 0; font-weight: bold; color: #374151;">🧾 CUIT:</td>
+                            <td style="padding: 8px 0; color: #1f2937;">{cuit}</td>
+                        </tr>"""
+
             html_template += f"""
                         <tr style="background-color: #f9fafb;">
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">📍 Dirección:</td>
@@ -159,7 +177,7 @@ class EmailService:
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">🕒 Horario de visita:</td>
                             <td style="padding: 8px 0; color: #1f2937;">{conversacion.datos_contacto.horario_visita}</td>
                         </tr>"""
-        
+
         html_template += f"""
                         <tr style="background-color: #f9fafb;">
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">📱 WhatsApp:</td>

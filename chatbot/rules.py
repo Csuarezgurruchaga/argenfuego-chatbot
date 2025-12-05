@@ -509,7 +509,9 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
 • Tipo de equipo (ej. polvo químico, CO2)
 • Capacidad (ej. 5 kg, 10 kg)
 • Cantidad (ej. 2 equipos)
-"""
+""",
+            'razon_social': "🏢 ¿Cuál es la razón social de la empresa? (si sos particular, escribí tu nombre y apellido)",
+            'cuit': "🧾 ¿Cuál es el CUIT para la factura? (empresa o personal, según corresponda)",
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     
@@ -530,7 +532,9 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
         preguntas = {
             'email': "📧 ¿Cuál es tu email de contacto? (opcional, para poder ayudarte de manera más efectiva)\n\n💡 Puedes escribir 'saltar' si prefieres no proporcionarlo.",
             'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio? (opcional)",
-            'horario_visita': "🕒 ¿En qué horario se puede visitar el lugar? (opcional)"
+            'horario_visita': "🕒 ¿En qué horario se puede visitar el lugar? (opcional)",
+            'razon_social': "🏢 ¿Cuál es la razón social de la empresa? (si sos particular, escribí tu nombre y apellido) (opcional)",
+            'cuit': "🧾 ¿Cuál es el CUIT para la factura? (empresa o personal, según corresponda) (opcional)",
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     
@@ -541,7 +545,9 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             'email': f"¡Gracias! 🙌🏻 Anoté tu email: {valor}",
             'direccion': f"Perfecto 👌🏻 Dirección guardada: {valor}.",
             'horario_visita': f"Genial 🙌🏻. Entonces el horario es: {valor}.",
-            'descripcion': f"✅ Perfecto! Descripción guardada: {valor}"
+            'descripcion': f"✅ Perfecto! Descripción guardada: {valor}",
+            'razon_social': f"¡Gracias! 🙌🏻 Razón social: {valor}",
+            'cuit': f"Perfecto 👌🏻 CUIT guardado: {valor}.",
         }
         return confirmaciones.get(campo, f"✅ {valor} guardado correctamente.")
     
@@ -1303,12 +1309,18 @@ Responde con el número del campo que deseas modificar."""
         email_match = re.search(email_pattern, mensaje)
         email = email_match.group() if email_match else ""
         
+        # Buscar CUIT (11 dígitos con o sin guiones)
+        cuit_pattern = r"\b\d{2}-?\d{8}-?\d\b"
+        cuit_match = re.search(cuit_pattern, mensaje)
+        cuit = cuit_match.group() if cuit_match else ""
+        
         # Dividir el mensaje en líneas para buscar patrones
         lineas = [linea.strip() for linea in mensaje.split('\n') if linea.strip()]
         
         direccion = ""
         horario = ""
         descripcion = ""
+        razon_social = ""
         
         # Keywords mejoradas con scoring
         keywords_direccion = [
@@ -1382,10 +1394,14 @@ Responde con el número del campo que deseas modificar."""
             horario = ""
         if len(descripcion) < 10:
             descripcion = ""
+        if len(razon_social) < 2:
+            razon_social = ""
         
         return {
             'email': email,
             'direccion': direccion,
             'horario_visita': horario,
-            'descripcion': descripcion
+            'descripcion': descripcion,
+            'razon_social': razon_social,
+            'cuit': cuit,
         }

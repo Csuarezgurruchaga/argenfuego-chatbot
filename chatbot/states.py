@@ -71,6 +71,15 @@ class ConversationManager:
             horario = datos_temp.get('horario_visita', '')
             if horario and horario.strip() and len(horario.strip()) < 3:
                 error_msgs.append("🕒 Horario debe tener al menos 3 caracteres")
+
+            # Validar CUIT si se proporcionó
+            cuit = datos_temp.get('cuit', '')
+            if cuit and cuit.strip():
+                import re
+                # Acepta formatos con o sin guiones, pero debe tener 11 dígitos en total
+                cuit_clean = re.sub(r'[^0-9]', '', cuit)
+                if len(cuit_clean) != 11 or not cuit_clean.isdigit():
+                    error_msgs.append("🧾 CUIT inválido. Debe tener 11 dígitos (con o sin guiones).")
         
         if error_msgs:
             return False, "\n".join(error_msgs)
@@ -83,11 +92,15 @@ class ConversationManager:
                     descripcion=descripcion
                 )
             else:
+                razon_social = datos_temp.get('razon_social') or None
+                cuit = datos_temp.get('cuit') or None
                 datos_contacto = DatosContacto(
                     email=email or "no_proporcionado@ejemplo.com",  # Valor por defecto
                     direccion=direccion or "No proporcionada",
                     horario_visita=horario or "No especificado",
-                    descripcion=descripcion
+                    descripcion=descripcion,
+                    razon_social=razon_social,
+                    cuit=cuit,
                 )
             
             conversacion.datos_contacto = datos_contacto
