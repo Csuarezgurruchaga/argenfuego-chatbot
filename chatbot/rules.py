@@ -519,7 +519,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
 • Cantidad (ej. 2 equipos)
 """,
             'razon_social': "🏢 ¿Cuál es la razón social de la empresa? (si sos particular, escribí tu nombre y apellido)",
-            'cuit': "🧾 ¿Cuál es el CUIT para la factura? (empresa o personal, según corresponda)",
+            'cuit': "🧾 ¿Podrías brindarme un CUIT? (empresa o personal, según corresponda)",
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     
@@ -542,7 +542,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             'direccion': "📍 ¿Cuál es la dirección donde necesitas el servicio? (opcional)",
             'horario_visita': "🕒 ¿En qué horario se puede visitar el lugar? (opcional)",
             'razon_social': "🏢 ¿Cuál es la razón social de la empresa? (si sos particular, escribí tu nombre y apellido) (opcional)",
-            'cuit': "🧾 ¿Cuál es el CUIT para la factura? (empresa o personal, según corresponda) (opcional)",
+            'cuit': "🧾 ¿Podrías brindarme un CUIT? (empresa o personal, según corresponda) (opcional)",
         }
         return preguntas.get(campo, "Por favor proporciona más información.")
     
