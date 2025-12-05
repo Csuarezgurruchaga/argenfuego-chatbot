@@ -458,6 +458,14 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             if datos.horario_visita and datos.horario_visita != "No especificado":
                 mensaje_confirmacion += f"""
 🕒 *Horario de visita:* {datos.horario_visita}"""
+            
+            if hasattr(datos, 'razon_social') and datos.razon_social:
+                mensaje_confirmacion += f"""
+🏢 *Razón social:* {datos.razon_social}"""
+            
+            if hasattr(datos, 'cuit') and datos.cuit:
+                mensaje_confirmacion += f"""
+🧾 *CUIT:* {datos.cuit}"""
 
         mensaje_confirmacion += f"""
 📝 *Descripción:* {datos.descripcion}
@@ -570,7 +578,7 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             return ChatbotRules.get_mensaje_confirmacion(conversacion)
         
         # Verificar si el usuario quiere saltar el campo (solo para campos opcionales)
-        if mensaje.strip().lower() in ['saltar', 'skip', 'no', 'n/a', 'na'] and campo_actual in ['email', 'direccion', 'horario_visita']:
+        if mensaje.strip().lower() in ['saltar', 'skip', 'no', 'n/a', 'na'] and campo_actual in ['email', 'direccion', 'horario_visita', 'razon_social', 'cuit']:
             # Marcar campo como saltado
             conversation_manager.marcar_campo_completado(numero_telefono, campo_actual, "")
             confirmacion = ""  # Sin mensaje de confirmación para campos saltados
@@ -682,6 +690,12 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             return len(valor) >= 3
         elif campo == 'descripcion':
             return len(valor) >= 10
+        elif campo == 'razon_social':
+            return len(valor) >= 2  # Minimo 2 caracteres (ej: "SA")
+        elif campo == 'cuit':
+            import re
+            cuit_clean = re.sub(r'[^0-9]', '', valor)
+            return len(cuit_clean) == 11  # 11 digitos
         return False
     
     @staticmethod
@@ -690,7 +704,9 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             'email': "El email no tiene un formato válido.",
             'direccion': "La dirección debe tener al menos 5 caracteres.",
             'horario_visita': "El horario debe tener al menos 3 caracteres.",
-            'descripcion': "La descripción debe tener al menos 10 caracteres."
+            'descripcion': "La descripción debe tener al menos 10 caracteres.",
+            'razon_social': "La razón social debe tener al menos 2 caracteres.",
+            'cuit': "El CUIT debe tener 11 dígitos (ej: 20-12345678-9)."
         }
         return errores.get(campo, "El formato no es válido.")
     

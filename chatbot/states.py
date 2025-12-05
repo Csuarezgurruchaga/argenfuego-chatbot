@@ -147,7 +147,7 @@ class ConversationManager:
             campos_orden = ['email']
         else:
             # Para presupuestos y urgencias pedimos todos los campos de contacto
-            campos_orden = ['email', 'direccion', 'horario_visita']
+            campos_orden = ['email', 'direccion', 'horario_visita', 'razon_social', 'cuit']
         
         for campo in campos_orden:
             valor_campo = datos_temp.get(campo)
@@ -170,8 +170,8 @@ class ConversationManager:
             # Para OTRAS: el email es el último campo (descripción -> email)
             return campo_actual == 'email'
         else:
-            # Para otros tipos: el horario_visita es el último campo (descripción -> email -> direccion -> horario_visita)
-            return campo_actual == 'horario_visita'
+            # Para otros tipos: el cuit es el último campo (descripción -> email -> direccion -> horario_visita -> razon_social -> cuit)
+            return campo_actual == 'cuit'
     
     def get_progreso_campos(self, numero_telefono: str) -> tuple[int, int]:
         """Retorna (campos_completados, total_campos) para mostrar progreso"""
@@ -183,7 +183,7 @@ class ConversationManager:
             campos_orden = ['descripcion', 'email']
         else:
             # Para presupuestos y urgencias pedimos todos los campos
-            campos_orden = ['descripcion', 'email', 'direccion', 'horario_visita']
+            campos_orden = ['descripcion', 'email', 'direccion', 'horario_visita', 'razon_social', 'cuit']
             
         completados = sum(1 for campo in campos_orden if datos_temp.get(campo) is not None)
         
