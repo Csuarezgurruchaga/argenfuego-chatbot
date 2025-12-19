@@ -463,8 +463,6 @@ Responde con el número de la opción que necesitas 📱"""
                 logger.info(f"✅ Saludo enviado en {tiempo_saludo:.0f}ms: {saludo_enviado}")
                 
                 # ===== MENSAJE 2: STICKER =====
-                # Delay de 0.3s para que el saludo llegue primero
-                time.sleep(0.3)
                 
                 logger.info(f"⚡ [Background] Enviando sticker a {numero_telefono}")
                 inicio = time.time()
@@ -487,8 +485,6 @@ Responde con el número de la opción que necesitas 📱"""
                 logger.info(f"✅ Sticker enviado en {tiempo_sticker:.0f}ms: {sticker_enviado}")
                 
                 # ===== MENSAJE 3: MENÚ =====
-                # Delay de 1.5s desde el sticker (total 1.8s desde inicio)
-                time.sleep(1.5)
                 
                 logger.info(f"⚡ [Background] Enviando menú a {numero_telefono}")
                 inicio = time.time()
