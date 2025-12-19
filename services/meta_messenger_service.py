@@ -5,6 +5,7 @@ import hashlib
 import logging
 from typing import Optional, Dict, Any, Tuple
 import requests
+from requests.adapters import HTTPAdapter
 
 from services.otel_metrics_service import otel_metrics
 
@@ -45,6 +46,12 @@ class MetaMessengerService:
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json"
         }
+
+        # Reutilizar conexiones HTTP para reducir latencia por handshake
+        self._session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
         
         logger.info(f"MetaMessengerService inicializado. Page ID: {self.page_id}, API: {self.api_version}")
     
@@ -81,7 +88,7 @@ class MetaMessengerService:
             }
             
             # Enviar petición
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = self._session.post(url, headers=self.headers, json=payload, timeout=10)
             
             logger.info(f"Status code: {response.status_code}")
             logger.debug(f"Response: {response.text}")
@@ -139,7 +146,7 @@ class MetaMessengerService:
                 "messaging_type": "RESPONSE"
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = self._session.post(url, headers=self.headers, json=payload, timeout=10)
             
             if response.status_code in [200, 201]:
                 logger.info(f"✅ Quick replies enviados a {recipient_id}")
@@ -185,7 +192,7 @@ class MetaMessengerService:
                 "messaging_type": "RESPONSE"
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = self._session.post(url, headers=self.headers, json=payload, timeout=10)
             
             if response.status_code in [200, 201]:
                 logger.info(f"✅ Imagen enviada a {recipient_id}")
@@ -374,4 +381,3 @@ try:
 except Exception as e:
     logger.warning(f"MetaMessengerService no inicializado: {e}")
     meta_messenger_service = None
-

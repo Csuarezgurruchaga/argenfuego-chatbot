@@ -5,6 +5,7 @@ import hashlib
 import logging
 from typing import Optional, Dict, Any, Tuple
 import requests
+from requests.adapters import HTTPAdapter
 
 from services.otel_metrics_service import otel_metrics
 
@@ -40,6 +41,12 @@ class MetaWhatsAppService:
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json"
         }
+
+        # Reutilizar conexiones HTTP para reducir latencia por handshake
+        self._session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
         
         logger.info(f"MetaWhatsAppService inicializado. Phone ID: {self.phone_number_id}, API: {self.api_version}")
     
@@ -80,7 +87,7 @@ class MetaWhatsAppService:
             logger.info(f"Payload: {json.dumps(payload, indent=2)}")
             
             # Enviar petición
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = self._session.post(url, headers=self.headers, json=payload, timeout=10)
             
             logger.info(f"Status code: {response.status_code}")
             logger.debug(f"Response: {response.text}")
@@ -130,7 +137,7 @@ class MetaWhatsAppService:
                 }
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = self._session.post(url, headers=self.headers, json=payload, timeout=10)
             
             if response.status_code in [200, 201]:
                 response_data = response.json()
@@ -180,7 +187,7 @@ class MetaWhatsAppService:
                 "sticker": sticker_payload
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = self._session.post(url, headers=self.headers, json=payload, timeout=10)
             
             if response.status_code in [200, 201]:
                 response_data = response.json()
@@ -235,7 +242,7 @@ class MetaWhatsAppService:
             
             logger.info(f"Enviando template '{template_name}' a {normalized_number}")
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = self._session.post(url, headers=self.headers, json=payload, timeout=10)
             
             if response.status_code in [200, 201]:
                 response_data = response.json()
@@ -312,7 +319,7 @@ class MetaWhatsAppService:
                 "interactive": interactive
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = self._session.post(url, headers=self.headers, json=payload, timeout=10)
             
             if response.status_code in [200, 201]:
                 logger.info(f"✅ Botones interactivos enviados a {normalized_number}")
@@ -376,7 +383,7 @@ class MetaWhatsAppService:
                 "interactive": interactive
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            response = self._session.post(url, headers=self.headers, json=payload, timeout=10)
             
             if response.status_code in [200, 201]:
                 logger.info(f"✅ Lista interactiva enviada a {normalized_number}")
