@@ -9,6 +9,18 @@ from chatbot.models import ConversacionData, EstadoConversacion
 
 logger = logging.getLogger(__name__)
 
+
+def _get_client_messaging_service(client_id: str):
+    """
+    Devuelve el servicio correcto para enviar mensajes al cliente.
+    """
+    if client_id.startswith("messenger:"):
+        from services.meta_messenger_service import meta_messenger_service
+        clean_id = client_id.replace("messenger:", "")
+        return meta_messenger_service, clean_id
+    else:
+        return meta_whatsapp_service, client_id
+
 class SurveyService:
     """
     Servicio para manejar encuestas de satisfacción post-handoff
@@ -96,8 +108,9 @@ class SurveyService:
             question_data = self.questions[1]
             message = self._build_question_message(question_data, first_question=True)
 
-            # Enviar mensaje
-            success = meta_whatsapp_service.send_text_message(client_phone, message)
+            # Enviar mensaje usando el servicio correcto
+            service, clean_id = _get_client_messaging_service(client_phone)
+            success = service.send_text_message(clean_id, message)
             
             if success:
                 logger.info(f"✅ Encuesta enviada al cliente {client_phone}")

@@ -1,4 +1,5 @@
 import os
+import re
 import unicodedata
 from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
@@ -48,6 +49,36 @@ SINONIMOS_CABA_NORM = {normalizar_texto(s) for s in SINONIMOS_CABA}
 SINONIMOS_PROVINCIA_NORM = {normalizar_texto(s) for s in SINONIMOS_PROVINCIA}
 
 class ChatbotRules:
+    MENU_OPTIONS = (
+        {
+            "id": "presupuesto",
+            "title": "📋 Presupuesto",
+            "text": "Solicitar un presupuesto",
+            "tipo": TipoConsulta.PRESUPUESTO,
+        },
+        {
+            "id": "urgencia",
+            "title": "🚨 Urgencia",
+            "text": "Reportar una urgencia",
+            "tipo": TipoConsulta.URGENCIA,
+        },
+        {
+            "id": "otras",
+            "title": "❓ Otras consultas",
+            "text": "Otras consultas",
+            "tipo": TipoConsulta.OTRAS,
+        },
+    )
+    MENU_NUMBER_EMOJI = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣"}
+    MENU_MATCH_PRIORITY = ("urgencia", "presupuesto", "otras")
+    MENU_STOPWORDS = {"un", "una", "de", "del", "la", "el", "las", "los", "para", "por", "a", "y", "en"}
+    EXTRA_MENU_KEYWORDS = {
+        "presupuesto": ["cotizacion", "cotización", "cotizar", "presupuestar"],
+        "urgencia": ["urgente", "emergencia", "emergente"],
+        "otras": ["consulta", "consultas", "informacion", "información", "visita", "visitas"],
+    }
+    _MENU_KEYWORDS = None
+
     GRATITUDE_KEYWORDS = {
         "gracias",
         "muchas gracias",
@@ -67,6 +98,87 @@ class ChatbotRules:
         "thanks",
     }
     GRATITUDE_EMOJIS = {"🙏", "🤝", "👍", "🙌", "😊", "😁", "🤗", "👌"}
+
+    @classmethod
+    def _get_menu_options(cls):
+        return cls.MENU_OPTIONS
+
+    @classmethod
+    def _build_menu_lines(cls) -> str:
+        lines = []
+        for idx, option in enumerate(cls.MENU_OPTIONS, start=1):
+            emoji = cls.MENU_NUMBER_EMOJI.get(idx, f"{idx}️⃣")
+            lines.append(f"{emoji} {option['text']}")
+        return "\n".join(lines)
+
+    @classmethod
+    def _normalize_menu_text(cls, text: str) -> str:
+        text = text.lower().strip()
+        text = ''.join(
+            c for c in unicodedata.normalize('NFD', text)
+            if unicodedata.category(c) != 'Mn'
+        )
+        text = ''.join(c if c.isalnum() or c.isspace() else ' ' for c in text)
+        return " ".join(text.split())
+
+    @classmethod
+    def _get_menu_keywords(cls) -> dict:
+        if cls._MENU_KEYWORDS is not None:
+            return cls._MENU_KEYWORDS
+        keywords = {}
+        for option in cls.MENU_OPTIONS:
+            tokens = set()
+            for raw in (option["id"], option["text"], option["title"]):
+                normalized = cls._normalize_menu_text(raw)
+                if normalized:
+                    tokens.update(normalized.split())
+            for extra in cls.EXTRA_MENU_KEYWORDS.get(option["id"], []):
+                normalized = cls._normalize_menu_text(extra)
+                if normalized:
+                    tokens.update(normalized.split())
+            tokens = {t for t in tokens if t not in cls.MENU_STOPWORDS and len(t) > 2}
+            keywords[option["id"]] = tokens
+        cls._MENU_KEYWORDS = keywords
+        return keywords
+
+    @classmethod
+    def _get_menu_option_by_id(cls, option_id: str):
+        for option in cls.MENU_OPTIONS:
+            if option["id"] == option_id:
+                return option
+        return None
+
+    @classmethod
+    def _match_menu_option(cls, mensaje: str):
+        if not mensaje:
+            return None, ""
+        digits = re.findall(r"\d", mensaje)
+        if len(digits) == 1:
+            idx = int(digits[0])
+            if 1 <= idx <= len(cls.MENU_OPTIONS):
+                return cls.MENU_OPTIONS[idx - 1], "number"
+        normalized = cls._normalize_menu_text(mensaje)
+        if not normalized:
+            return None, ""
+        for option in cls.MENU_OPTIONS:
+            if normalized == option["id"]:
+                return option, "id"
+        message_tokens = set(normalized.split())
+        keywords = cls._get_menu_keywords()
+        for option_id in cls.MENU_MATCH_PRIORITY:
+            if keywords.get(option_id, set()) & message_tokens:
+                return cls._get_menu_option_by_id(option_id), "keyword"
+        return None, ""
+
+    @classmethod
+    def _build_menu_prompt(cls) -> str:
+        return f"""
+
+¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
+
+{cls._build_menu_lines()}
+
+Responde con el número de la opción que necesitas 📱"""
     
     @staticmethod
     def _normalizar_agradecimiento(texto: str) -> str:
@@ -128,17 +240,61 @@ class ChatbotRules:
         ]
         
         return any(frase in mensaje_lower for frase in frases_menu)
+
+    @staticmethod
+    def _activar_handoff(numero_telefono: str, mensaje_contexto: str):
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        conversacion.atendido_por_humano = True
+        conversacion.handoff_started_at = datetime.utcnow()
+        conversacion.mensaje_handoff_contexto = mensaje_contexto
+        conversation_manager.add_to_handoff_queue(numero_telefono)
+
+    @staticmethod
+    def _aplicar_tipo_consulta(numero_telefono: str, tipo_consulta: TipoConsulta, mensaje: str, source: str, handoff_contexto: str = "") -> str:
+        conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta)
+        try:
+            metrics_service.on_intent(tipo_consulta.value)
+        except Exception:
+            pass
+
+        if tipo_consulta == TipoConsulta.URGENCIA:
+            contexto = handoff_contexto or mensaje.strip() or "Urgencia"
+            ChatbotRules._activar_handoff(numero_telefono, contexto)
+            return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
+
+        if source in {"keyword", "nlu"} and mensaje and len(mensaje.strip()) > 15:
+            conversation_manager.set_datos_temporales(numero_telefono, '_descripcion_inicial', mensaje.strip())
+
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+
+        if source == "nlu" and tipo_consulta != TipoConsulta.OTRAS:
+            return (
+                f"¡Listo! 📝 Entendí que necesitás {ChatbotRules._get_texto_tipo_consulta(tipo_consulta)}.\n\n"
+                f"{ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta)}"
+            )
+
+        return ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta)
+
+    @staticmethod
+    def _aplicar_opcion_menu(numero_telefono: str, opcion: dict, mensaje: str, source: str) -> str:
+        handoff_contexto = ""
+        if source == "button":
+            handoff_contexto = opcion.get("text", "") or opcion.get("id", "")
+        return ChatbotRules._aplicar_tipo_consulta(
+            numero_telefono,
+            opcion["tipo"],
+            mensaje,
+            source,
+            handoff_contexto=handoff_contexto,
+        )
     
     @staticmethod
     def get_mensaje_inicial() -> str:
-        return """¡Hola! 👋 Mi nombre es Eva, soy la asistente virtual de Argenfuego.
-
-¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
-
-1️⃣ Solicitar un presupuesto
-2️⃣ Otras consultas
-
-Responde con el número de la opción que necesitas 📱"""
+        return (
+            "¡Hola! 👋 Mi nombre es Eva, soy la asistente virtual de Argenfuego."
+            + ChatbotRules._build_menu_prompt()
+        )
     
     @staticmethod
     def get_mensaje_inicial_personalizado(nombre_usuario: str = "") -> str:
@@ -150,18 +306,8 @@ Responde con el número de la opción que necesitas 📱"""
             saludo = f"¡Hola {nombre_usuario}! 👋🏻 Mi nombre es Eva 👩🏻‍🦱, soy la asistente virtual de Argenfuego."
         else:
             saludo = "¡Hola! 👋🏻 Mi nombre es Eva 👩🏻‍🦱, soy la asistente virtual de Argenfuego."
-        
-        # Menú de opciones
-        menu = """
 
-¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
-
-1️⃣ Solicitar un presupuesto
-2️⃣ Otras consultas
-
-Responde con el número de la opción que necesitas 📱"""
-        
-        return saludo + menu
+        return saludo + ChatbotRules._build_menu_prompt()
     
     @staticmethod
     def send_menu_interactivo(numero_telefono: str, nombre_usuario: str = ""):
@@ -175,9 +321,8 @@ Responde con el número de la opción que necesitas 📱"""
 
         mensaje_menu = "¿En qué puedo ayudarte hoy?"
         buttons = [
-            {"id": "presupuesto", "title": "📋 Presupuesto"},
-            {"id": "urgencia", "title": "🚨 Urgencia"},
-            {"id": "otras", "title": "❓ Otras consultas"}
+            {"id": option["id"], "title": option["title"]}
+            for option in ChatbotRules.MENU_OPTIONS
         ]
 
         header_text = f"¡Hola {nombre_usuario}!" if nombre_usuario else None
@@ -271,16 +416,8 @@ Responde con el número de la opción que necesitas 📱"""
         from config.company_profiles import get_active_company_profile
         profile = get_active_company_profile()
         company_name = profile['name']
-        
-        return f"""Soy la asistente virtual de {company_name}.
 
-¿En qué puedo ayudarte hoy? Por favor selecciona una opción:
-
-1️⃣ Solicitar un presupuesto
-2️⃣ Reportar una urgencia
-3️⃣ Otras consultas
-
-Responde con el número de la opción que necesitas 📱"""
+        return f"Soy la asistente virtual de {company_name}." + ChatbotRules._build_menu_prompt()
     
     @staticmethod
     def _enviar_flujo_saludo_completo(numero_telefono: str, nombre_usuario: str = "") -> str:
@@ -334,8 +471,18 @@ Responde con el número de la opción que necesitas 📱"""
                 profile = get_active_company_profile()
                 company_name = profile['name'].lower()
                 sticker_url = f"https://raw.githubusercontent.com/Csuarezgurruchaga/argenfuego-chatbot/main/assets/{company_name}.webp"
-                
-                sticker_enviado = meta_whatsapp_service.send_sticker(numero_telefono, sticker_url)
+                sticker_media_id = os.getenv("WHATSAPP_STICKER_MEDIA_ID", "").strip()
+
+                if sticker_media_id:
+                    sticker_enviado = meta_whatsapp_service.send_sticker(
+                        numero_telefono,
+                        sticker_id=sticker_media_id,
+                    )
+                else:
+                    sticker_enviado = meta_whatsapp_service.send_sticker(
+                        numero_telefono,
+                        sticker_url=sticker_url,
+                    )
                 tiempo_sticker = (time.time() - inicio) * 1000
                 logger.info(f"✅ Sticker enviado en {tiempo_sticker:.0f}ms: {sticker_enviado}")
                 
@@ -877,12 +1024,14 @@ Nuestro staff la revisará y se pondrá en contacto con vos a la brevedad al e-m
     
     @staticmethod
     def get_mensaje_error_opcion() -> str:
-        return """❌ No entendí tu selección. 
+        opciones = []
+        for idx, option in enumerate(ChatbotRules.MENU_OPTIONS, start=1):
+            opciones.append(f"• *{idx}* para {option['text']}")
+        opciones_texto = "\n".join(opciones)
+        return f"""❌ No entendí tu selección.
 
 Por favor responde con:
-• *1* para Solicitar un presupuesto
-• *2* para Otras consultas
-• *3* para Otras consultas
+{opciones_texto}
 
 _💡 También puedes describir tu necesidad con tus propias palabras y yo intentaré entenderte._"""
     
@@ -978,6 +1127,28 @@ Responde con el número del campo que deseas modificar."""
         # Guardar nombre de usuario si es la primera vez que lo vemos
         if nombre_usuario and not conversacion.nombre_usuario:
             conversation_manager.set_nombre_usuario(numero_telefono, nombre_usuario)
+
+        mensaje_limpio = mensaje.strip().lower()
+
+        if mensaje_limpio in ['hola', 'hi', 'hello', 'inicio', 'empezar']:
+            conversation_manager.reset_conversacion(numero_telefono)
+            conversacion = conversation_manager.get_conversacion(numero_telefono)
+            
+            # Guardar nombre de usuario en la nueva conversación
+            if nombre_usuario:
+                conversation_manager.set_nombre_usuario(numero_telefono, nombre_usuario)
+            
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+            
+            # Ejecutar metrics en background para no bloquear
+            try:
+                import threading
+                threading.Thread(target=lambda: metrics_service.on_conversation_started(), daemon=True).start()
+            except Exception:
+                pass
+            
+            # Enviar flujo de 3 mensajes: saludo + imagen + presentación (todo en background)
+            return ChatbotRules._enviar_flujo_saludo_completo(numero_telefono, nombre_usuario)
         
         # INTERCEPTAR CONSULTAS DE CONTACTO EN CUALQUIER MOMENTO (Contextual Intent Interruption)
         from services.nlu_service import nlu_service
@@ -992,13 +1163,7 @@ Responde con el número del campo que deseas modificar."""
         
         # INTERCEPTAR SOLICITUD DE HABLAR CON HUMANO EN CUALQUIER MOMENTO -> activar handoff
         if nlu_service.detectar_solicitud_humano(mensaje):
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
-            conversacion.atendido_por_humano = True
-            conversacion.handoff_started_at = datetime.utcnow()
-            # Guardar el mensaje que disparó el handoff como contexto
-            conversacion.mensaje_handoff_contexto = mensaje
-            # Agregar a la cola de handoffs (la notificación se hace en main.py)
-            conversation_manager.add_to_handoff_queue(numero_telefono)
+            ChatbotRules._activar_handoff(numero_telefono, mensaje)
 
             # Enviar mensaje de handoff con botones interactivos
             try:
@@ -1038,34 +1203,12 @@ Responde con el número del campo que deseas modificar."""
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
             return "↩️ *Volviendo al menú principal...*\n\n" + ChatbotRules.get_mensaje_inicial_personalizado(conversacion.nombre_usuario)
         
-        mensaje_limpio = mensaje.strip().lower()
-        
-        if mensaje_limpio in ['hola', 'hi', 'hello', 'inicio', 'empezar']:
-            conversation_manager.reset_conversacion(numero_telefono)
-            conversacion = conversation_manager.get_conversacion(numero_telefono)
-            
-            # Guardar nombre de usuario en la nueva conversación
-            if nombre_usuario:
-                conversation_manager.set_nombre_usuario(numero_telefono, nombre_usuario)
-            
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
-            
-            # Ejecutar metrics en background para no bloquear
-            try:
-                import threading
-                threading.Thread(target=lambda: metrics_service.on_conversation_started(), daemon=True).start()
-            except Exception:
-                pass
-            
-            # Enviar flujo de 3 mensajes: saludo + imagen + presentación (todo en background)
-            return ChatbotRules._enviar_flujo_saludo_completo(numero_telefono, nombre_usuario)
-        
         if conversacion.estado == EstadoConversacion.INICIO:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
             return ChatbotRules._enviar_flujo_saludo_completo(numero_telefono, conversacion.nombre_usuario or nombre_usuario)
         
         elif conversacion.estado == EstadoConversacion.ESPERANDO_OPCION:
-            return ChatbotRules._procesar_seleccion_opcion(numero_telefono, mensaje_limpio)
+            return ChatbotRules._procesar_seleccion_opcion(numero_telefono, mensaje)
         
         elif conversacion.estado == EstadoConversacion.RECOLECTANDO_DATOS:
             return ChatbotRules._procesar_datos_contacto(numero_telefono, mensaje)
@@ -1110,95 +1253,38 @@ Responde con el número del campo que deseas modificar."""
     
     @staticmethod
     def _procesar_seleccion_opcion(numero_telefono: str, mensaje: str) -> str:
-        opciones = {
-            '1': TipoConsulta.PRESUPUESTO,
-            '2': TipoConsulta.OTRAS,
-            'presupuesto': TipoConsulta.PRESUPUESTO,
-            'urgencia': TipoConsulta.URGENCIA,
-            'otras': TipoConsulta.OTRAS,
-            'visita': TipoConsulta.OTRAS,  # Visitas técnicas ahora van a OTRAS
-            'consulta': TipoConsulta.OTRAS
-        }
-        
-        tipo_consulta = opciones.get(mensaje)
-        if tipo_consulta:
-            conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta)
-            try:
-                metrics_service.on_intent(tipo_consulta.value)
-            except Exception:
-                pass
-            
-            # Si NLU detecta urgencia, iniciar handoff a humano
-            if tipo_consulta == TipoConsulta.URGENCIA:
-                conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
-                conversacion = conversation_manager.get_conversacion(numero_telefono)
-                conversacion.atendido_por_humano = True
-                conversacion.handoff_started_at = __import__('datetime').datetime.utcnow()
-                # Guardar el mensaje que disparó el handoff como contexto
-                conversacion.mensaje_handoff_contexto = mensaje
-                # Agregar a la cola de handoffs
-                conversation_manager.add_to_handoff_queue(numero_telefono)
-                return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
-            
-            # Para otras consultas, usar flujo secuencial conversacional
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
-            return ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta)
-        else:
-            # Fallback: usar NLU para mapear mensaje a intención
-            from services.nlu_service import nlu_service
-            tipo_consulta_nlu = nlu_service.mapear_intencion(mensaje)
-            
-            if tipo_consulta_nlu:
-                conversation_manager.set_tipo_consulta(numero_telefono, tipo_consulta_nlu)
-                try:
-                    metrics_service.on_intent(tipo_consulta_nlu.value)
-                except Exception:
-                    pass
-                
-                # Si NLU detecta urgencia, iniciar handoff a humano
-                if tipo_consulta_nlu == TipoConsulta.URGENCIA:
-                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
-                    conversacion = conversation_manager.get_conversacion(numero_telefono)
-                    conversacion.atendido_por_humano = True
-                    conversacion.handoff_started_at = __import__('datetime').datetime.utcnow()
-                    # Guardar el mensaje que disparó el handoff como contexto
-                    conversacion.mensaje_handoff_contexto = mensaje
-                    # Agregar a la cola de handoffs
-                    conversation_manager.add_to_handoff_queue(numero_telefono)
-                    return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
-                
-                # Para otras consultas, usar flujo secuencial conversacional
-                # PRE-GUARDAR MENSAJE INICIAL COMO DESCRIPCIÓN si es sustancial
-                if len(mensaje.strip()) > 15:
-                    conversation_manager.set_datos_temporales(numero_telefono, '_descripcion_inicial', mensaje.strip())
-                
-                conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
-                
-                if tipo_consulta_nlu == TipoConsulta.OTRAS:
-                    return ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta_nlu)
-                else:
-                    return f"¡Listo! 📝 Entendí que necesitás {ChatbotRules._get_texto_tipo_consulta(tipo_consulta_nlu)}.\n\n{ChatbotRules.get_mensaje_inicio_secuencial(tipo_consulta_nlu)}"
-            else:
-                # Reportar intención no clara (fricción NLU)
-                try:
-                    error_reporter.capture_experience_issue(
-                        ErrorTrigger.NLU_UNCLEAR,
-                        {
-                            "conversation_id": numero_telefono,
-                            "numero_telefono": numero_telefono,
-                            "estado_actual": conversacion.estado,
-                            "estado_anterior": conversacion.estado_anterior,
-                            "nlu_snapshot": {"input": mensaje},
-                            "recommended_action": "Revisar patrones y prompt de clasificación",
-                        }
-                    )
-                except Exception:
-                    pass
-                try:
-                    metrics_service.on_nlu_unclear()
-                except Exception:
-                    pass
-                return ChatbotRules.get_mensaje_error_opcion()
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        opcion, source = ChatbotRules._match_menu_option(mensaje)
+        if opcion:
+            return ChatbotRules._aplicar_opcion_menu(numero_telefono, opcion, mensaje, source)
+
+        # Fallback: usar NLU para mapear mensaje a intención
+        from services.nlu_service import nlu_service
+        tipo_consulta_nlu = nlu_service.mapear_intencion(mensaje)
+
+        if tipo_consulta_nlu:
+            return ChatbotRules._aplicar_tipo_consulta(numero_telefono, tipo_consulta_nlu, mensaje, "nlu")
+
+        # Reportar intención no clara (fricción NLU)
+        try:
+            error_reporter.capture_experience_issue(
+                ErrorTrigger.NLU_UNCLEAR,
+                {
+                    "conversation_id": numero_telefono,
+                    "numero_telefono": numero_telefono,
+                    "estado_actual": conversacion.estado,
+                    "estado_anterior": conversacion.estado_anterior,
+                    "nlu_snapshot": {"input": mensaje},
+                    "recommended_action": "Revisar patrones y prompt de clasificación",
+                }
+            )
+        except Exception:
+            pass
+        try:
+            metrics_service.on_nlu_unclear()
+        except Exception:
+            pass
+        return ChatbotRules.get_mensaje_error_opcion()
     
     @staticmethod
     def _procesar_datos_contacto(numero_telefono: str, mensaje: str) -> str:

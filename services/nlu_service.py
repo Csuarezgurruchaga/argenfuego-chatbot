@@ -79,7 +79,15 @@ HUMAN_INTENT_PATTERNS = [
 class NLUService:
     
     def __init__(self):
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self._client = None
+
+    def _get_client(self) -> OpenAI:
+        if self._client is None:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY es requerido para usar NLU LLM")
+            self._client = OpenAI(api_key=api_key)
+        return self._client
     
     def mapear_intencion(self, mensaje_usuario: str) -> Optional[TipoConsulta]:
         """
@@ -88,7 +96,7 @@ class NLUService:
         try:
             prompt = NLU_INTENT_PROMPT.render(mensaje_usuario=mensaje_usuario)
 
-            response = self.client.chat.completions.create(
+            response = self._get_client().chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "Eres un clasificador de intenciones para un chatbot de equipos contra incendios. Responde solo con la categoría exacta solicitada."},
@@ -122,7 +130,7 @@ class NLUService:
         try:
             prompt = NLU_MESSAGE_PARSING_PROMPT.render(mensaje_usuario=mensaje_usuario)
 
-            response = self.client.chat.completions.create(
+            response = self._get_client().chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "Eres un extractor de datos de contacto. Responde solo con JSON válido."},
@@ -166,7 +174,7 @@ class NLUService:
             if contexto:
                 prompt += f"\nContexto: {contexto}"
             
-            response = self.client.chat.completions.create(
+            response = self._get_client().chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "Valida datos de contacto. Responde solo con JSON válido."},
@@ -315,7 +323,7 @@ class NLUService:
             
             prompt = CONTACT_INFO_RESPONSE_PROMPT.render(**template_params)
 
-            response = self.client.chat.completions.create(
+            response = self._get_client().chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": f"Eres {company_profile['bot_name']}, asistente virtual de {company_profile['name']}. Responde de manera amigable y profesional."},
@@ -349,7 +357,7 @@ class NLUService:
                 is_first_time=es_primera_vez
             )
 
-            response = self.client.chat.completions.create(
+            response = self._get_client().chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": f"Eres {company_profile['bot_name']}, asistente virtual amigable de {company_profile['name']}. Genera saludos naturales y profesionales."},

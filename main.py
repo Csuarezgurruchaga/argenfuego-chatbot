@@ -13,6 +13,7 @@ from chatbot.rules import ChatbotRules
 from chatbot.states import conversation_manager
 from chatbot.models import EstadoConversacion, ConversacionData
 from services.meta_whatsapp_service import meta_whatsapp_service
+from services.meta_messenger_service import meta_messenger_service
 from services.whatsapp_handoff_service import whatsapp_handoff_service
 from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
@@ -38,6 +39,43 @@ init_metrics()
 app.add_middleware(OTelMetricsMiddleware)
 
 TTL_MINUTES = int(os.getenv("HANDOFF_TTL_MINUTES", "120"))
+
+
+def get_messaging_service(user_id: str):
+    """
+    Devuelve el servicio de mensajería correcto basándose en el identificador del usuario.
+    
+    Args:
+        user_id: Identificador del usuario (puede ser número de teléfono o "messenger:PSID")
+        
+    Returns:
+        Tuple[service, clean_id]: El servicio apropiado y el ID limpio para enviar mensajes
+    """
+    if user_id.startswith("messenger:"):
+        # Es un usuario de Messenger
+        clean_id = user_id.replace("messenger:", "")
+        return meta_messenger_service, clean_id
+    else:
+        # Es un usuario de WhatsApp
+        return meta_whatsapp_service, user_id
+
+
+def send_message(user_id: str, message: str) -> bool:
+    """
+    Envía un mensaje al usuario usando el servicio correcto (WhatsApp o Messenger).
+    
+    Args:
+        user_id: Identificador del usuario
+        message: Mensaje a enviar
+        
+    Returns:
+        bool: True si se envió exitosamente
+    """
+    service, clean_id = get_messaging_service(user_id)
+    if service:
+        return service.send_text_message(clean_id, message)
+    return False
+
 
 @app.get("/")
 async def root():
@@ -97,17 +135,17 @@ async def handoff_ttl_sweep(token: str = Form(...)):
             
             if should_close:
                 try:
-                    # Enviar mensaje de cierre al cliente
+                    # Enviar mensaje de cierre al cliente (usa el servicio correcto según el canal)
                     if close_reason == "Oferta de encuesta sin respuesta":
                         # Cierre silencioso cuando no responde a oferta de encuesta (no enviar mensaje)
                         conv.survey_accepted = None  # Registrar como timeout
                         logger.info(f"⏱️ Timeout de oferta de encuesta para {conv.numero_telefono}")
                     elif close_reason == "Encuesta de satisfacción sin completar":
-                        meta_whatsapp_service.send_text_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
+                        send_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
                     elif close_reason == "Pregunta de resolución sin respuesta":
-                        meta_whatsapp_service.send_text_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
+                        send_message(conv.numero_telefono, "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅")
                     else:
-                        meta_whatsapp_service.send_text_message(conv.numero_telefono, "Esta conversación se finalizará por inactividad. ¡Muchas gracias por contactarnos! 🕒")
+                        send_message(conv.numero_telefono, "Esta conversación se finalizará por inactividad. ¡Muchas gracias por contactarnos! 🕒")
                 except Exception:
                     pass
 
@@ -176,7 +214,8 @@ async def webhook_whatsapp_verify(request: Request):
 @app.post("/webhook/whatsapp")
 async def webhook_whatsapp_receive(request: Request):
     """
-    Webhook POST para recibir mensajes y actualizaciones de WhatsApp Cloud API (Meta).
+    Webhook POST para recibir mensajes y actualizaciones de WhatsApp Cloud API y Messenger (Meta).
+    Detecta automáticamente el origen y usa el servicio apropiado.
     """
     try:
         # Leer el cuerpo del request como bytes (necesario para validar firma)
@@ -188,20 +227,37 @@ async def webhook_whatsapp_receive(request: Request):
         client_ip = request.client.host if request.client else "unknown"
         logger.info("Webhook recibido desde %s", client_ip)
         logger.debug("Headers: %s", dict(request.headers))
+        
+        # Parsear JSON para detectar origen
+        webhook_data = json.loads(body_bytes.decode('utf-8'))
+        
+        # Detectar si es Messenger o WhatsApp
+        is_messenger = webhook_data.get('object') == 'page'
+        is_whatsapp = webhook_data.get('object') == 'whatsapp_business_account'
+        
+        # Seleccionar servicio según origen
+        if is_messenger:
+            if not meta_messenger_service or not meta_messenger_service.enabled:
+                logger.warning("Webhook de Messenger recibido pero servicio no habilitado")
+                return PlainTextResponse("OK", status_code=200)
+            messaging_service = meta_messenger_service
+            logger.info("=== WEBHOOK MESSENGER RECIBIDO ===")
+        elif is_whatsapp:
+            messaging_service = meta_whatsapp_service
+            logger.info("=== WEBHOOK WHATSAPP RECIBIDO ===")
+        else:
+            logger.warning(f"Webhook de origen desconocido: {webhook_data.get('object')}")
+            return PlainTextResponse("OK", status_code=200)
 
-        # Validar firma HMAC
-        if not meta_whatsapp_service.validate_webhook_signature(body_bytes, signature):
+        # Validar firma HMAC (mismo app_secret para ambos)
+        if not messaging_service.validate_webhook_signature(body_bytes, signature):
             logger.error("❌ Firma de webhook inválida - request rechazado (client=%s)", client_ip)
             return PlainTextResponse("Forbidden", status_code=403)
         
-        # Parsear JSON
-        webhook_data = json.loads(body_bytes.decode('utf-8'))
-        
-        logger.info("=== WEBHOOK WHATSAPP RECIBIDO ===")
         logger.debug("Payload completo: %s", json.dumps(webhook_data))
         
-        # Extraer datos de mensaje
-        message_data = meta_whatsapp_service.extract_message_data(webhook_data)
+        # Extraer datos de mensaje usando el servicio apropiado
+        message_data = messaging_service.extract_message_data(webhook_data)
         
         if message_data:
             numero_telefono, mensaje_usuario, message_id, profile_name, message_type = message_data
@@ -230,7 +286,7 @@ async def webhook_whatsapp_receive(request: Request):
                 )
 
                 if respuesta_interactiva:
-                    meta_whatsapp_service.send_text_message(numero_telefono, respuesta_interactiva)
+                    send_message(numero_telefono, respuesta_interactiva)
 
                 return PlainTextResponse("", status_code=200)
 
@@ -239,7 +295,7 @@ async def webhook_whatsapp_receive(request: Request):
                 logger.info(
                     f"Mensaje de tipo {message_type or 'desconocido'} sin texto manejable de {numero_telefono}"
                 )
-                meta_whatsapp_service.send_text_message(
+                send_message(
                     numero_telefono,
                     "Recibi tu mensaje, pero actualmente este canal solo procesa texto. Por favor, escribi tu consulta."
                 )
@@ -250,7 +306,7 @@ async def webhook_whatsapp_receive(request: Request):
                 if ChatbotRules.es_mensaje_agradecimiento(mensaje_usuario):
                     mensaje_gracias = ChatbotRules.get_mensaje_post_finalizado_gracias()
                     if mensaje_gracias:
-                        meta_whatsapp_service.send_text_message(numero_telefono, mensaje_gracias)
+                        send_message(numero_telefono, mensaje_gracias)
                     logger.info(f"🙏 Mensaje de agradecimiento ignorado para {numero_telefono}")
                     return PlainTextResponse("", status_code=200)
                 else:
@@ -284,7 +340,7 @@ async def webhook_whatsapp_receive(request: Request):
                     else:
                         logger.error(f"❌ Error enviando primera pregunta de encuesta a {numero_telefono}")
                         # Fallback: cerrar conversación
-                        meta_whatsapp_service.send_text_message(
+                        send_message(
                             numero_telefono,
                             "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
                         )
@@ -304,7 +360,7 @@ async def webhook_whatsapp_receive(request: Request):
                     conversacion_actual.survey_accepted = False
                     
                     # Enviar mensaje de agradecimiento y cerrar
-                    meta_whatsapp_service.send_text_message(
+                    send_message(
                         numero_telefono,
                         "¡Gracias por tu tiempo! Que tengas un buen día. ✅"
                     )
@@ -337,7 +393,7 @@ async def webhook_whatsapp_receive(request: Request):
                     return PlainTextResponse("", status_code=200)
                 else:
                     # Respuesta no reconocida, pedir que responda con 1 o 2
-                    meta_whatsapp_service.send_text_message(
+                    send_message(
                         numero_telefono,
                         "Por favor responde con:\n1️⃣ para aceptar la encuesta\n2️⃣ para omitirla"
                     )
@@ -354,7 +410,7 @@ async def webhook_whatsapp_receive(request: Request):
                 
                 if next_message:
                     # Enviar siguiente pregunta o mensaje de finalización
-                    meta_whatsapp_service.send_text_message(numero_telefono, next_message)
+                    send_message(numero_telefono, next_message)
                 
                 if survey_complete:
                     # Encuesta completada, finalizar conversación
@@ -447,9 +503,9 @@ Cliente: {profile_name or 'Sin nombre'} ({numero_telefono})
             # Procesar el mensaje con el chatbot (incluyendo nombre del perfil)
             respuesta = ChatbotRules.procesar_mensaje(numero_telefono, mensaje_usuario, profile_name)
             
-            # Enviar respuesta via WhatsApp solo si no está vacía
+            # Enviar respuesta usando el servicio correcto (WhatsApp o Messenger)
             if respuesta and respuesta.strip():
-                mensaje_enviado = meta_whatsapp_service.send_text_message(numero_telefono, respuesta)
+                mensaje_enviado = send_message(numero_telefono, respuesta)
                 
                 if not mensaje_enviado:
                     logger.error(f"Error enviando mensaje a {numero_telefono}")
@@ -513,7 +569,7 @@ Cliente: {profile_name or 'Sin nombre'} ({numero_telefono})
                         pass
                     # Enviar mensaje de confirmación
                     mensaje_final = ChatbotRules.get_mensaje_final_exito()
-                    meta_whatsapp_service.send_text_message(numero_telefono, mensaje_final)
+                    send_message(numero_telefono, mensaje_final)
                     
                     # Finalizar la conversación
                     conversation_manager.finalizar_conversacion(numero_telefono)
@@ -522,7 +578,7 @@ Cliente: {profile_name or 'Sin nombre'} ({numero_telefono})
                 else:
                     # Error enviando email
                     error_msg = "❌ Hubo un error procesando tu solicitud. Por favor intenta nuevamente más tarde."
-                    meta_whatsapp_service.send_text_message(numero_telefono, error_msg)
+                    send_message(numero_telefono, error_msg)
                     logger.error(f"Error enviando email para {numero_telefono}")
         
         # Extraer datos de estado de mensaje (opcional, para métricas)
@@ -567,7 +623,7 @@ async def agent_reply(to: str = Form(...), body: str = Form(...), token: str = F
     if token != os.getenv("AGENT_API_TOKEN", ""):
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
-        sent = meta_whatsapp_service.send_text_message(to, body)
+        sent = send_message(to, body)  # Usa el servicio correcto según el tipo de usuario
         if not sent:
             raise HTTPException(status_code=500, detail="Failed to send message")
         return {"status": "ok"}
@@ -583,7 +639,7 @@ async def agent_close(to: str = Form(...), token: str = Form(...)):
     try:
         conversation_manager.finalizar_conversacion(to)
         cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
-        meta_whatsapp_service.send_text_message(to, cierre_msg)
+        send_message(to, cierre_msg)  # Usa el servicio correcto según el tipo de usuario
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"agent_close error: {e}")
@@ -719,7 +775,7 @@ async def handle_interactive_button(numero_telefono: str, button_id: str, profil
     try:
         from chatbot.rules import ChatbotRules
         from chatbot.states import conversation_manager
-        from chatbot.models import EstadoConversacion, TipoConsulta
+        from chatbot.models import EstadoConversacion
         
         logger.info(f"Procesando botón {button_id} de {numero_telefono}")
         
@@ -730,21 +786,12 @@ async def handle_interactive_button(numero_telefono: str, button_id: str, profil
         if profile_name and not conversacion.nombre_usuario:
             conversation_manager.set_nombre_usuario(numero_telefono, profile_name)
         
-        # Manejar diferentes tipos de botones
-        if button_id == "presupuesto":
-            conversation_manager.set_tipo_consulta(numero_telefono, TipoConsulta.PRESUPUESTO)
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
-            return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.PRESUPUESTO)
-            
-        elif button_id == "urgencia":
-            conversation_manager.set_tipo_consulta(numero_telefono, TipoConsulta.URGENCIA)
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
-            return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.URGENCIA)
-            
-        elif button_id == "otras":
-            conversation_manager.set_tipo_consulta(numero_telefono, TipoConsulta.OTRAS)
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
-            return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.OTRAS)
+        # Manejar opciones principales del menú
+        if button_id in {option["id"] for option in ChatbotRules.MENU_OPTIONS}:
+            opcion = ChatbotRules._get_menu_option_by_id(button_id)
+            if opcion:
+                return ChatbotRules._aplicar_opcion_menu(numero_telefono, opcion, "", "button")
+            return ChatbotRules.get_mensaje_error_opcion()
             
         elif button_id == "volver_menu":
             # Limpiar datos temporales y volver al menú

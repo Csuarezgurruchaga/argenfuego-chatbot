@@ -6,6 +6,18 @@ from services.meta_whatsapp_service import meta_whatsapp_service
 logger = logging.getLogger(__name__)
 
 
+def _get_client_messaging_service(client_id: str):
+    """
+    Devuelve el servicio correcto para enviar mensajes al cliente.
+    """
+    if client_id.startswith("messenger:"):
+        from services.meta_messenger_service import meta_messenger_service
+        clean_id = client_id.replace("messenger:", "")
+        return meta_messenger_service, clean_id
+    else:
+        return meta_whatsapp_service, client_id
+
+
 class AgentCommandService:
     """Servicio para gestionar comandos del agente en el sistema de cola de handoffs."""
 
@@ -92,9 +104,10 @@ class AgentCommandService:
 
             # Verificar si las encuestas están habilitadas
             if survey_service.is_enabled():
-                # Enviar mensaje opt-in/opt-out de encuesta
+                # Enviar mensaje opt-in/opt-out de encuesta usando el servicio correcto
                 survey_message = self._build_survey_offer_message(nombre_cliente)
-                success = meta_whatsapp_service.send_text_message(active_phone, survey_message)
+                service, clean_id = _get_client_messaging_service(active_phone)
+                success = service.send_text_message(clean_id, survey_message)
 
                 if success:
                     # Cambiar estado a esperar respuesta de encuesta
@@ -109,8 +122,9 @@ class AgentCommandService:
                     return f"❌ Error enviando mensaje al cliente. Intenta nuevamente."
             else:
                 # Encuestas deshabilitadas: comportamiento original (cerrar inmediatamente)
-                meta_whatsapp_service.send_text_message(
-                    active_phone,
+                service, clean_id = _get_client_messaging_service(active_phone)
+                service.send_text_message(
+                    clean_id,
                     "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
                 )
 

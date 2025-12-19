@@ -9,6 +9,26 @@ from .meta_whatsapp_service import meta_whatsapp_service
 logger = logging.getLogger(__name__)
 
 
+def _get_client_messaging_service(client_id: str):
+    """
+    Devuelve el servicio correcto para enviar mensajes al cliente.
+    
+    Args:
+        client_id: Identificador del cliente (puede ser número o "messenger:PSID")
+        
+    Returns:
+        Tuple[service, clean_id]: Servicio y ID limpio para enviar
+    """
+    if client_id.startswith("messenger:"):
+        # Es un usuario de Messenger
+        from .meta_messenger_service import meta_messenger_service
+        clean_id = client_id.replace("messenger:", "")
+        return meta_messenger_service, clean_id
+    else:
+        # Es un usuario de WhatsApp
+        return meta_whatsapp_service, client_id
+
+
 class WhatsAppHandoffService:
     """Servicio para manejar handoffs a agentes humanos vía WhatsApp usando Meta Cloud API."""
 
@@ -99,15 +119,18 @@ class WhatsAppHandoffService:
         Envía la respuesta del agente al cliente.
         
         Args:
-            client_phone: Número de teléfono del cliente
+            client_phone: Número de teléfono del cliente (o messenger:PSID para Messenger)
             agent_message: Mensaje del agente para el cliente
             
         Returns:
             bool: True si el mensaje se envió exitosamente
         """
         try:
+            # Obtener servicio correcto según el tipo de cliente
+            service, clean_id = _get_client_messaging_service(client_phone)
+            
             # Enviar el mensaje del agente tal cual, sin prefijo ni formato adicional
-            success = meta_whatsapp_service.send_text_message(client_phone, agent_message)
+            success = service.send_text_message(clean_id, agent_message)
             
             if success:
                 logger.info(f"✅ Respuesta del agente enviada al cliente {client_phone}")
@@ -274,7 +297,9 @@ class WhatsAppHandoffService:
                     f"Si no necesitas más ayuda, simplemente no respondas y la conversación se cerrará automáticamente en unos minutos."
                 )
                 
-                success = meta_whatsapp_service.send_text_message(client_phone, question_message)
+                # Obtener servicio correcto según el tipo de cliente
+                service, clean_id = _get_client_messaging_service(client_phone)
+                success = service.send_text_message(clean_id, question_message)
                 
                 if success:
                     logger.info(f"✅ Pregunta de resolución enviada al cliente {client_phone}")

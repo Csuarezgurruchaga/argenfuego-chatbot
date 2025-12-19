@@ -148,13 +148,14 @@ class MetaWhatsAppService:
             otel_metrics.record_whatsapp_error(error_type="exception")
             return False
     
-    def send_sticker(self, to_number: str, sticker_url: str) -> bool:
+    def send_sticker(self, to_number: str, sticker_url: Optional[str] = None, sticker_id: Optional[str] = None) -> bool:
         """
         Envía un sticker a través de WhatsApp Cloud API.
         
         Args:
             to_number: Número de destino en formato E.164
             sticker_url: URL pública del sticker (formato WebP recomendado)
+            sticker_id: Media ID del sticker subido previamente a Meta
             
         Returns:
             bool: True si se envió exitosamente
@@ -163,14 +164,20 @@ class MetaWhatsAppService:
             normalized_number = self._normalize_phone_number(to_number)
             
             url = f"{self.base_url}/{self.phone_number_id}/messages"
+            if sticker_id:
+                sticker_payload = {"id": sticker_id}
+            elif sticker_url:
+                sticker_payload = {"link": sticker_url}
+            else:
+                logger.error("❌ Sticker sin URL ni media_id")
+                return False
+
             payload = {
                 "messaging_product": "whatsapp",
                 "recipient_type": "individual",
                 "to": normalized_number,
                 "type": "sticker",
-                "sticker": {
-                    "link": sticker_url
-                }
+                "sticker": sticker_payload
             }
             
             response = requests.post(url, headers=self.headers, json=payload, timeout=10)
