@@ -8,6 +8,9 @@ from .meta_whatsapp_service import meta_whatsapp_service
 
 logger = logging.getLogger(__name__)
 
+HANDOFF_TEMPLATE_NAME = "handoff"
+HANDOFF_TEMPLATE_LANGUAGE = "en"
+
 
 def _get_client_messaging_service(client_id: str):
     """
@@ -58,22 +61,25 @@ class WhatsAppHandoffService:
             bool: True si la notificación se envió exitosamente
         """
         try:
-            # Formatear mensaje de notificación
+            template_sent = self._send_handoff_template(client_phone, client_name, handoff_message)
+            if template_sent:
+                logger.info(f"✅ Template de handoff enviado al agente para cliente {client_phone}")
+                return True
+
+            # Fallback a texto si falla el template
             notification = self._format_handoff_notification(
                 client_phone, client_name, handoff_message, current_message
             )
-            
-            # Enviar notificación al agente
             success = meta_whatsapp_service.send_text_message(
                 self.agent_whatsapp_number,
                 notification
             )
-            
+
             if success:
                 logger.info(f"✅ Notificación de handoff enviada al agente para cliente {client_phone}")
             else:
                 logger.error(f"❌ Error enviando notificación de handoff al agente para cliente {client_phone}")
-            
+
             return success
             
         except Exception as e:
@@ -189,6 +195,24 @@ class WhatsAppHandoffService:
         message += f"• Para cerrar la conversación, responde con: /resuelto o /r"
         
         return message
+
+    def _send_handoff_template(self, client_phone: str, client_name: str, handoff_message: str) -> bool:
+        components = [
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": client_name or "Sin nombre"},
+                    {"type": "text", "text": client_phone or "N/A"},
+                    {"type": "text", "text": handoff_message or "N/A"},
+                ],
+            }
+        ]
+        return meta_whatsapp_service.send_template_message(
+            self.agent_whatsapp_number,
+            HANDOFF_TEMPLATE_NAME,
+            HANDOFF_TEMPLATE_LANGUAGE,
+            components,
+        )
 
     def is_agent_message(self, from_number: str) -> bool:
         """
