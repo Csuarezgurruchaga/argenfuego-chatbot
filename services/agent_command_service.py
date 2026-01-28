@@ -8,14 +8,9 @@ logger = logging.getLogger(__name__)
 
 def _get_client_messaging_service(client_id: str):
     """
-    Devuelve el servicio correcto para enviar mensajes al cliente.
+    Devuelve el servicio para enviar mensajes al cliente (WhatsApp-only).
     """
-    if client_id.startswith("messenger:"):
-        from services.meta_messenger_service import meta_messenger_service
-        clean_id = client_id.replace("messenger:", "")
-        return meta_messenger_service, clean_id
-    else:
-        return meta_whatsapp_service, client_id
+    return meta_whatsapp_service, client_id
 
 
 class AgentCommandService:
@@ -107,6 +102,9 @@ class AgentCommandService:
                 # Enviar mensaje opt-in/opt-out de encuesta usando el servicio correcto
                 survey_message = self._build_survey_offer_message(nombre_cliente)
                 service, clean_id = _get_client_messaging_service(active_phone)
+                if not service:
+                    logger.error("Servicio de mensajería no disponible para %s", active_phone)
+                    return "❌ No puedo enviar el mensaje porque el canal de mensajería no está configurado (Messenger deshabilitado)."
                 success = service.send_text_message(clean_id, survey_message)
 
                 if success:
@@ -123,6 +121,9 @@ class AgentCommandService:
             else:
                 # Encuestas deshabilitadas: comportamiento original (cerrar inmediatamente)
                 service, clean_id = _get_client_messaging_service(active_phone)
+                if not service:
+                    logger.error("Servicio de mensajería no disponible para %s", active_phone)
+                    return "❌ No puedo cerrar la conversación porque el canal de mensajería no está configurado (Messenger deshabilitado)."
                 service.send_text_message(
                     clean_id,
                     "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"

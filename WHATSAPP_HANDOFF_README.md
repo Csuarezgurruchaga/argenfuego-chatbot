@@ -40,8 +40,8 @@ META_WA_VERIFY_TOKEN=<verify_token>
 
 ### 4. Resolution (Mejorado)
 - Para finalizar la conversación, el agente envía: `ok`, `listo`, `/r`, etc.
-- Si `SUMMARY=true` está habilitado, se envía encuesta de satisfacción
-- Si `SUMMARY=false` o no está configurado, se envía pregunta: "¿Hay algo más en lo que pueda ayudarte?"
+- Si `ENABLE_POST_HANDOFF_SURVEY=true` está habilitado, se envía encuesta de satisfacción
+- Si `ENABLE_POST_HANDOFF_SURVEY=false` o no está configurado, se envía pregunta: "¿Hay algo más en lo que pueda ayudarte?"
 - Si el cliente no responde en 10 minutos, se cierra automáticamente
 - Si el cliente responde, continúa la conversación o completa la encuesta
 
@@ -64,7 +64,7 @@ META_WA_VERIFY_TOKEN=<verify_token>
 ### Configuración
 Para habilitar la encuesta de satisfacción post-handoff, configurar:
 ```bash
-SUMMARY=true
+ENABLE_POST_HANDOFF_SURVEY=true
 SHEETS_SURVEY_SHEET_NAME=ENCUESTA_RESULTADOS
 ```
 
@@ -105,15 +105,15 @@ Bot → Client: "👨‍💼 Agente: Hola Juan, ¿en qué puedo ayudarte?"
 Bot → Agent: "✅ Mensaje enviado al cliente +5491123456789"
 
 Agent → Bot: "ok"
-# Si SUMMARY=true:
+# Si ENABLE_POST_HANDOFF_SURVEY=true:
 Bot → Client: "Con el fin de seguir mejorando la calidad de nuestra atención, le proponemos responder la siguiente encuesta:\n\n¿Pudiste resolver el motivo por el cuál te comunicaste?\n1️⃣ Sí\n2️⃣ Parcialmente\n3️⃣ No\n\nResponde con el número (1, 2 o 3)"
 Bot → Agent: "✅ Encuesta de satisfacción enviada al cliente +5491123456789"
 
-# Si SUMMARY=false:
+# Si ENABLE_POST_HANDOFF_SURVEY=false:
 Bot → Client: "¿Hay algo más en lo que pueda ayudarte?\n\nSi no necesitas más ayuda, simplemente no respondas y la conversación se cerrará automáticamente en unos minutos."
 Bot → Agent: "✅ Pregunta de resolución enviada al cliente +5491123456789. Se cerrará automáticamente si no responde en 10 minutos."
 
-# Flujo de encuesta (si SUMMARY=true):
+# Flujo de encuesta (si ENABLE_POST_HANDOFF_SURVEY=true):
 Client → Bot: "1"
 Bot → Client: "¿Cómo calificarías la amabilidad en la atención?\n1️⃣ Muy buena\n2️⃣ Regular\n3️⃣ Mala\n\nResponde con el número (1, 2 o 3)"
 

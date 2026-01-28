@@ -17,19 +17,12 @@ def _get_client_messaging_service(client_id: str):
     Devuelve el servicio correcto para enviar mensajes al cliente.
     
     Args:
-        client_id: Identificador del cliente (puede ser número o "messenger:PSID")
+        client_id: Identificador del cliente (número de WhatsApp)
         
     Returns:
         Tuple[service, clean_id]: Servicio y ID limpio para enviar
     """
-    if client_id.startswith("messenger:"):
-        # Es un usuario de Messenger
-        from .meta_messenger_service import meta_messenger_service
-        clean_id = client_id.replace("messenger:", "")
-        return meta_messenger_service, clean_id
-    else:
-        # Es un usuario de WhatsApp
-        return meta_whatsapp_service, client_id
+    return meta_whatsapp_service, client_id
 
 
 class WhatsAppHandoffService:
@@ -125,7 +118,7 @@ class WhatsAppHandoffService:
         Envía la respuesta del agente al cliente.
         
         Args:
-            client_phone: Número de teléfono del cliente (o messenger:PSID para Messenger)
+            client_phone: Número de teléfono del cliente
             agent_message: Mensaje del agente para el cliente
             
         Returns:
@@ -134,6 +127,9 @@ class WhatsAppHandoffService:
         try:
             # Obtener servicio correcto según el tipo de cliente
             service, clean_id = _get_client_messaging_service(client_phone)
+            if not service:
+                logger.error("Servicio de mensajería no disponible para %s", client_phone)
+                return False
             
             # Enviar el mensaje del agente tal cual, sin prefijo ni formato adicional
             success = service.send_text_message(clean_id, agent_message)
@@ -323,6 +319,9 @@ class WhatsAppHandoffService:
                 
                 # Obtener servicio correcto según el tipo de cliente
                 service, clean_id = _get_client_messaging_service(client_phone)
+                if not service:
+                    logger.error("Servicio de mensajería no disponible para %s", client_phone)
+                    return False
                 success = service.send_text_message(clean_id, question_message)
                 
                 if success:

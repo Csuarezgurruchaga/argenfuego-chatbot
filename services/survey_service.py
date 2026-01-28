@@ -12,14 +12,9 @@ logger = logging.getLogger(__name__)
 
 def _get_client_messaging_service(client_id: str):
     """
-    Devuelve el servicio correcto para enviar mensajes al cliente.
+    Devuelve el servicio correcto para enviar mensajes al cliente (WhatsApp-only).
     """
-    if client_id.startswith("messenger:"):
-        from services.meta_messenger_service import meta_messenger_service
-        clean_id = client_id.replace("messenger:", "")
-        return meta_messenger_service, clean_id
-    else:
-        return meta_whatsapp_service, client_id
+    return meta_whatsapp_service, client_id
 
 class SurveyService:
     """
@@ -27,7 +22,8 @@ class SurveyService:
     """
     
     def __init__(self):
-        self.enabled = os.getenv('SUMMARY', 'false').lower() == 'true'
+        # `ENABLE_POST_HANDOFF_SURVEY` is the preferred feature flag.
+        self.enabled = os.getenv('ENABLE_POST_HANDOFF_SURVEY', 'false').lower() == 'true'
         self.survey_sheet_name = os.getenv('SHEETS_SURVEY_SHEET_NAME', 'ENCUESTA_RESULTADOS')
         
         # Definir las preguntas de la encuesta
@@ -110,6 +106,9 @@ class SurveyService:
 
             # Enviar mensaje usando el servicio correcto
             service, clean_id = _get_client_messaging_service(client_phone)
+            if not service:
+                logger.error("Servicio de mensajería no disponible para %s", client_phone)
+                return False
             success = service.send_text_message(clean_id, message)
             
             if success:
@@ -208,6 +207,14 @@ class SurveyService:
             Optional[str]: Respuesta parseada o None si es inválida
         """
         message = message.strip().lower()
+
+        # Robust: accept "1", "1️⃣", "1.", "opción 1", etc.
+        digits = "".join(c for c in message if c.isdigit())
+        if digits:
+            key = digits[0]
+            option_text = question_data.get('options', {}).get(key)
+            if option_text:
+                return option_text
         
         # Buscar por número
         for key, option_text in question_data['options'].items():

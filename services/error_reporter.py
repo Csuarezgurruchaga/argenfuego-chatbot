@@ -49,11 +49,22 @@ def _mask_phone(phone: str) -> str:
         return "***"
 
 
-def _sanitize_text(text: str, limit: int = 200) -> str:
-    if not text:
+def _sanitize_text(text: Any, limit: int = 200) -> str:
+    """
+    Best-effort sanitizer for logging/alerts.
+
+    Accepts strings and structured objects (dict/list/etc). For non-strings we
+    serialize to JSON to avoid attribute errors (e.g. calling `.strip()` on dict).
+    """
+    if text is None:
         return ""
-    text = text.strip()
-    return text[:limit]
+    try:
+        if not isinstance(text, str):
+            text = json.dumps(text, ensure_ascii=False, default=str)
+        text = text.strip()
+        return text[:limit]
+    except Exception:
+        return ""
 
 
 def _hash_payload(payload: Dict[str, Any]) -> str:
@@ -256,5 +267,4 @@ class ErrorReporter:
 
 
 error_reporter = ErrorReporter()
-
 

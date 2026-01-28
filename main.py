@@ -13,7 +13,6 @@ from chatbot.rules import ChatbotRules
 from chatbot.states import conversation_manager
 from chatbot.models import EstadoConversacion, ConversacionData
 from services.meta_whatsapp_service import meta_whatsapp_service
-from services.meta_messenger_service import meta_messenger_service
 from services.whatsapp_handoff_service import whatsapp_handoff_service
 from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
@@ -43,21 +42,15 @@ TTL_MINUTES = int(os.getenv("HANDOFF_TTL_MINUTES", "120"))
 
 def get_messaging_service(user_id: str):
     """
-    Devuelve el servicio de mensajería correcto basándose en el identificador del usuario.
+    Devuelve el servicio de mensajería.
     
     Args:
-        user_id: Identificador del usuario (puede ser número de teléfono o "messenger:PSID")
+        user_id: Identificador del usuario (número de teléfono)
         
     Returns:
         Tuple[service, clean_id]: El servicio apropiado y el ID limpio para enviar mensajes
     """
-    if user_id.startswith("messenger:"):
-        # Es un usuario de Messenger
-        clean_id = user_id.replace("messenger:", "")
-        return meta_messenger_service, clean_id
-    else:
-        # Es un usuario de WhatsApp
-        return meta_whatsapp_service, user_id
+    return meta_whatsapp_service, user_id
 
 
 def send_message(user_id: str, message: str) -> bool:
@@ -216,8 +209,7 @@ async def webhook_whatsapp_verify(request: Request):
 @app.post("/webhook/whatsapp")
 async def webhook_whatsapp_receive(request: Request):
     """
-    Webhook POST para recibir mensajes y actualizaciones de WhatsApp Cloud API y Messenger (Meta).
-    Detecta automáticamente el origen y usa el servicio apropiado.
+    Webhook POST para recibir mensajes y actualizaciones de WhatsApp Cloud API (Meta).
     """
     try:
         # Leer el cuerpo del request como bytes (necesario para validar firma)
@@ -233,23 +225,13 @@ async def webhook_whatsapp_receive(request: Request):
         # Parsear JSON para detectar origen
         webhook_data = json.loads(body_bytes.decode('utf-8'))
         
-        # Detectar si es Messenger o WhatsApp
-        is_messenger = webhook_data.get('object') == 'page'
-        is_whatsapp = webhook_data.get('object') == 'whatsapp_business_account'
-        
-        # Seleccionar servicio según origen
-        if is_messenger:
-            if not meta_messenger_service or not meta_messenger_service.enabled:
-                logger.warning("Webhook de Messenger recibido pero servicio no habilitado")
-                return PlainTextResponse("OK", status_code=200)
-            messaging_service = meta_messenger_service
-            logger.info("=== WEBHOOK MESSENGER RECIBIDO ===")
-        elif is_whatsapp:
-            messaging_service = meta_whatsapp_service
-            logger.info("=== WEBHOOK WHATSAPP RECIBIDO ===")
-        else:
-            logger.warning(f"Webhook de origen desconocido: {webhook_data.get('object')}")
+        # Validar que el webhook sea de WhatsApp
+        if webhook_data.get('object') != 'whatsapp_business_account':
+            logger.warning("Webhook de origen desconocido: %s", webhook_data.get('object'))
             return PlainTextResponse("OK", status_code=200)
+
+        logger.info("=== WEBHOOK WHATSAPP RECIBIDO ===")
+        messaging_service = meta_whatsapp_service
 
         # Validar firma HMAC (mismo app_secret para ambos)
         if not messaging_service.validate_webhook_signature(body_bytes, signature):

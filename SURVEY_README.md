@@ -10,7 +10,7 @@ Sistema de encuesta de satisfacción con **opt-in explícito** que se activa cua
 
 ```bash
 # Habilitar/deshabilitar encuestas
-SUMMARY=true
+ENABLE_POST_HANDOFF_SURVEY=true
 
 # Nombres de las hojas en Google Sheets (opcionales)
 SHEETS_SURVEY_SHEET_NAME=ENCUESTA_RESULTADOS
@@ -60,7 +60,7 @@ Contiene métricas consolidadas calculadas automáticamente después de cada enc
 
 ### Activación
 - Se activa cuando el agente escribe `/done` (o aliases: `/d`, `/resuelto`, `/r`, `/finalizar`, `/cerrar`)
-- Solo funciona si `SUMMARY=true` está configurado
+- Solo funciona si `ENABLE_POST_HANDOFF_SURVEY=true` está configurado
 - Si está deshabilitado, cierra la conversación inmediatamente sin encuesta
 
 ### Flujo Completo con Opt-in
@@ -188,7 +188,7 @@ El sistema acepta múltiples formatos de respuesta:
 ### Flujo de Datos
 
 1. Agente escribe `/done` → `agent_command_service.execute_done_command()`
-2. Verifica `SUMMARY=true` → Envía mensaje opt-in/opt-out al cliente
+2. Verifica `ENABLE_POST_HANDOFF_SURVEY=true` → Envía mensaje opt-in/opt-out al cliente
 3. Cambia estado a `ESPERANDO_RESPUESTA_ENCUESTA` (timeout 2 min)
 4. Cliente responde:
    - **Acepta** → `survey_service.send_survey()` → Estado `ENCUESTA_SATISFACCION`
@@ -206,7 +206,7 @@ El sistema acepta múltiples formatos de respuesta:
 ### Problemas Comunes
 
 1. **Encuesta no se ofrece al cliente**
-   - Verificar `SUMMARY=true` en variables de entorno
+   - Verificar `ENABLE_POST_HANDOFF_SURVEY=true` en variables de entorno
    - Verificar que el agente use `/done` (o aliases válidos)
    - Revisar logs: debe aparecer "✅ Oferta de encuesta enviada"
 
@@ -274,7 +274,7 @@ El sistema acepta múltiples formatos de respuesta:
 
 ```bash
 # Encuesta de satisfacción
-SUMMARY=true
+ENABLE_POST_HANDOFF_SURVEY=true
 SHEETS_SURVEY_SHEET_NAME=ENCUESTA_RESULTADOS
 SHEETS_KPI_SHEET_NAME=KPIs
 
