@@ -69,6 +69,7 @@ coverage.xml
 .railway/
 
 # Claude AI configuration
+.claude/
 CLAUDE.md
 
 # Environment documentation
