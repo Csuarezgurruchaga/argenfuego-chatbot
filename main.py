@@ -17,8 +17,6 @@ from services.whatsapp_handoff_service import whatsapp_handoff_service
 from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
 from services.metrics_service import metrics_service
-from services.otel_metrics_service import init_metrics, otel_metrics
-from services.otel_middleware import OTelMetricsMiddleware
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -31,13 +29,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Inicializar OpenTelemetry metrics (envía a Datadog)
-init_metrics()
-
-# Agregar middleware para métricas HTTP automáticas
-app.add_middleware(OTelMetricsMiddleware)
-
-TTL_MINUTES = int(os.getenv("HANDOFF_TTL_MINUTES", "120"))
+# Cloud Run can scale to zero, so we don't rely on an env var for this.
+# Keep this as a constant to avoid configuration drift between deployments.
+TTL_MINUTES = 60
 
 
 def get_messaging_service(user_id: str):
@@ -506,7 +500,6 @@ async def webhook_whatsapp_receive(request: Request):
                     # Agregar a la cola (esto activa automáticamente si no hay activo)
                     position = conversation_manager.add_to_handoff_queue(numero_telefono)
                     total = conversation_manager.get_queue_size()
-                    otel_metrics.set_handoff_queue_size(total)
                     
                     # Determinar tipo de notificación
                     agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
@@ -550,7 +543,6 @@ async def webhook_whatsapp_receive(request: Request):
                 if email_enviado:
                     try:
                         metrics_service.on_lead_sent()
-                        otel_metrics.record_lead_processed()
                     except Exception:
                         pass
                     # Enviar mensaje de confirmación

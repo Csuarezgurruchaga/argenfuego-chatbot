@@ -7,7 +7,6 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from chatbot.models import ConversacionData, TipoConsulta
 from config.company_profiles import get_active_company_profile
-from services.otel_metrics_service import otel_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,6 @@ class EmailService:
                     message_id,
                     status_code,
                 )
-                otel_metrics.record_email_sent()
                 return True
             
             logger.error(
@@ -67,7 +65,6 @@ class EmailService:
                 status_code,
                 response,
             )
-            otel_metrics.record_email_failed(error_type="api_error")
             return False
                 
         except (ClientError, BotoCoreError) as e:
@@ -76,7 +73,6 @@ class EmailService:
                 conversacion.numero_telefono,
                 str(e),
             )
-            otel_metrics.record_email_failed(error_type="ses_error")
             return False
         except Exception as e:
             logger.error(
@@ -84,7 +80,6 @@ class EmailService:
                 conversacion.numero_telefono,
                 str(e),
             )
-            otel_metrics.record_email_failed(error_type="exception")
             return False
     
     def _get_email_subject(self, tipo_consulta: TipoConsulta) -> str:

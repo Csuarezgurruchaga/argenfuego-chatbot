@@ -341,8 +341,6 @@ Responde con el número de la opción que necesitas 📱"""
             return True
 
         logger.error(f"❌ Error enviando menú interactivo a {numero_telefono}")
-        mensaje_fallback = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
-        meta_whatsapp_service.send_text_message(numero_telefono, mensaje_fallback)
         return False
     
     @staticmethod
@@ -438,9 +436,6 @@ Responde con el número de la opción que necesitas 📱"""
         
         logger = logging.getLogger(__name__)
         
-        # Verificar si los botones interactivos están habilitados
-        use_interactive_buttons = os.getenv("USE_INTERACTIVE_BUTTONS", "false").lower() == "true"
-        
         # Función que envía TODO secuencialmente en background
         def enviar_todo_secuencial():
             """
@@ -489,27 +484,16 @@ Responde con el número de la opción que necesitas 📱"""
                 logger.info(f"⚡ [Background] Enviando menú a {numero_telefono}")
                 inicio = time.time()
                 
-                if use_interactive_buttons:
-                    # Enviar menú con botones interactivos
-                    success = ChatbotRules.send_menu_interactivo(numero_telefono, nombre_usuario)
-                    tipo_menu = "interactivo"
-                else:
-                    # Enviar menú tradicional
-                    mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
-                    success = meta_whatsapp_service.send_text_message(numero_telefono, mensaje_completo)
-                    tipo_menu = "tradicional"
+                # Enviar menú con botones interactivos (siempre)
+                success = ChatbotRules.send_menu_interactivo(numero_telefono, nombre_usuario)
+                tipo_menu = "interactivo"
                 
                 tiempo_menu = (time.time() - inicio) * 1000
                 logger.info(f"✅ Menú {tipo_menu} enviado en {tiempo_menu:.0f}ms: {success}")
                 
             except Exception as e:
                 logger.error(f"❌ Error en flujo de saludo para {numero_telefono}: {str(e)}")
-                # Fallback: intentar enviar al menos el mensaje completo
-                try:
-                    mensaje_completo = ChatbotRules.get_mensaje_inicial_personalizado(nombre_usuario)
-                    meta_whatsapp_service.send_text_message(numero_telefono, mensaje_completo)
-                except Exception as fallback_error:
-                    logger.error(f"❌ Error en fallback: {fallback_error}")
+                # Sin fallback a texto: el menú debe ser interactivo
         
         # Ejecutar todo en un único thread background
         thread = threading.Thread(target=enviar_todo_secuencial)
@@ -1197,7 +1181,11 @@ Responde con el número del campo que deseas modificar."""
             # Limpiar datos temporales y volver al menú
             conversation_manager.clear_datos_temporales(numero_telefono)
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
-            return "↩️ *Volviendo al menú principal...*\n\n" + ChatbotRules.get_mensaje_inicial_personalizado(conversacion.nombre_usuario)
+            try:
+                ChatbotRules.send_menu_interactivo(numero_telefono, conversacion.nombre_usuario)
+            except Exception:
+                pass
+            return "↩️ *Volviendo al menú principal...*"
         
         if conversacion.estado == EstadoConversacion.INICIO:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
