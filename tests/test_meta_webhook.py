@@ -378,6 +378,20 @@ def test_meta_whatsapp_service_strips_alias_from_main_menu_buttons():
     assert "¿En qué puedo ayudarte?" in sent_body
 
 
+def test_chatbot_rules_send_menu_interactivo_without_header():
+    """El menú principal no debe volver a enviar un header con el alias."""
+    from chatbot.rules import ChatbotRules
+    from services.meta_whatsapp_service import meta_whatsapp_service
+
+    with patch.object(meta_whatsapp_service, "send_interactive_buttons", return_value=True) as mock_send:
+        result = ChatbotRules.send_menu_interactivo("+5491135722871", "Carlos R")
+
+    assert result is True
+    assert mock_send.call_args.kwargs["body_text"] == "¿En qué puedo ayudarte hoy?"
+    assert "header_text" not in mock_send.call_args.kwargs
+    assert mock_send.call_args.kwargs["footer_text"] == "Seleccioná una opción para continuar"
+
+
 def test_gracias_post_finalizacion_no_reinicia():
     """Si la conversación terminó y el usuario dice gracias, se responde con ack y no se reinicia."""
     from main import app

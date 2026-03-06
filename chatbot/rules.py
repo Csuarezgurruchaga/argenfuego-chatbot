@@ -325,14 +325,12 @@ Responde con el número de la opción que necesitas 📱"""
             for option in ChatbotRules.MENU_OPTIONS
         ]
 
-        header_text = f"¡Hola {nombre_usuario}!" if nombre_usuario else None
         footer_text = "Seleccioná una opción para continuar"
 
         success = meta_whatsapp_service.send_interactive_buttons(
             numero_telefono,
             body_text=mensaje_menu,
             buttons=buttons,
-            header_text=header_text,
             footer_text=footer_text
         )
 
