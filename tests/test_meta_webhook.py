@@ -350,6 +350,34 @@ def test_meta_whatsapp_service_validate_signature():
     assert service.validate_webhook_signature(payload, wrong_signature) is False
 
 
+def test_meta_whatsapp_service_strips_alias_from_main_menu_buttons():
+    """El menú principal con botones no debe repetir 'Hola <alias>!'."""
+    from services.meta_whatsapp_service import MetaWhatsAppService
+
+    service = MetaWhatsAppService()
+    buttons = [
+        {"id": "presupuesto", "title": "📋 Presupuesto"},
+        {"id": "urgencia", "title": "🚨 Urgencia"},
+        {"id": "otras", "title": "❓ Otras consultas"},
+    ]
+
+    with patch.object(service._session, "post") as mock_post:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        result = service.send_interactive_buttons(
+            "+5491135722871",
+            "¡Hola Carlos R! 👋 Soy Eva de Argenfuego, bienvenido. ¿En qué puedo ayudarte?",
+            buttons,
+        )
+
+    assert result is True
+    sent_body = mock_post.call_args.kwargs["json"]["interactive"]["body"]["text"]
+    assert "Hola Carlos R!" not in sent_body
+    assert "¿En qué puedo ayudarte?" in sent_body
+
+
 def test_gracias_post_finalizacion_no_reinicia():
     """Si la conversación terminó y el usuario dice gracias, se responde con ack y no se reinicia."""
     from main import app

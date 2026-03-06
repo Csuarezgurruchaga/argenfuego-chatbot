@@ -3,6 +3,7 @@ import json
 import hmac
 import hashlib
 import logging
+import re
 from typing import Optional, Dict, Any, Tuple
 import requests
 from requests.adapters import HTTPAdapter
@@ -48,6 +49,23 @@ class MetaWhatsAppService:
         self._session.mount("http://", adapter)
         
         logger.info(f"MetaWhatsAppService inicializado. Phone ID: {self.phone_number_id}, API: {self.api_version}")
+
+    @staticmethod
+    def _normalize_interactive_body_text(body_text: str, buttons: list) -> str:
+        """
+        Evita repetir el saludo personalizado cuando el menú principal
+        ya se envió en un mensaje previo y luego se mandan los botones.
+        """
+        button_ids = {btn.get("id") for btn in buttons if btn.get("id")}
+        main_menu_ids = {"presupuesto", "urgencia", "otras"}
+
+        if button_ids != main_menu_ids:
+            return body_text
+
+        # Quita "Hola <alias>!" del cuerpo del menú interactivo, manteniendo
+        # el resto del copy del mensaje.
+        normalized = re.sub(r"(^|[\s.])¡?Hola\s+[^!?.]+!\s*", r"\1", body_text, count=1).strip()
+        return normalized or body_text
     
     def send_text_message(self, to_number: str, message: str) -> bool:
         """
@@ -269,6 +287,7 @@ class MetaWhatsAppService:
                 return False
             
             normalized_number = self._normalize_phone_number(to_number)
+            body_text = self._normalize_interactive_body_text(body_text, buttons)
             
             # Construir action con botones
             action = {
