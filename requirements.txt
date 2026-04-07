@@ -26,9 +26,6 @@ fsspec==2025.9.0
 googleapis-common-protos==1.70.0
 griffe==0.36.9
 grpcio==1.74.0
-guardrails-ai==0.6.6
-guardrails-api-client==0.4.0a1
-guardrails_hub_types==0.0.4
 h11==0.16.0
 hf-xet==1.1.9
 httpcore==1.0.9
@@ -64,7 +61,7 @@ pinecone==7.3.0
 pinecone-plugin-assistant==1.8.0
 pinecone-plugin-interface==0.0.7
 propcache==0.3.2
-protobuf==6.32.0
+protobuf==4.25.8
 pydantic==2.11.7
 pydantic_core==2.33.2
 pydash==7.0.7
