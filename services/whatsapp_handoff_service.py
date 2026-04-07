@@ -9,7 +9,7 @@ from .meta_whatsapp_service import meta_whatsapp_service
 logger = logging.getLogger(__name__)
 
 HANDOFF_TEMPLATE_NAME = "handoff"
-HANDOFF_TEMPLATE_LANGUAGE = "en"
+HANDOFF_TEMPLATE_LANGUAGE = os.getenv("HANDOFF_TEMPLATE_LANG", "es_AR")
 
 
 def _get_client_messaging_service(client_id: str):
