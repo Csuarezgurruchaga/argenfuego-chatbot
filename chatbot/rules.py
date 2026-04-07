@@ -488,9 +488,9 @@ Responde con el número de la opción que necesitas 📱"""
 
         return meta_whatsapp_service.send_interactive_buttons(
             numero_telefono,
-            body_text="Seleccioná qué tipo de presupuesto necesitás.",
+            body_text="Seleccioná qué tipo de presupuesto necesitás:",
             buttons=list(ChatbotRules.PRESUPUESTO_MENU_ROWS),
-            footer_text="Elegí una opción para continuar. Ingresá 'hola' para volver a empezar",
+            footer_text="Ingresá 'hola' para volver a empezar.",
         )
 
     @staticmethod

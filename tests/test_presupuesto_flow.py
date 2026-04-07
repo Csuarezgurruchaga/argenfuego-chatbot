@@ -74,7 +74,8 @@ def test_extintor_pq_products_show_72h_and_hug_emoji(meta_spy, producto_id):
 
     assert asyncio.run(handle_interactive_button(numero, "presupuesto", "Juan")) == ""
     assert conversation_manager.get_conversacion(numero).estado == EstadoConversacion.PRESUPUESTO_MENU
-    assert meta_spy["buttons"][-1]["footer_text"] == "Elegí una opción para continuar. Ingresá 'hola' para volver a empezar"
+    assert meta_spy["buttons"][-1]["body_text"] == "Seleccioná qué tipo de presupuesto necesitás:"
+    assert meta_spy["buttons"][-1]["footer_text"] == "Ingresá 'hola' para volver a empezar."
     assert [button["title"] for button in meta_spy["buttons"][-1]["buttons"]] == ["🧯 Extintores", "💧 IFCI", "🧯+💧 Ambos"]
 
     assert asyncio.run(handle_interactive_button(numero, "presupuesto_extintores", "Juan")) == ""
