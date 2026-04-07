@@ -23,7 +23,7 @@
 - Hay cola FIFO de handoffs y cierre por TTL/inactividad.
 - El agente humano interactúa también por WhatsApp, no por Slack.
 - El trigger de Cloud Build de `argenfuego-chatbot` en GCP despliega desde `main` y no desde `dev`.
-- Al 2026-04-07, `origin/main` y `origin/dev` apuntan al mismo commit actual: `a72948f` (`docs(chatbot): update local agents state after v2 rollout`).
+- Al 2026-04-07, `origin/main` y `origin/dev` apuntan al mismo commit actual: `7efcb8f` (`docs(chatbot): move local agents ledger into repo`).
 - La prueba de tráfico compartido quedó revertida: el dispatcher restauró `972301799307809 -> kleiman-chatbot-api` y el servicio temporal `argenfuego-chatbot-v2` fue eliminado de Cloud Run.
 
 ## Estado funcional actual
