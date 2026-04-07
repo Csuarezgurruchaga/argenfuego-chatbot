@@ -25,7 +25,8 @@
 - El trigger de Cloud Build de `argenfuego-chatbot` en GCP despliega desde `main` y no desde `dev`.
 - Al 2026-04-07, `origin/main` y `origin/dev` apuntan al mismo commit actual: `7efcb8f` (`docs(chatbot): move local agents ledger into repo`).
 - La prueba de tráfico compartido quedó revertida: el dispatcher restauró `972301799307809 -> kleiman-chatbot-api` y el servicio temporal `argenfuego-chatbot-v2` fue eliminado de Cloud Run.
-- Al 2026-04-07 quedó bootstrapado el proyecto GCP separado `argenfuego`: Firestore `"(default)"` en `southamerica-west1`, servicio Cloud Run `argenfuego-chatbot`, y tres schedulers internos en `southamerica-east1`; el dispatcher compartido todavía no apunta ahí.
+- Al 2026-04-07 quedó bootstrapado el proyecto GCP separado `argenfuego`: Firestore `"(default)"` en `southamerica-west1`, servicio Cloud Run `argenfuego-chatbot`, y tres schedulers internos en `southamerica-east1`.
+- También al 2026-04-07, el dispatcher compartido quedó cortado al nuevo `argenfuego-chatbot` del proyecto `argenfuego` para `883679188152252`, mientras `972301799307809` volvió a `kleiman-chatbot-api`.
 
 ## Estado funcional actual
 - `Presupuesto` v2 usa un submenú guiado con `🧯 Extintores`, `💧 IFCI` y `🧯+💧 Ambos`; `Ambos` y `Otro` caen al fallback legacy secuencial.

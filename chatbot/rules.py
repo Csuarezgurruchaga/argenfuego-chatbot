@@ -126,7 +126,6 @@ class ChatbotRules:
     PRESUPUESTO_CONTACT_BUTTONS = (
         {"id": "presupuesto_contacto_si", "title": "Sí"},
         {"id": "presupuesto_contacto_no", "title": "No, muchas gracias"},
-        {"id": "presupuesto_contacto_back", "title": "↩️ Volver"},
     )
     PRESUPUESTO_SERVICIO_BUTTONS = (
         {"id": "presupuesto_compra", "title": "Equipo nuevo"},
@@ -490,7 +489,7 @@ Responde con el número de la opción que necesitas 📱"""
             numero_telefono,
             body_text="Seleccioná qué tipo de presupuesto necesitás:",
             buttons=list(ChatbotRules.PRESUPUESTO_MENU_ROWS),
-            footer_text="Ingresá 'hola' para volver a empezar.",
+            footer_text="En el momento que quieras ingresá 'hola' para volver a empezar.",
         )
 
     @staticmethod
@@ -770,7 +769,7 @@ Responde con el número de la opción que necesitas 📱"""
             "🧯 Extintores\n"
             "💧 IFCI\n"
             "🧯+💧 Ambos\n\n"
-            "Ingresá 'hola' para volver a empezar."
+            "En el momento que quieras ingresá 'hola' para volver a empezar."
         )
 
     @staticmethod
@@ -912,8 +911,7 @@ Responde con el número de la opción que necesitas 📱"""
         return (
             "¿Querés dejarnos tus datos para que te contactemos?\n"
             "- Sí\n"
-            "- No, muchas gracias\n"
-            "- Volver al menú anterior"
+            "- No, muchas gracias"
         )
 
     @staticmethod
@@ -1676,7 +1674,7 @@ Responde con el número del campo que deseas modificar."""
                 "🧯 Extintores\n"
                 "💧 IFCI\n"
                 "🧯+💧 Ambos\n\n"
-                "Ingresá 'hola' para volver a empezar."
+                "En el momento que quieras ingresá 'hola' para volver a empezar."
             )
 
         if row["id"] == "presupuesto_extintores":
@@ -1744,8 +1742,7 @@ Responde con el número del campo que deseas modificar."""
         return (
             "Por favor elegí una opción válida:\n"
             "- Sí\n"
-            "- No, muchas gracias\n"
-            "- Volver al menú anterior"
+            "- No, muchas gracias"
         )
 
     @staticmethod
