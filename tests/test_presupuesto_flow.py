@@ -80,6 +80,13 @@ def test_extintor_pq_products_show_72h_and_hug_emoji(meta_spy, producto_id):
 
     assert asyncio.run(handle_interactive_button(numero, "presupuesto_extintores", "Juan")) == ""
     assert conversation_manager.get_conversacion(numero).estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_TIPO
+    assert [row["title"] for row in meta_spy["lists"][-1]["sections"][0]["rows"]] == [
+        "Vehicular (1 kg)",
+        "Extintor 5kg PQ (ABC)",
+        "Extintor 10kg PQ (ABC)",
+        "Extintor 5kg CO2 (BC)",
+        "Otro",
+    ]
 
     assert asyncio.run(handle_interactive_button(numero, producto_id, "Juan")) == ""
     assert conversation_manager.get_conversacion(numero).estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_CONFIRMAR_CONTACTO
