@@ -32,6 +32,8 @@
 - `IFCI` usa captura de contacto + preguntas técnicas específicas + resumen final con menú de corrección propio.
 - En las preguntas libres de IFCI, `no` se interpreta como `No sé`; en las preguntas binarias sigue siendo una respuesta válida.
 - La descripción del email preserva saltos de línea, útil para el resumen de IFCI.
+- Al 2026-04-07, las respuestas de datos de contacto ya no usan OpenAI: salen de forma determinística desde `config/company_profiles.py` para evitar prompt-injection y copy inventado.
+- También al 2026-04-07, se eliminó la función de saludo personalizado con OpenAI; el saludo operativo de Eva queda únicamente por la ruta estática de `chatbot/rules.py`.
 - Antes de extender otra vez este chatbot, cerrar cambios de flujo en el spec externo y no asumir que el flujo legacy de `hybrid-chatbot` se conserva automáticamente.
 
 ## Notas del entorno
