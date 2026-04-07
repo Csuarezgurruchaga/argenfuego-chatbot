@@ -1,5 +1,6 @@
 import os
 import json
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 # Cargar variables de entorno PRIMERO
@@ -26,11 +27,24 @@ from services.handoff_inbox_service import handoff_inbox_service
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def runtime_lifespan(app_instance: FastAPI):
+    cases = _sync_runtime_handoff_state()
+    logger.info(
+        "handoff_runtime_bootstrap loaded_cases=%s active_handoff=%s queue_size=%s",
+        len(cases),
+        conversation_manager.active_handoff,
+        len(conversation_manager.handoff_queue),
+    )
+    yield
+
 # Crear la aplicación FastAPI
 app = FastAPI(
     title="Argenfuego Chatbot API",
     description="Chatbot basado en reglas para WhatsApp Cloud API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=runtime_lifespan,
 )
 
 # Cloud Run can scale to zero, so we don't rely on an env var for this.
@@ -116,7 +130,8 @@ def _save_final_checkpoint_if_needed(numero_telefono: Optional[str]) -> None:
 def _sync_runtime_handoff_state():
     try:
         cases = handoff_inbox_service.list_cases()
-    except Exception:
+    except Exception as exc:
+        logger.warning("handoff_runtime_sync_failed error=%s", str(exc))
         return []
     if cases:
         conversation_manager.sync_handoff_runtime(cases)

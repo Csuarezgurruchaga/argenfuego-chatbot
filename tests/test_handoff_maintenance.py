@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from services.handoff_inbox_models import (
     HandoffInboxAutocloseCaseRecord,
+    HandoffInboxCaseProjection,
     HandoffInboxAutocloseResult,
     HandoffInboxCaseStatus,
     HandoffInboxRetentionCutoffs,
@@ -32,6 +33,56 @@ def test_internal_handoff_autoclose_requires_valid_token(monkeypatch):
     response = client.post("/internal/handoff/autoclose", data={"token": "wrong-token"})
 
     assert response.status_code == 401
+
+
+def test_startup_syncs_persisted_handoff_runtime(monkeypatch):
+    main_module = _load_main_module()
+
+    cases = [
+        HandoffInboxCaseProjection(
+            case_id="case-active",
+            client_phone="+5491111111111",
+            client_name="Ada",
+            tipo_consulta="presupuesto",
+            is_active=True,
+            queue_position=1,
+            status=HandoffInboxCaseStatus.ACTIVE,
+            has_unread=True,
+            handoff_context="Necesito ayuda con matafuegos",
+            created_at=datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 4, 7, 12, 5, tzinfo=timezone.utc),
+            opened_at=datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc),
+        ),
+        HandoffInboxCaseProjection(
+            case_id="case-queued",
+            client_phone="+5491222222222",
+            client_name="Grace",
+            tipo_consulta="mantenimiento",
+            is_active=False,
+            queue_position=2,
+            status=HandoffInboxCaseStatus.QUEUED,
+            has_unread=False,
+            handoff_context="Tengo una consulta técnica",
+            created_at=datetime(2026, 4, 7, 12, 10, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 4, 7, 12, 15, tzinfo=timezone.utc),
+        ),
+    ]
+
+    monkeypatch.setattr(main_module.handoff_inbox_service, "list_cases", lambda: cases)
+
+    with TestClient(main_module.app):
+        pass
+
+    assert main_module.conversation_manager.handoff_queue == [
+        "+5491111111111",
+        "+5491222222222",
+    ]
+    assert main_module.conversation_manager.active_handoff == "+5491111111111"
+
+    conversacion_activa = main_module.conversation_manager.get_conversacion("+5491111111111")
+    assert conversacion_activa.handoff_case_id == "case-active"
+    assert conversacion_activa.atendido_por_humano is True
+    assert conversacion_activa.estado == main_module.EstadoConversacion.ATENDIDO_POR_HUMANO
 
 
 def test_internal_handoff_autoclose_notifies_and_finalizes_closed_cases(monkeypatch):
