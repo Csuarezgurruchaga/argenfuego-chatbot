@@ -537,14 +537,21 @@ async def webhook_whatsapp_receive(request: Request):
             conversacion = conversation_manager.get_conversacion(numero_telefono)
             
             if conversacion.estado == EstadoConversacion.ENVIANDO:
-                # Enviar email con los datos del lead
-                email_enviado = email_service.enviar_lead_email(conversacion)
+                disable_lead_emails = os.getenv("DISABLE_LEAD_EMAILS", "false").lower() == "true"
+
+                if disable_lead_emails:
+                    logger.info("Lead email deshabilitado por entorno; se omite envío para %s", numero_telefono)
+                    email_enviado = True
+                else:
+                    # Enviar email con los datos del lead
+                    email_enviado = email_service.enviar_lead_email(conversacion)
                 
                 if email_enviado:
-                    try:
-                        metrics_service.on_lead_sent()
-                    except Exception:
-                        pass
+                    if not disable_lead_emails:
+                        try:
+                            metrics_service.on_lead_sent()
+                        except Exception:
+                            pass
                     # Enviar mensaje de confirmación
                     mensaje_final = ChatbotRules.get_mensaje_final_exito()
                     send_message(numero_telefono, mensaje_final)
@@ -795,6 +802,9 @@ async def handle_interactive_button(numero_telefono: str, button_id: str, profil
         elif button_id == "no":
             # Corregir datos
             if conversacion.estado == EstadoConversacion.CONFIRMANDO:
+                if conversacion.datos_temporales.get("_ifci_flow"):
+                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_CORRIGIENDO)
+                    return ChatbotRules._get_ifci_correction_menu()
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)
                 return ChatbotRules._get_mensaje_pregunta_campo_a_corregir()
             else:
@@ -809,8 +819,8 @@ async def handle_interactive_button(numero_telefono: str, button_id: str, profil
             return ""  # El menú se envía directamente
             
         else:
-            logger.warning(f"Botón no reconocido: {button_id}")
-            return "No reconozco ese botón. Por favor, usa los botones disponibles o escribe tu mensaje."
+            logger.info(f"Botón/lista delegada al motor conversacional: {button_id}")
+            return ChatbotRules.procesar_mensaje(numero_telefono, button_id, profile_name)
             
     except Exception as e:
         logger.error(f"Error en handle_interactive_button: {e}")

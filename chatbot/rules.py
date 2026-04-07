@@ -1,6 +1,7 @@
 import os
 import re
 import unicodedata
+from typing import Optional
 from .models import EstadoConversacion, TipoConsulta
 from .states import conversation_manager
 from config.company_profiles import get_urgency_redirect_message, get_active_company_profile
@@ -98,6 +99,118 @@ class ChatbotRules:
         "thanks",
     }
     GRATITUDE_EMOJIS = {"🙏", "🤝", "👍", "🙌", "😊", "😁", "🤗", "👌"}
+    PRESUPUESTO_MENU_ROWS = (
+        {
+            "id": "presupuesto_extintores",
+            "title": "🧯 Extintores",
+            "aliases": ("🧯 Matafuegos/Extintores", "matafuegos/extintores", "matafuegos", "extintores"),
+        },
+        {
+            "id": "presupuesto_ifci",
+            "title": "💧 IFCI",
+            "aliases": ("💧 IFCI (Hidrantes)", "ifci (hidrantes)", "hidrantes"),
+        },
+        {
+            "id": "presupuesto_combo",
+            "title": "🧯+💧 Ambos",
+            "aliases": ("🧯+💧 Matafuegos y IFCI", "matafuegos y ifci", "ambos"),
+        },
+    )
+    EXTINTOR_PRODUCT_ROWS = (
+        {"id": "extintor_vehicular_1kg", "title": "Vehicular (1 kg)", "capacidad": "1 kg", "tipo": "PQ (ABC)", "plazo": "24h", "detalle_plazo": "*Según disponibilidad del taller."},
+        {"id": "extintor_pq_5kg", "title": "Extintor 5kg PQ (ABC)", "capacidad": "5 kg", "tipo": "PQ (ABC)", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller."},
+        {"id": "extintor_pq_10kg", "title": "Extintor 10kg PQ (ABC)", "capacidad": "10 kg", "tipo": "PQ (ABC)", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller."},
+        {"id": "extintor_co2_5kg", "title": "Extintor 5kg CO2", "capacidad": "5 kg", "tipo": "CO2", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller y vigencia de la PH."},
+        {"id": "extintor_otro", "title": "Otro"},
+    )
+    PRESUPUESTO_CONTACT_BUTTONS = (
+        {"id": "presupuesto_contacto_si", "title": "Sí"},
+        {"id": "presupuesto_contacto_no", "title": "No, muchas gracias"},
+        {"id": "presupuesto_contacto_back", "title": "↩️ Volver"},
+    )
+    PRESUPUESTO_SERVICIO_BUTTONS = (
+        {"id": "presupuesto_compra", "title": "Equipo nuevo"},
+        {"id": "presupuesto_mantenimiento", "title": "Mantenimiento"},
+    )
+    PRESUPUESTO_CANTIDAD_ROWS = (
+        {"id": "cantidad_1", "title": "1"},
+        {"id": "cantidad_2", "title": "2"},
+        {"id": "cantidad_otra", "title": "Otra cantidad"},
+    )
+    IFCI_NIVEL_ROWS = (
+        {
+            "id": "ifci_nivel_1",
+            "title": "Nivel 1: Cañería seca",
+            "value": "Nivel 1: Cañería seca",
+            "aliases": ("1",),
+        },
+        {
+            "id": "ifci_nivel_2",
+            "title": "Nivel 2: Cañería humeda",
+            "value": "Nivel 2: Cañería húmeda (Aysa)",
+            "aliases": ("2", "Nivel 2: Cañería húmeda (Aysa)", "Nivel 2: Cañería húmeda Aysa"),
+        },
+        {
+            "id": "ifci_nivel_3",
+            "title": "Nivel 3: Cañería humeda",
+            "value": "Nivel 3: Cañería húmeda (con bombas)",
+            "aliases": ("3", "Nivel 3: Cañería húmeda (con bombas)", "Nivel 3: Cañería húmeda con bombas"),
+        },
+        {
+            "id": "ifci_nivel_no_se",
+            "title": "No sé",
+            "value": "No sé",
+            "aliases": ("4",),
+        },
+    )
+    IFCI_BINARY_BUTTONS = (
+        {"id": "ifci_si", "title": "Sí"},
+        {"id": "ifci_no", "title": "No"},
+        {"id": "ifci_no_se", "title": "No sé"},
+    )
+    IFCI_CORRECTION_OPTIONS = {
+        "1": "email",
+        "2": "direccion",
+        "3": "horario_visita",
+        "4": "razon_social",
+        "5": "cuit",
+        "6": "ifci_nivel",
+        "7": "ifci_hidrantes",
+        "8": "ifci_establecimiento",
+        "9": "ifci_detectores",
+        "10": "ifci_plano",
+        "11": "todo",
+    }
+
+    @staticmethod
+    def _normalized_choice(text: str) -> str:
+        return ChatbotRules._normalize_menu_text(text or "")
+
+    @staticmethod
+    def _matches_choice(text: str, *choices: str) -> bool:
+        normalized = ChatbotRules._normalized_choice(text)
+        return any(normalized == ChatbotRules._normalized_choice(choice) for choice in choices)
+
+    @classmethod
+    def _find_row_by_id(cls, rows, row_id: str):
+        for row in rows:
+            if row["id"] == row_id:
+                return row
+        return None
+
+    @classmethod
+    def _find_row_by_text(cls, rows, message: str):
+        normalized = cls._normalized_choice(message)
+        for row in rows:
+            candidates = {
+                cls._normalized_choice(row["id"]),
+                cls._normalized_choice(row["title"]),
+            }
+            for alias in row.get("aliases", ()):
+                candidates.add(cls._normalized_choice(alias))
+            if normalized in candidates:
+                return row
+        return None
 
     @classmethod
     def _get_menu_options(cls):
@@ -242,6 +355,27 @@ Responde con el número de la opción que necesitas 📱"""
         return any(frase in mensaje_lower for frase in frases_menu)
 
     @staticmethod
+    def _detectar_volver_local(mensaje: str) -> bool:
+        return ChatbotRules._matches_choice(
+            mensaje,
+            "volver",
+            "volver al menu anterior",
+            "volver al menú anterior",
+            "menu anterior",
+            "menú anterior",
+        )
+
+    @staticmethod
+    def _manejar_menu_principal(numero_telefono: str, nombre_usuario: str = "") -> str:
+        conversation_manager.clear_datos_temporales(numero_telefono)
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
+        try:
+            ChatbotRules.send_menu_interactivo(numero_telefono, nombre_usuario)
+        except Exception:
+            pass
+        return "↩️ *Volviendo al menú principal...*"
+
+    @staticmethod
     def _activar_handoff(numero_telefono: str, mensaje_contexto: str):
         conversation_manager.update_estado(numero_telefono, EstadoConversacion.ATENDIDO_POR_HUMANO)
         conversacion = conversation_manager.get_conversacion(numero_telefono)
@@ -263,8 +397,8 @@ Responde con el número de la opción que necesitas 📱"""
             ChatbotRules._activar_handoff(numero_telefono, contexto)
             return "Detectamos una urgencia. Te conecto con un agente ahora mismo. 🚨"
 
-        if source in {"keyword", "nlu"} and mensaje and len(mensaje.strip()) > 15:
-            conversation_manager.set_datos_temporales(numero_telefono, '_descripcion_inicial', mensaje.strip())
+        if tipo_consulta == TipoConsulta.PRESUPUESTO:
+            return ChatbotRules._start_presupuesto_menu(numero_telefono)
 
         conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
 
@@ -340,6 +474,88 @@ Responde con el número de la opción que necesitas 📱"""
 
         logger.error(f"❌ Error enviando menú interactivo a {numero_telefono}")
         return False
+
+    @staticmethod
+    def _build_single_section(title: str, rows: tuple) -> list:
+        return [{
+            "title": title,
+            "rows": [{"id": row["id"], "title": row["title"][:24]} for row in rows],
+        }]
+
+    @staticmethod
+    def send_presupuesto_menu(numero_telefono: str) -> bool:
+        from services.meta_whatsapp_service import meta_whatsapp_service
+
+        return meta_whatsapp_service.send_interactive_buttons(
+            numero_telefono,
+            body_text="Seleccioná qué tipo de presupuesto necesitás.",
+            buttons=list(ChatbotRules.PRESUPUESTO_MENU_ROWS),
+            footer_text="Elegí una opción para continuar. Ingresá 'hola' para volver a empezar",
+        )
+
+    @staticmethod
+    def send_extintor_menu(numero_telefono: str) -> bool:
+        from services.meta_whatsapp_service import meta_whatsapp_service
+
+        return meta_whatsapp_service.send_interactive_list(
+            numero_telefono,
+            body_text="Seleccioná el tipo de matafuego/extintor.",
+            button_text="Ver tipos",
+            sections=ChatbotRules._build_single_section("Extintores", ChatbotRules.EXTINTOR_PRODUCT_ROWS),
+            footer_text="Elegí una opción para continuar",
+        )
+
+    @staticmethod
+    def send_presupuesto_contact_buttons(numero_telefono: str) -> bool:
+        from services.meta_whatsapp_service import meta_whatsapp_service
+
+        return meta_whatsapp_service.send_interactive_buttons(
+            numero_telefono,
+            body_text="¿Querés dejarnos tus datos para que te contactemos?",
+            buttons=list(ChatbotRules.PRESUPUESTO_CONTACT_BUTTONS),
+        )
+
+    @staticmethod
+    def send_presupuesto_servicio_buttons(numero_telefono: str) -> bool:
+        from services.meta_whatsapp_service import meta_whatsapp_service
+
+        return meta_whatsapp_service.send_interactive_buttons(
+            numero_telefono,
+            body_text="Dejanos tus datos y nos comunicamos con vos.",
+            buttons=list(ChatbotRules.PRESUPUESTO_SERVICIO_BUTTONS),
+        )
+
+    @staticmethod
+    def send_presupuesto_cantidad_menu(numero_telefono: str) -> bool:
+        from services.meta_whatsapp_service import meta_whatsapp_service
+
+        return meta_whatsapp_service.send_interactive_buttons(
+            numero_telefono,
+            body_text="¿Cuántos equipos necesitás?",
+            buttons=list(ChatbotRules.PRESUPUESTO_CANTIDAD_ROWS),
+        )
+
+    @staticmethod
+    def send_ifci_nivel_menu(numero_telefono: str) -> bool:
+        from services.meta_whatsapp_service import meta_whatsapp_service
+
+        return meta_whatsapp_service.send_interactive_list(
+            numero_telefono,
+            body_text="Ahora te voy a hacer unas preguntas para poder darte una atención más personalizada al comunicarme con vos.",
+            button_text="Ver niveles",
+            sections=ChatbotRules._build_single_section("Nivel de instalación", ChatbotRules.IFCI_NIVEL_ROWS),
+            footer_text="¿Cuál es el nivel de la instalación?",
+        )
+
+    @staticmethod
+    def send_ifci_binary_buttons(numero_telefono: str, body_text: str) -> bool:
+        from services.meta_whatsapp_service import meta_whatsapp_service
+
+        return meta_whatsapp_service.send_interactive_buttons(
+            numero_telefono,
+            body_text=body_text,
+            buttons=list(ChatbotRules.IFCI_BINARY_BUTTONS),
+        )
     
     @staticmethod
     def send_handoff_buttons(numero_telefono: str):
@@ -374,18 +590,14 @@ Responde con el número de la opción que necesitas 📱"""
         import logging
         logger = logging.getLogger(__name__)
         
-        mensaje_completo = f"""{mensaje}
-
-┌─────────────────────────────┐
-│  ✅ 1. Sí, confirmar         │
-│  ❌ 2. No, corregir          │
-│  ⬅️ 3. Volver al menú        │
-└─────────────────────────────┘
-
-💡 *Responde con el número de la opción que necesitas*"""
-        
-        # Enviar mensaje
-        success = meta_whatsapp_service.send_text_message(numero_telefono, mensaje_completo)
+        success = meta_whatsapp_service.send_interactive_buttons(
+            numero_telefono,
+            body_text=mensaje,
+            buttons=[
+                {"id": "si", "title": "Sí"},
+                {"id": "no", "title": "No"},
+            ],
+        )
         
         if success:
             logger.info(f"✅ Botones de confirmación enviados a {numero_telefono}")
@@ -511,6 +723,314 @@ Responde con el número de la opción que necesitas 📱"""
 📝 Qué necesitas
 
 💡 Escribe "menú" si quieres volver al inicio."""
+
+    @staticmethod
+    def _reset_presupuesto_temp(numero_telefono: str, preserve_contact=False):
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        preserved = {}
+        if preserve_contact:
+            for key in ("descripcion", "email", "direccion", "horario_visita", "razon_social", "cuit"):
+                if key in conversacion.datos_temporales:
+                    preserved[key] = conversacion.datos_temporales[key]
+        conversacion.datos_temporales = preserved
+
+    @staticmethod
+    def _get_company_address() -> str:
+        profile = get_active_company_profile()
+        return profile.get("address", "nuestra sucursal")
+
+    @staticmethod
+    def _get_extintor_info_message(producto: dict) -> str:
+        return (
+            f"Las recargas normalmente se realizan en el momento o en un plazo de {producto['plazo']}.\n"
+            f"{producto['detalle_plazo']}\n\n"
+            f"Podés encontrarnos en {ChatbotRules._get_company_address()}\n"
+            f"Te esperamos! 🤗"
+        )
+
+    @staticmethod
+    def _get_presupuesto_farewell_message() -> str:
+        return (
+            "¡Gracias por contactarte con Argenfuego! 😊\n"
+            'Si necesitás algo más, escribí "hola" para comenzar de nuevo.'
+        )
+
+    @staticmethod
+    def _get_presupuesto_legacy_opening() -> str:
+        return ChatbotRules.get_mensaje_inicio_secuencial(TipoConsulta.PRESUPUESTO)
+
+    @staticmethod
+    def _start_presupuesto_menu(numero_telefono: str) -> str:
+        ChatbotRules._reset_presupuesto_temp(numero_telefono)
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.PRESUPUESTO_MENU)
+        if ChatbotRules.send_presupuesto_menu(numero_telefono):
+            return ""
+        return (
+            "Seleccioná qué tipo de presupuesto necesitás:\n"
+            "🧯 Extintores\n"
+            "💧 IFCI\n"
+            "🧯+💧 Ambos\n\n"
+            "Ingresá 'hola' para volver a empezar."
+        )
+
+    @staticmethod
+    def _start_extintor_menu(numero_telefono: str) -> str:
+        ChatbotRules._reset_presupuesto_temp(numero_telefono)
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.PRESUPUESTO_EXTINTOR_TIPO)
+        if ChatbotRules.send_extintor_menu(numero_telefono):
+            return ""
+        return (
+            "Seleccioná el tipo de matafuego/extintor:\n"
+            "Vehicular (1 kg)\n"
+            "Extintor 5kg PQ (ABC)\n"
+            "Extintor 10kg PQ (ABC)\n"
+            "Extintor 5kg CO2\n"
+            "Otro"
+        )
+
+    @staticmethod
+    def _start_presupuesto_legacy(numero_telefono: str, mensaje: str = "", source: str = "legacy") -> str:
+        ChatbotRules._reset_presupuesto_temp(numero_telefono)
+        if source in {"keyword", "nlu"} and mensaje and len(mensaje.strip()) > 15:
+            conversation_manager.set_datos_temporales(numero_telefono, "_descripcion_inicial", mensaje.strip())
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+        return ChatbotRules._get_presupuesto_legacy_opening()
+
+    @staticmethod
+    def _start_ifci_flow(numero_telefono: str) -> str:
+        ChatbotRules._reset_presupuesto_temp(numero_telefono)
+        conversation_manager.set_datos_temporales(numero_telefono, "_ifci_flow", "1")
+        conversation_manager.set_datos_temporales(numero_telefono, "descripcion", "Consulta IFCI (Hidrantes)")
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+        return ChatbotRules._get_pregunta_campo_secuencial("email", TipoConsulta.PRESUPUESTO)
+
+    @staticmethod
+    def _start_ifci_questions(numero_telefono: str) -> str:
+        conversation_manager.set_datos_temporales(numero_telefono, "_ifci_questions_done", "")
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_NIVEL)
+        if ChatbotRules.send_ifci_nivel_menu(numero_telefono):
+            return ""
+        return (
+            "Ahora te voy a hacer unas preguntas para poder darte una atención más personalizada al comunicarme con vos.\n\n"
+            "¿Cuál es el nivel de la instalación?\n"
+            "1. Nivel 1: Cañería seca\n"
+            "2. Nivel 2: Cañería humeda\n"
+            "3. Nivel 3: Cañería humeda\n"
+            "4. No sé"
+        )
+
+    @staticmethod
+    def _build_presupuesto_description(numero_telefono: str) -> str:
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        producto = conversacion.datos_temporales.get("_presupuesto_producto")
+        servicio = conversacion.datos_temporales.get("_presupuesto_servicio")
+        cantidad = conversacion.datos_temporales.get("_presupuesto_cantidad")
+        if not producto or not servicio or not cantidad:
+            return ""
+        tipo_accion = "compra" if servicio == "compra" else "mantenimiento"
+        return f"{tipo_accion} de {cantidad} extintores de {producto['capacidad']} {producto['tipo']}."
+
+    @staticmethod
+    def _build_ifci_description(numero_telefono: str) -> str:
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        nivel = conversacion.datos_temporales.get("ifci_nivel", "No especificado")
+        hidrantes = conversacion.datos_temporales.get("ifci_hidrantes", "No especificado")
+        establecimiento = conversacion.datos_temporales.get("ifci_establecimiento", "No especificado")
+        detectores = conversacion.datos_temporales.get("ifci_detectores", "No especificado")
+        plano = conversacion.datos_temporales.get("ifci_plano", "No especificado")
+        return (
+            "Consulta IFCI (Hidrantes)\n"
+            f"- Nivel de instalación: {nivel}\n"
+            f"- Cantidad de hidrantes: {hidrantes}\n"
+            f"- Pisos/subsuelo/estacionamiento: {establecimiento}\n"
+            f"- Detectores de humo: {detectores}\n"
+            f"- Plano de incendio: {plano}"
+        )
+
+    @staticmethod
+    def _refresh_ifci_description(numero_telefono: str) -> tuple[bool, Optional[str]]:
+        conversation_manager.set_datos_temporales(numero_telefono, "descripcion", ChatbotRules._build_ifci_description(numero_telefono))
+        return conversation_manager.validar_y_guardar_datos(numero_telefono)
+
+    @staticmethod
+    def _get_ifci_confirmacion(numero_telefono: str) -> str:
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+        datos = conversacion.datos_contacto
+        parts = ["📋 *Resumen de tu solicitud:*\n", "🧾 *Tipo de consulta:* Presupuesto IFCI"]
+        if datos.email and datos.email != "no_proporcionado@ejemplo.com":
+            parts.append(f"📧 *Email:* {datos.email}")
+        if datos.direccion and datos.direccion != "No proporcionada":
+            parts.append(f"📍 *Dirección:* {datos.direccion}")
+        if datos.horario_visita and datos.horario_visita != "No especificado":
+            parts.append(f"🕒 *Horario de visita:* {datos.horario_visita}")
+        if getattr(datos, "razon_social", None):
+            parts.append(f"🏢 *Razón social:* {datos.razon_social}")
+        if getattr(datos, "cuit", None):
+            parts.append(f"🧾 *CUIT:* {datos.cuit}")
+        parts.extend(
+            [
+                f"📶 *Nivel de instalación:* {conversacion.datos_temporales.get('ifci_nivel', 'No especificado')}",
+                f"🚰 *Cantidad de hidrantes:* {conversacion.datos_temporales.get('ifci_hidrantes', 'No especificado')}",
+                f"🏢 *Pisos / subsuelo / estacionamiento:* {conversacion.datos_temporales.get('ifci_establecimiento', 'No especificado')}",
+                f"📡 *Detectores de humo:* {conversacion.datos_temporales.get('ifci_detectores', 'No especificado')}",
+                f"📐 *Plano de incendio:* {conversacion.datos_temporales.get('ifci_plano', 'No especificado')}",
+                "",
+                "¿Es correcta toda la información?",
+            ]
+        )
+        return "\n".join(parts)
+
+    @staticmethod
+    def _get_ifci_correction_menu() -> str:
+        return (
+            "❌ Entendido, vamos a corregir la información.\n\n"
+            "¿Qué querés modificar?\n"
+            "1️⃣ Email\n"
+            "2️⃣ Dirección\n"
+            "3️⃣ Horario de visita\n"
+            "4️⃣ Razón social\n"
+            "5️⃣ CUIT\n"
+            "6️⃣ Nivel de instalación\n"
+            "7️⃣ Cantidad de hidrantes\n"
+            "8️⃣ Pisos / subsuelo / estacionamiento\n"
+            "9️⃣ Detectores de humo\n"
+            "🔟 Plano de incendio\n"
+            "1️⃣1️⃣ Todo\n\n"
+            "Respondé con el número del campo que querés corregir."
+        )
+
+    @staticmethod
+    def _send_text_and_followup(numero_telefono: str, message: str, followup_callable) -> bool:
+        from services.meta_whatsapp_service import meta_whatsapp_service
+
+        text_sent = meta_whatsapp_service.send_text_message(numero_telefono, message)
+        followup_sent = followup_callable()
+        return text_sent and followup_sent
+
+    @staticmethod
+    def _get_presupuesto_contact_prompt_fallback() -> str:
+        return (
+            "¿Querés dejarnos tus datos para que te contactemos?\n"
+            "- Sí\n"
+            "- No, muchas gracias\n"
+            "- Volver al menú anterior"
+        )
+
+    @staticmethod
+    def _get_presupuesto_service_prompt_fallback() -> str:
+        return (
+            "Dejanos tus datos y nos comunicamos con vos.\n"
+            "1. Equipo nuevo\n"
+            "2. Mantenimiento"
+        )
+
+    @staticmethod
+    def _get_presupuesto_cantidad_prompt_fallback() -> str:
+        return (
+            "¿Cuántos equipos necesitás?\n"
+            "1\n"
+            "2\n"
+            "Otra cantidad"
+        )
+
+    @staticmethod
+    def _get_presupuesto_cantidad_manual_prompt() -> str:
+        return "¿Cuántos equipos necesitás?"
+
+    @staticmethod
+    def _get_ifci_hidrantes_prompt() -> str:
+        return (
+            "¿Qué cantidad de hidrantes tiene? (incluyendo la toma de impulsión)\n"
+            "(ejemplo: 20 o No sé)\n\n"
+            "Podés escribir No sé o saltar para pasar a la siguiente pregunta."
+        )
+
+    @staticmethod
+    def _get_ifci_establecimiento_prompt() -> str:
+        return (
+            "¿Qué cantidad de pisos tiene el establecimiento? ¿Tiene subsuelo? ¿Tiene estacionamiento?\n"
+            "\nPodés escribir No sé o saltar para pasar a la siguiente pregunta."
+        )
+
+    @staticmethod
+    def _get_ifci_detectores_prompt() -> str:
+        return (
+            "¿La instalación tiene detectores de humo?\n"
+            "\nPodés escribir No sé o saltar para pasar a la siguiente pregunta."
+        )
+
+    @staticmethod
+    def _get_ifci_plano_prompt() -> str:
+        return (
+            "¿Tenés el plano de incendio de la instalación?\n"
+            "\nPodés escribir No sé o saltar para pasar a la siguiente pregunta."
+        )
+
+    @staticmethod
+    def _normalize_ifci_free_text_answer(mensaje: str) -> Optional[str]:
+        valor = mensaje.strip()
+        if not valor:
+            return None
+        if ChatbotRules._matches_choice(valor, "saltar", "skip", "no", "no se", "no sé", "n/a", "na"):
+            return "No sé"
+        return valor
+
+    @staticmethod
+    def _parse_ifci_binary_answer(mensaje: str) -> Optional[str]:
+        if ChatbotRules._matches_choice(mensaje, "ifci_si", "si", "sí", "yes"):
+            return "Sí"
+        if ChatbotRules._matches_choice(mensaje, "ifci_no", "no"):
+            return "No"
+        if ChatbotRules._matches_choice(mensaje, "ifci_no_se", "no se", "no sé", "saltar", "skip", "n/a", "na"):
+            return "No sé"
+        return None
+
+    @staticmethod
+    def _start_ifci_detectores(numero_telefono: str) -> str:
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_DETECTORES)
+        if ChatbotRules.send_ifci_binary_buttons(numero_telefono, ChatbotRules._get_ifci_detectores_prompt()):
+            return ""
+        return (
+            f"{ChatbotRules._get_ifci_detectores_prompt()}\n"
+            "Sí / No / No sé"
+        )
+
+    @staticmethod
+    def _start_ifci_plano(numero_telefono: str) -> str:
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_PLANO)
+        if ChatbotRules.send_ifci_binary_buttons(numero_telefono, ChatbotRules._get_ifci_plano_prompt()):
+            return ""
+        return (
+            f"{ChatbotRules._get_ifci_plano_prompt()}\n"
+            "Sí / No / No sé"
+        )
+
+    @staticmethod
+    def _finalize_ifci_confirmation(numero_telefono: str, prefix: str = "") -> str:
+        valido, error = ChatbotRules._refresh_ifci_description(numero_telefono)
+        if not valido:
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+            return f"❌ Hay algunos errores en los datos:\n{error}"
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+        mensaje_confirmacion = ChatbotRules._get_ifci_confirmacion(numero_telefono)
+        mensaje_final = f"{prefix}\n\n{mensaje_confirmacion}" if prefix else mensaje_confirmacion
+        return ChatbotRules._send_confirmation_summary(numero_telefono, mensaje_final)
+
+    @staticmethod
+    def _finish_ifci_correction(numero_telefono: str, success_message: str = "✅ Campo actualizado correctamente.") -> str:
+        conversation_manager.set_datos_temporales(numero_telefono, "_ifci_correction_field", None)
+        return ChatbotRules._finalize_ifci_confirmation(numero_telefono, success_message)
+
+    @staticmethod
+    def _complete_presupuesto_extintor(numero_telefono: str, cantidad: str) -> str:
+        conversation_manager.set_datos_temporales(numero_telefono, "_presupuesto_cantidad", cantidad)
+        descripcion = ChatbotRules._build_presupuesto_description(numero_telefono)
+        conversation_manager.set_datos_temporales(numero_telefono, "descripcion", descripcion)
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
+        return (
+            f"✅ Perfecto. Voy anotando: {descripcion}\n"
+            f"{ChatbotRules._get_pregunta_campo_secuencial('email', TipoConsulta.PRESUPUESTO)}"
+        )
     
     @staticmethod
     def get_mensaje_inicio_secuencial(tipo_consulta: TipoConsulta) -> str:
@@ -683,6 +1203,12 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             'cuit': f"Perfecto 👌🏻 CUIT guardado: {valor}.",
         }
         return confirmaciones.get(campo, f"✅ {valor} guardado correctamente.")
+
+    @staticmethod
+    def _send_confirmation_summary(numero_telefono: str, mensaje: str) -> str:
+        if ChatbotRules.send_confirmation_buttons(numero_telefono, mensaje):
+            return ""
+        return mensaje
     
     @staticmethod
     def _procesar_campo_secuencial(numero_telefono: str, mensaje: str) -> str:
@@ -698,9 +1224,15 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.RECOLECTANDO_SECUENCIAL)
                 primer_campo = conversation_manager.get_campo_siguiente(numero_telefono)
                 return f"❌ Hay algunos errores en los datos:\n{error}\n\n{ChatbotRules._get_pregunta_campo_secuencial(primer_campo, conversacion.tipo_consulta)}"
-            
+
+            if conversacion.datos_temporales.get("_ifci_flow") and not conversacion.datos_temporales.get("_ifci_questions_done"):
+                return ChatbotRules._start_ifci_questions(numero_telefono)
+
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
-            return ChatbotRules.get_mensaje_confirmacion(conversacion)
+            return ChatbotRules._send_confirmation_summary(
+                numero_telefono,
+                ChatbotRules.get_mensaje_confirmacion(conversacion),
+            )
         
         # Verificar si el usuario quiere saltar el campo (solo para campos opcionales)
         if mensaje.strip().lower() in ['saltar', 'skip', 'no', 'n/a', 'na'] and campo_actual in ['email', 'direccion', 'horario_visita', 'razon_social', 'cuit']:
@@ -751,14 +1283,26 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
             
             if not valido:
                 return f"❌ Hay algunos errores en los datos:\n{error}"
+
+            if conversacion_actualizada.datos_temporales.get("_ifci_flow") and not conversacion_actualizada.datos_temporales.get("_ifci_questions_done"):
+                from services.meta_whatsapp_service import meta_whatsapp_service
+
+                siguiente_tramo = ChatbotRules._start_ifci_questions(numero_telefono)
+                if siguiente_tramo:
+                    return f"{confirmacion}\n\n{siguiente_tramo}" if confirmacion else siguiente_tramo
+                if confirmacion:
+                    meta_whatsapp_service.send_text_message(numero_telefono, confirmacion)
+                return ""
             
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
-            return f"{confirmacion}\n\n{ChatbotRules.get_mensaje_confirmacion(conversacion_actualizada)}"
+            mensaje_confirmacion = ChatbotRules.get_mensaje_confirmacion(conversacion_actualizada)
+            mensaje_final = f"{confirmacion}\n\n{mensaje_confirmacion}" if confirmacion else mensaje_confirmacion
+            return ChatbotRules._send_confirmation_summary(numero_telefono, mensaje_final)
         else:
             # Pedir siguiente campo
             siguiente_campo = conversation_manager.get_campo_siguiente(numero_telefono)
             siguiente_pregunta = ChatbotRules._get_pregunta_campo_secuencial(siguiente_campo, conversacion.tipo_consulta)
-            return f"{confirmacion}\n{siguiente_pregunta}"
+            return f"{confirmacion}\n{siguiente_pregunta}" if confirmacion else siguiente_pregunta
     
     @staticmethod
     def _procesar_campo_individual(numero_telefono: str, mensaje: str) -> str:
@@ -793,7 +1337,10 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
                     return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
                 
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
-                return ChatbotRules.get_mensaje_confirmacion(conversacion)
+                return ChatbotRules._send_confirmation_summary(
+                    numero_telefono,
+                    ChatbotRules.get_mensaje_confirmacion(conversacion),
+                )
             else:
                 # Preguntar por el siguiente campo
                 siguiente_campo = campos_faltantes[siguiente_indice]
@@ -924,7 +1471,10 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
                     return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
                 
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
-                return ChatbotRules.get_mensaje_confirmacion(conversacion)
+                return ChatbotRules._send_confirmation_summary(
+                    numero_telefono,
+                    ChatbotRules.get_mensaje_confirmacion(conversacion),
+                )
             else:
                 # Continuar con el siguiente campo faltante
                 siguiente_campo = campos_faltantes[indice_actual]
@@ -960,9 +1510,15 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
                         except Exception:
                             pass
                         return f"❌ Hay algunos errores en los datos:\n{error}"
-                    
+
+                    if conversacion.datos_temporales.get("_ifci_flow") and not conversacion.datos_temporales.get("_ifci_questions_done"):
+                        return ChatbotRules._start_ifci_questions(numero_telefono)
+
                     conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
-                    return ChatbotRules.get_mensaje_confirmacion(conversacion)
+                    return ChatbotRules._send_confirmation_summary(
+                        numero_telefono,
+                        ChatbotRules.get_mensaje_confirmacion(conversacion),
+                    )
             else:
                 # Flujo normal, proceder a confirmación
                 valido, error = conversation_manager.validar_y_guardar_datos(numero_telefono)
@@ -972,7 +1528,10 @@ _💡 También puedes escribir "menú" para volver al menú principal en cualqui
                     return f"❌ Hay algunos errores en los datos:\n\n{error}\n\nPor favor corrige y envía la información nuevamente."
                 
                 conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
-                return ChatbotRules.get_mensaje_confirmacion(conversacion)
+                return ChatbotRules._send_confirmation_summary(
+                    numero_telefono,
+                    ChatbotRules.get_mensaje_confirmacion(conversacion),
+                )
     
     @staticmethod
     def _extraer_datos_con_llm(mensaje: str) -> dict:
@@ -1092,11 +1651,317 @@ Responde con el número del campo que deseas modificar."""
             
             # Obtener la conversación actualizada
             conversacion_actualizada = conversation_manager.get_conversacion(numero_telefono)
-            return f"✅ Campo actualizado correctamente.\n\n{ChatbotRules.get_mensaje_confirmacion(conversacion_actualizada)}"
+            return ChatbotRules._send_confirmation_summary(
+                numero_telefono,
+                f"✅ Campo actualizado correctamente.\n\n{ChatbotRules.get_mensaje_confirmacion(conversacion_actualizada)}",
+            )
         else:
             # Campo inválido, pedir de nuevo
             error_msg = ChatbotRules._get_error_campo_individual(campo)
             return f"❌ {error_msg}\n\nPor favor envía un valor válido para: {ChatbotRules._get_pregunta_campo_individual(campo)}"
+
+    @staticmethod
+    def _procesar_presupuesto_menu(numero_telefono: str, mensaje: str) -> str:
+        if ChatbotRules._detectar_volver_local(mensaje):
+            conversacion = conversation_manager.get_conversacion(numero_telefono)
+            return ChatbotRules._manejar_menu_principal(numero_telefono, conversacion.nombre_usuario or "")
+
+        row = ChatbotRules._find_row_by_id(ChatbotRules.PRESUPUESTO_MENU_ROWS, mensaje) or ChatbotRules._find_row_by_text(
+            ChatbotRules.PRESUPUESTO_MENU_ROWS, mensaje
+        )
+        if not row:
+            return (
+                "No entendí esa opción.\n"
+                "Elegí una de estas alternativas:\n"
+                "🧯 Extintores\n"
+                "💧 IFCI\n"
+                "🧯+💧 Ambos\n\n"
+                "Ingresá 'hola' para volver a empezar."
+            )
+
+        if row["id"] == "presupuesto_extintores":
+            return ChatbotRules._start_extintor_menu(numero_telefono)
+
+        if row["id"] == "presupuesto_ifci":
+            return ChatbotRules._start_ifci_flow(numero_telefono)
+
+        return ChatbotRules._start_presupuesto_legacy(numero_telefono)
+
+    @staticmethod
+    def _procesar_presupuesto_extintor_tipo(numero_telefono: str, mensaje: str) -> str:
+        from services.meta_whatsapp_service import meta_whatsapp_service
+
+        if ChatbotRules._detectar_volver_local(mensaje):
+            return ChatbotRules._start_presupuesto_menu(numero_telefono)
+
+        row = ChatbotRules._find_row_by_id(ChatbotRules.EXTINTOR_PRODUCT_ROWS, mensaje) or ChatbotRules._find_row_by_text(
+            ChatbotRules.EXTINTOR_PRODUCT_ROWS, mensaje
+        )
+        if not row:
+            return (
+                "No entendí esa opción.\n"
+                "Elegí un tipo de matafuego/extintor o escribí `Otro`."
+            )
+
+        if row["id"] == "extintor_otro":
+            return ChatbotRules._start_presupuesto_legacy(numero_telefono)
+
+        conversation_manager.set_datos_temporales(numero_telefono, "_presupuesto_producto", row)
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.PRESUPUESTO_EXTINTOR_CONFIRMAR_CONTACTO)
+
+        info_message = ChatbotRules._get_extintor_info_message(row)
+        if meta_whatsapp_service.send_text_message(numero_telefono, info_message):
+            if ChatbotRules.send_presupuesto_contact_buttons(numero_telefono):
+                return ""
+            meta_whatsapp_service.send_text_message(numero_telefono, ChatbotRules._get_presupuesto_contact_prompt_fallback())
+            return ""
+
+        return f"{info_message}\n\n{ChatbotRules._get_presupuesto_contact_prompt_fallback()}"
+
+    @staticmethod
+    def _procesar_presupuesto_contacto(numero_telefono: str, mensaje: str) -> str:
+        if ChatbotRules._matches_choice(mensaje, "presupuesto_contacto_back") or ChatbotRules._detectar_volver_local(mensaje):
+            return ChatbotRules._start_extintor_menu(numero_telefono)
+
+        if ChatbotRules._matches_choice(
+            mensaje,
+            "presupuesto_contacto_no",
+            "no",
+            "no muchas gracias",
+            "no, muchas gracias",
+            "no gracias",
+            "no, gracias",
+        ):
+            conversation_manager.finalizar_conversacion(numero_telefono)
+            return ChatbotRules._get_presupuesto_farewell_message()
+
+        if ChatbotRules._matches_choice(mensaje, "presupuesto_contacto_si", "si", "sí"):
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.PRESUPUESTO_EXTINTOR_SERVICIO)
+            if ChatbotRules.send_presupuesto_servicio_buttons(numero_telefono):
+                return ""
+            return ChatbotRules._get_presupuesto_service_prompt_fallback()
+
+        return (
+            "Por favor elegí una opción válida:\n"
+            "- Sí\n"
+            "- No, muchas gracias\n"
+            "- Volver al menú anterior"
+        )
+
+    @staticmethod
+    def _procesar_presupuesto_servicio(numero_telefono: str, mensaje: str) -> str:
+        if ChatbotRules._matches_choice(
+            mensaje,
+            "presupuesto_compra",
+            "1",
+            "compra",
+            "compra nuevo",
+            "compra de equipo nuevo",
+            "equipo nuevo",
+        ):
+            conversation_manager.set_datos_temporales(numero_telefono, "_presupuesto_servicio", "compra")
+        elif ChatbotRules._matches_choice(mensaje, "presupuesto_mantenimiento", "2", "mantenimiento"):
+            conversation_manager.set_datos_temporales(numero_telefono, "_presupuesto_servicio", "mantenimiento")
+        else:
+            return (
+                "Por favor elegí una opción válida:\n"
+                "1. Equipo nuevo\n"
+                "2. Mantenimiento"
+            )
+
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.PRESUPUESTO_EXTINTOR_CANTIDAD)
+        if ChatbotRules.send_presupuesto_cantidad_menu(numero_telefono):
+            return ""
+        return ChatbotRules._get_presupuesto_cantidad_prompt_fallback()
+
+    @staticmethod
+    def _procesar_presupuesto_cantidad(numero_telefono: str, mensaje: str) -> str:
+        row = ChatbotRules._find_row_by_id(ChatbotRules.PRESUPUESTO_CANTIDAD_ROWS, mensaje) or ChatbotRules._find_row_by_text(
+            ChatbotRules.PRESUPUESTO_CANTIDAD_ROWS, mensaje
+        )
+        if not row:
+            return (
+                "Por favor elegí una opción válida:\n"
+                "1\n"
+                "2\n"
+                "Otra cantidad"
+            )
+
+        if row["id"] == "cantidad_otra":
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.PRESUPUESTO_EXTINTOR_CANTIDAD_MANUAL)
+            return ChatbotRules._get_presupuesto_cantidad_manual_prompt()
+
+        return ChatbotRules._complete_presupuesto_extintor(numero_telefono, row["title"])
+
+    @staticmethod
+    def _procesar_presupuesto_cantidad_manual(numero_telefono: str, mensaje: str) -> str:
+        cantidad = mensaje.strip()
+        if not re.fullmatch(r"\d+", cantidad):
+            return "Ingresá un número mayor o igual a 3."
+
+        cantidad_int = int(cantidad)
+        if cantidad_int < 3 or cantidad_int > 99:
+            return "Ingresá un número mayor o igual a 3."
+
+        return ChatbotRules._complete_presupuesto_extintor(numero_telefono, str(cantidad_int))
+
+    @staticmethod
+    def _procesar_ifci_nivel(numero_telefono: str, mensaje: str) -> str:
+        row = ChatbotRules._find_row_by_id(ChatbotRules.IFCI_NIVEL_ROWS, mensaje) or ChatbotRules._find_row_by_text(
+            ChatbotRules.IFCI_NIVEL_ROWS, mensaje
+        )
+        if not row:
+            return (
+                "Por favor elegí una opción válida para el nivel de instalación.\n"
+                "Nivel 1: Cañería seca\n"
+                "Nivel 2: Cañería humeda\n"
+                "Nivel 3: Cañería humeda\n"
+                "No sé"
+            )
+
+        conversation_manager.set_datos_temporales(numero_telefono, "ifci_nivel", row.get("value", row["title"]))
+
+        if conversation_manager.get_datos_temporales(numero_telefono, "_ifci_correction_field") == "ifci_nivel":
+            return ChatbotRules._finish_ifci_correction(numero_telefono)
+
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_HIDRANTES)
+        return ChatbotRules._get_ifci_hidrantes_prompt()
+
+    @staticmethod
+    def _procesar_ifci_hidrantes(numero_telefono: str, mensaje: str) -> str:
+        valor = ChatbotRules._normalize_ifci_free_text_answer(mensaje)
+        if not valor:
+            return ChatbotRules._get_ifci_hidrantes_prompt()
+
+        conversation_manager.set_datos_temporales(numero_telefono, "ifci_hidrantes", valor)
+
+        if conversation_manager.get_datos_temporales(numero_telefono, "_ifci_correction_field") == "ifci_hidrantes":
+            return ChatbotRules._finish_ifci_correction(numero_telefono)
+
+        conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_ESTABLECIMIENTO)
+        return ChatbotRules._get_ifci_establecimiento_prompt()
+
+    @staticmethod
+    def _procesar_ifci_establecimiento(numero_telefono: str, mensaje: str) -> str:
+        valor = ChatbotRules._normalize_ifci_free_text_answer(mensaje)
+        if not valor:
+            return ChatbotRules._get_ifci_establecimiento_prompt()
+
+        conversation_manager.set_datos_temporales(numero_telefono, "ifci_establecimiento", valor)
+
+        if conversation_manager.get_datos_temporales(numero_telefono, "_ifci_correction_field") == "ifci_establecimiento":
+            return ChatbotRules._finish_ifci_correction(numero_telefono)
+
+        return ChatbotRules._start_ifci_detectores(numero_telefono)
+
+    @staticmethod
+    def _procesar_ifci_detectores(numero_telefono: str, mensaje: str) -> str:
+        valor = ChatbotRules._parse_ifci_binary_answer(mensaje)
+        if not valor:
+            return (
+                "Por favor elegí una opción válida:\n"
+                "Sí / No / No sé"
+            )
+
+        conversation_manager.set_datos_temporales(numero_telefono, "ifci_detectores", valor)
+
+        if conversation_manager.get_datos_temporales(numero_telefono, "_ifci_correction_field") == "ifci_detectores":
+            return ChatbotRules._finish_ifci_correction(numero_telefono)
+
+        return ChatbotRules._start_ifci_plano(numero_telefono)
+
+    @staticmethod
+    def _procesar_ifci_plano(numero_telefono: str, mensaje: str) -> str:
+        valor = ChatbotRules._parse_ifci_binary_answer(mensaje)
+        if not valor:
+            return (
+                "Por favor elegí una opción válida:\n"
+                "Sí / No / No sé"
+            )
+
+        conversation_manager.set_datos_temporales(numero_telefono, "ifci_plano", valor)
+
+        if conversation_manager.get_datos_temporales(numero_telefono, "_ifci_correction_field") == "ifci_plano":
+            return ChatbotRules._finish_ifci_correction(numero_telefono)
+
+        conversation_manager.set_datos_temporales(numero_telefono, "_ifci_questions_done", "1")
+        return ChatbotRules._finalize_ifci_confirmation(numero_telefono)
+
+    @staticmethod
+    def _procesar_ifci_correccion(numero_telefono: str, mensaje: str) -> str:
+        opcion = ChatbotRules.IFCI_CORRECTION_OPTIONS.get(mensaje.strip())
+        if not opcion:
+            return ChatbotRules._get_ifci_correction_menu()
+
+        if opcion == "todo":
+            return ChatbotRules._start_ifci_flow(numero_telefono)
+
+        conversation_manager.set_datos_temporales(numero_telefono, "_ifci_correction_field", opcion)
+
+        if opcion in {"email", "direccion", "horario_visita", "razon_social", "cuit"}:
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_CORRIGIENDO_CAMPO)
+            return ChatbotRules._get_pregunta_campo_secuencial(opcion, TipoConsulta.PRESUPUESTO)
+
+        if opcion == "ifci_nivel":
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_NIVEL)
+            if ChatbotRules.send_ifci_nivel_menu(numero_telefono):
+                return ""
+            return (
+                "¿Cuál es el nivel de la instalación?\n"
+                "Nivel 1: Cañería seca\n"
+                "Nivel 2: Cañería humeda\n"
+                "Nivel 3: Cañería humeda\n"
+                "No sé"
+            )
+
+        if opcion == "ifci_hidrantes":
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_CORRIGIENDO_CAMPO)
+            return ChatbotRules._get_ifci_hidrantes_prompt()
+
+        if opcion == "ifci_establecimiento":
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_CORRIGIENDO_CAMPO)
+            return ChatbotRules._get_ifci_establecimiento_prompt()
+
+        if opcion == "ifci_detectores":
+            return ChatbotRules._start_ifci_detectores(numero_telefono)
+
+        if opcion == "ifci_plano":
+            return ChatbotRules._start_ifci_plano(numero_telefono)
+
+        return ChatbotRules._get_ifci_correction_menu()
+
+    @staticmethod
+    def _procesar_ifci_correccion_campo(numero_telefono: str, mensaje: str) -> str:
+        campo = conversation_manager.get_datos_temporales(numero_telefono, "_ifci_correction_field")
+        if not campo:
+            conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
+            return ChatbotRules._send_confirmation_summary(
+                numero_telefono,
+                ChatbotRules._get_ifci_confirmacion(numero_telefono),
+            )
+
+        if campo in {"ifci_hidrantes", "ifci_establecimiento"}:
+            valor = ChatbotRules._normalize_ifci_free_text_answer(mensaje)
+            if not valor:
+                if campo == "ifci_hidrantes":
+                    return ChatbotRules._get_ifci_hidrantes_prompt()
+                return ChatbotRules._get_ifci_establecimiento_prompt()
+            conversation_manager.set_datos_temporales(numero_telefono, campo, valor)
+            return ChatbotRules._finish_ifci_correction(numero_telefono)
+
+        mensaje_limpio = mensaje.strip()
+        if mensaje_limpio.lower() in ['saltar', 'skip', 'no', 'n/a', 'na'] and campo in ['email', 'direccion', 'horario_visita', 'razon_social', 'cuit']:
+            conversation_manager.set_datos_temporales(numero_telefono, campo, "")
+            return ChatbotRules._finish_ifci_correction(numero_telefono)
+
+        if not ChatbotRules._validar_campo_individual(campo, mensaje_limpio):
+            return (
+                f"❌ {ChatbotRules._get_error_campo_individual(campo)}\n"
+                f"{ChatbotRules._get_pregunta_campo_secuencial(campo, TipoConsulta.PRESUPUESTO)}"
+            )
+
+        conversation_manager.set_datos_temporales(numero_telefono, campo, mensaje_limpio)
+        return ChatbotRules._finish_ifci_correction(numero_telefono)
     
     @staticmethod
     def procesar_mensaje(numero_telefono: str, mensaje: str, nombre_usuario: str = "") -> str:
@@ -1175,15 +2040,17 @@ Responde con el número del campo que deseas modificar."""
                 return base
         
         # INTERCEPTAR SOLICITUDES DE VOLVER AL MENÚ EN CUALQUIER MOMENTO
-        if ChatbotRules._detectar_volver_menu(mensaje) and conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]:
-            # Limpiar datos temporales y volver al menú
-            conversation_manager.clear_datos_temporales(numero_telefono)
-            conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
-            try:
-                ChatbotRules.send_menu_interactivo(numero_telefono, conversacion.nombre_usuario)
-            except Exception:
-                pass
-            return "↩️ *Volviendo al menú principal...*"
+        local_back_states = {
+            EstadoConversacion.PRESUPUESTO_MENU,
+            EstadoConversacion.PRESUPUESTO_EXTINTOR_TIPO,
+            EstadoConversacion.PRESUPUESTO_EXTINTOR_CONFIRMAR_CONTACTO,
+        }
+        if (
+            ChatbotRules._detectar_volver_menu(mensaje)
+            and conversacion.estado not in [EstadoConversacion.INICIO, EstadoConversacion.ESPERANDO_OPCION]
+            and conversacion.estado not in local_back_states
+        ):
+            return ChatbotRules._manejar_menu_principal(numero_telefono, conversacion.nombre_usuario or "")
         
         if conversacion.estado == EstadoConversacion.INICIO:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ESPERANDO_OPCION)
@@ -1191,7 +2058,25 @@ Responde con el número del campo que deseas modificar."""
         
         elif conversacion.estado == EstadoConversacion.ESPERANDO_OPCION:
             return ChatbotRules._procesar_seleccion_opcion(numero_telefono, mensaje)
-        
+
+        elif conversacion.estado == EstadoConversacion.PRESUPUESTO_MENU:
+            return ChatbotRules._procesar_presupuesto_menu(numero_telefono, mensaje)
+
+        elif conversacion.estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_TIPO:
+            return ChatbotRules._procesar_presupuesto_extintor_tipo(numero_telefono, mensaje)
+
+        elif conversacion.estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_CONFIRMAR_CONTACTO:
+            return ChatbotRules._procesar_presupuesto_contacto(numero_telefono, mensaje)
+
+        elif conversacion.estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_SERVICIO:
+            return ChatbotRules._procesar_presupuesto_servicio(numero_telefono, mensaje)
+
+        elif conversacion.estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_CANTIDAD:
+            return ChatbotRules._procesar_presupuesto_cantidad(numero_telefono, mensaje)
+
+        elif conversacion.estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_CANTIDAD_MANUAL:
+            return ChatbotRules._procesar_presupuesto_cantidad_manual(numero_telefono, mensaje)
+
         elif conversacion.estado == EstadoConversacion.RECOLECTANDO_DATOS:
             return ChatbotRules._procesar_datos_contacto(numero_telefono, mensaje)
         
@@ -1203,16 +2088,37 @@ Responde con el número del campo que deseas modificar."""
         
         elif conversacion.estado == EstadoConversacion.VALIDANDO_UBICACION:
             return ChatbotRules._procesar_seleccion_ubicacion(numero_telefono, mensaje_limpio)
-        
+
+        elif conversacion.estado == EstadoConversacion.IFCI_NIVEL:
+            return ChatbotRules._procesar_ifci_nivel(numero_telefono, mensaje)
+
+        elif conversacion.estado == EstadoConversacion.IFCI_HIDRANTES:
+            return ChatbotRules._procesar_ifci_hidrantes(numero_telefono, mensaje)
+
+        elif conversacion.estado == EstadoConversacion.IFCI_ESTABLECIMIENTO:
+            return ChatbotRules._procesar_ifci_establecimiento(numero_telefono, mensaje)
+
+        elif conversacion.estado == EstadoConversacion.IFCI_DETECTORES:
+            return ChatbotRules._procesar_ifci_detectores(numero_telefono, mensaje)
+
+        elif conversacion.estado == EstadoConversacion.IFCI_PLANO:
+            return ChatbotRules._procesar_ifci_plano(numero_telefono, mensaje)
+
         elif conversacion.estado == EstadoConversacion.CONFIRMANDO:
             return ChatbotRules._procesar_confirmacion(numero_telefono, mensaje_limpio)
-        
+
         elif conversacion.estado == EstadoConversacion.CORRIGIENDO:
             return ChatbotRules._procesar_correccion_campo(numero_telefono, mensaje_limpio)
-        
+
         elif conversacion.estado == EstadoConversacion.CORRIGIENDO_CAMPO:
             return ChatbotRules._procesar_correccion_campo_especifico(numero_telefono, mensaje)
-        
+
+        elif conversacion.estado == EstadoConversacion.IFCI_CORRIGIENDO:
+            return ChatbotRules._procesar_ifci_correccion(numero_telefono, mensaje_limpio)
+
+        elif conversacion.estado == EstadoConversacion.IFCI_CORRIGIENDO_CAMPO:
+            return ChatbotRules._procesar_ifci_correccion_campo(numero_telefono, mensaje)
+
         else:
             return "🤖 Hubo un error. Escribe 'hola' para comenzar de nuevo."
 
@@ -1339,7 +2245,10 @@ Responde con el número del campo que deseas modificar."""
             
             conversacion = conversation_manager.get_conversacion(numero_telefono)
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CONFIRMANDO)
-            return ChatbotRules.get_mensaje_confirmacion(conversacion)
+            return ChatbotRules._send_confirmation_summary(
+                numero_telefono,
+                ChatbotRules.get_mensaje_confirmacion(conversacion),
+            )
         else:
             # Faltan campos, cambiar a modo de preguntas individuales
             conversation_manager.set_datos_temporales(numero_telefono, '_campos_faltantes', campos_faltantes)
@@ -1374,11 +2283,16 @@ Responde con el número del campo que deseas modificar."""
     
     @staticmethod
     def _procesar_confirmacion(numero_telefono: str, mensaje: str) -> str:
-        if mensaje in ['si', 'sí', 'yes', 'confirmo', 'ok', 'correcto']:
+        conversacion = conversation_manager.get_conversacion(numero_telefono)
+
+        if mensaje in ['si', 'sí', 'yes', 'confirmo', 'ok', 'correcto', '1', '1️⃣']:
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.ENVIANDO)
             return "⏳ Procesando tu solicitud..."
-        elif mensaje in ['no', 'nope', 'incorrecto', 'error']:
+        elif mensaje in ['no', 'nope', 'incorrecto', 'error', '2', '2️⃣']:
             # Cambiar a estado de corrección y preguntar qué campo modificar
+            if conversacion.datos_temporales.get("_ifci_flow"):
+                conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_CORRIGIENDO)
+                return ChatbotRules._get_ifci_correction_menu()
             conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)
             return ChatbotRules._get_mensaje_pregunta_campo_a_corregir()
         else:

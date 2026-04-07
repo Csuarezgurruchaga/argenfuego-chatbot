@@ -1,5 +1,6 @@
 import os
 import logging
+import html
 from datetime import datetime
 
 import boto3
@@ -98,6 +99,7 @@ class EmailService:
             TipoConsulta.URGENCIA: "Urgencia",
             TipoConsulta.OTRAS: "Consulta General"
         }
+        descripcion_html = html.escape(conversacion.datos_contacto.descripcion).replace("\n", "<br>")
         
         urgencia_style = ""
         if conversacion.tipo_consulta == TipoConsulta.URGENCIA:
@@ -190,7 +192,7 @@ class EmailService:
                     
                     <div style="background-color: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 15px; margin: 15px 0; border-radius: 0 8px 8px 0;">
                         <p style="margin: 0; color: #1f2937; font-style: italic;">
-                            "{conversacion.datos_contacto.descripcion}"
+                            "{descripcion_html}"
                         </p>
                     </div>
                     

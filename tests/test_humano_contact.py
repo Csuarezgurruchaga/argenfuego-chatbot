@@ -64,8 +64,9 @@ def test_interrupcion_contextual_humano():
 
     # Interrupción para hablar con humano
     respuesta = ChatbotRules.procesar_mensaje(numero, "quiero hablar con una persona")
-    assert "Teléfono fijo" in respuesta
-    assert "sigamos" in respuesta.lower() or "seguimos" in respuesta.lower()
+    assert "asesores" in respuesta.lower() or "staff de argenfuego" in respuesta.lower()
+    assert "aguardá" in respuesta.lower() or "aguarda" in respuesta.lower()
+    assert conversation_manager.get_conversacion(numero).estado.value == "atendido_por_humano"
 
     conversation_manager.finalizar_conversacion(numero)
 
@@ -76,5 +77,3 @@ if __name__ == "__main__":
     test_respuesta_humano_con_telefonos()
     test_interrupcion_contextual_humano()
     print("✅ Tests de intención humano completados")
-
-
