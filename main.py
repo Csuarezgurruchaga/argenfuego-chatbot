@@ -17,6 +17,7 @@ from services.whatsapp_handoff_service import whatsapp_handoff_service
 from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
 from services.metrics_service import metrics_service
+from services.conversation_session_service import conversation_session_service
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -32,6 +33,7 @@ app = FastAPI(
 # Cloud Run can scale to zero, so we don't rely on an env var for this.
 # Keep this as a constant to avoid configuration drift between deployments.
 TTL_MINUTES = 60
+SESSION_CHECKPOINT_CLEANUP_BATCH_SIZE = int(os.getenv("SESSION_CHECKPOINT_CLEANUP_BATCH_SIZE", "100"))
 
 
 def get_messaging_service(user_id: str):
@@ -62,6 +64,45 @@ def send_message(user_id: str, message: str) -> bool:
     if service:
         return service.send_text_message(clean_id, message)
     return False
+
+
+def _persist_checkpoint_before_send(numero_telefono: str, reason: str) -> bool:
+    conversacion = conversation_manager.get_conversacion(numero_telefono)
+    try:
+        conversation_session_service.save_for_key(numero_telefono, conversacion)
+        return True
+    except Exception as exc:
+        logger.error(
+            "critical_save_before_send_failed phone=%s estado=%s reason=%s error=%s",
+            numero_telefono,
+            conversacion.estado,
+            reason,
+            str(exc),
+        )
+        send_message(
+            numero_telefono,
+            "❌ Hubo un error guardando tu sesión. Por favor intentá nuevamente.",
+        )
+        return False
+
+
+def _save_final_checkpoint_if_needed(numero_telefono: Optional[str]) -> None:
+    if not numero_telefono:
+        return
+    conversacion = conversation_manager.conversaciones.get(numero_telefono)
+    if not conversacion:
+        return
+    if not conversation_session_service.is_resumable_state(conversacion.estado):
+        return
+    try:
+        conversation_session_service.save_for_key(numero_telefono, conversacion)
+    except Exception as exc:
+        logger.error(
+            "final_save_failed phone=%s estado=%s error=%s",
+            numero_telefono,
+            conversacion.estado,
+            str(exc),
+        )
 
 
 @app.get("/")
@@ -166,6 +207,31 @@ async def handoff_ttl_sweep(token: str = Form(...)):
     
     return {"closed": cerradas}
 
+
+@app.post("/session-checkpoints/cleanup")
+async def session_checkpoints_cleanup(token: str = Form(...)):
+    expected_token = (
+        os.getenv("SESSION_CHECKPOINT_CLEANUP_TOKEN")
+        or os.getenv("AGENT_API_TOKEN")
+        or ""
+    ).strip()
+    if not expected_token or token != expected_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    deleted_doc_ids = conversation_session_service.cleanup_expired_checkpoints(
+        limit=SESSION_CHECKPOINT_CLEANUP_BATCH_SIZE,
+    )
+    logger.info(
+        "checkpoint_cleanup_run deleted=%s batch_limit=%s",
+        len(deleted_doc_ids),
+        SESSION_CHECKPOINT_CLEANUP_BATCH_SIZE,
+    )
+    return {
+        "deleted": len(deleted_doc_ids),
+        "deleted_doc_ids": deleted_doc_ids,
+        "batch_limit": SESSION_CHECKPOINT_CLEANUP_BATCH_SIZE,
+    }
+
 @app.get("/webhook/whatsapp")
 async def webhook_whatsapp_verify(request: Request):
     """
@@ -244,6 +310,25 @@ async def webhook_whatsapp_receive(request: Request):
                 f"Mensaje recibido de {numero_telefono} ({profile_name or 'sin nombre'}): {mensaje_usuario}"
             )
 
+            if message_id:
+                try:
+                    is_duplicate = conversation_session_service.mark_message_processed(message_id)
+                except Exception as exc:
+                    logger.error(
+                        "message_dedupe_failed phone=%s message_id=%s error=%s",
+                        numero_telefono,
+                        message_id,
+                        str(exc),
+                    )
+                else:
+                    if is_duplicate:
+                        logger.info(
+                            "message_deduped phone=%s message_id=%s",
+                            numero_telefono,
+                            message_id,
+                        )
+                        return PlainTextResponse("", status_code=200)
+
             # Verificar si el mensaje viene del agente humano
             if whatsapp_handoff_service.is_agent_message(numero_telefono):
                 await handle_agent_message(numero_telefono, mensaje_usuario, profile_name)
@@ -266,6 +351,7 @@ async def webhook_whatsapp_receive(request: Request):
                 if respuesta_interactiva:
                     send_message(numero_telefono, respuesta_interactiva)
 
+                _save_final_checkpoint_if_needed(numero_telefono)
                 return PlainTextResponse("", status_code=200)
 
             # Fallback para contenidos no-texto
@@ -483,12 +569,20 @@ async def webhook_whatsapp_receive(request: Request):
             
             # Enviar respuesta usando el servicio correcto (WhatsApp o Messenger)
             if respuesta and respuesta.strip():
+                if (
+                    conversation_manager.conversaciones.get(numero_telefono)
+                    and conversation_manager.get_conversacion(numero_telefono).estado == EstadoConversacion.CONFIRMANDO
+                    and not _persist_checkpoint_before_send(numero_telefono, "confirmacion_texto")
+                ):
+                    return PlainTextResponse("", status_code=200)
                 mensaje_enviado = send_message(numero_telefono, respuesta)
                 
                 if not mensaje_enviado:
                     logger.error(f"Error enviando mensaje a {numero_telefono}")
             else:
                 logger.info(f"Respuesta vacía, no se envía mensaje a {numero_telefono}")
+
+            _save_final_checkpoint_if_needed(numero_telefono)
             
             # Si durante el procesamiento se activó el handoff, agregar a cola y notificar al agente
             try:

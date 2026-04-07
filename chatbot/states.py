@@ -3,25 +3,65 @@ from typing import Dict, Optional, List, Any
 from .models import ConversacionData, EstadoConversacion, TipoConsulta, DatosContacto, DatosConsultaGeneral
 from pydantic import ValidationError
 from services.metrics_service import metrics_service
+from services.conversation_session_service import conversation_session_service
 from datetime import datetime, timedelta
 
 POST_FINALIZADO_WINDOW_SECONDS = int(os.getenv("POST_FINALIZADO_WINDOW_SECONDS", "120"))
 
 class ConversationManager:
-    def __init__(self):
+    def __init__(self, session_service=None):
         self.conversaciones: Dict[str, ConversacionData] = {}
         self.recently_finalized: Dict[str, datetime] = {}
+        self.session_service = session_service or conversation_session_service
 
         # Sistema de cola FIFO para handoffs
         self.handoff_queue: List[str] = []  # Lista de números de teléfono en orden FIFO
         self.active_handoff: Optional[str] = None  # Número de teléfono activo actualmente
+
+    def _load_checkpoint(self, numero_telefono: str) -> Optional[ConversacionData]:
+        try:
+            checkpoint = self.session_service.load_for_key(numero_telefono)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).error(
+                "checkpoint_load_failed phone=%s error=%s",
+                numero_telefono,
+                str(exc),
+            )
+            return None
+
+        if checkpoint is None:
+            return None
+
+        if not self.session_service.is_resumable_state(checkpoint.conversation.estado):
+            return None
+
+        if self.session_service.is_expired(checkpoint.expires_at):
+            try:
+                self.session_service.delete_for_key(numero_telefono)
+            except Exception:
+                pass
+            return None
+
+        return checkpoint.conversation
+
+    def _delete_checkpoint(self, numero_telefono: str, reason: str) -> None:
+        try:
+            self.session_service.delete_for_key(numero_telefono)
+        except Exception:
+            pass
     
     def get_conversacion(self, numero_telefono: str) -> ConversacionData:
         if numero_telefono not in self.conversaciones:
-            self.conversaciones[numero_telefono] = ConversacionData(
-                numero_telefono=numero_telefono,
-                estado=EstadoConversacion.INICIO
-            )
+            checkpoint_conversation = self._load_checkpoint(numero_telefono)
+            if checkpoint_conversation is not None:
+                self.conversaciones[numero_telefono] = checkpoint_conversation
+            else:
+                self.conversaciones[numero_telefono] = ConversacionData(
+                    numero_telefono=numero_telefono,
+                    estado=EstadoConversacion.INICIO
+                )
         return self.conversaciones[numero_telefono]
     
     def update_estado(self, numero_telefono: str, nuevo_estado: EstadoConversacion):
@@ -120,6 +160,7 @@ class ConversationManager:
         self.recently_finalized[numero_telefono] = datetime.utcnow()
         if numero_telefono in self.conversaciones:
             del self.conversaciones[numero_telefono]
+        self._delete_checkpoint(numero_telefono, "finalizar_conversacion")
         try:
             metrics_service.on_conversation_finished()
         except Exception:
@@ -129,6 +170,7 @@ class ConversationManager:
         if numero_telefono in self.conversaciones:
             del self.conversaciones[numero_telefono]
         self.recently_finalized.pop(numero_telefono, None)
+        self._delete_checkpoint(numero_telefono, "reset_conversacion")
     
     # Métodos para manejo secuencial de campos
     def get_campo_siguiente(self, numero_telefono: str) -> str:
