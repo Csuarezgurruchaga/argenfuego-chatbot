@@ -489,7 +489,7 @@ Responde con el número de la opción que necesitas 📱"""
             numero_telefono,
             body_text="Seleccioná qué tipo de presupuesto necesitás:",
             buttons=list(ChatbotRules.PRESUPUESTO_MENU_ROWS),
-            footer_text="En el momento que quieras ingresá 'hola' para volver a empezar.",
+            footer_text="*ingresá 'hola' para volver a empezar.",
         )
 
     @staticmethod
@@ -769,7 +769,7 @@ Responde con el número de la opción que necesitas 📱"""
             "🧯 Extintores\n"
             "💧 IFCI\n"
             "🧯+💧 Ambos\n\n"
-            "En el momento que quieras ingresá 'hola' para volver a empezar."
+            "*ingresá 'hola' para volver a empezar."
         )
 
     @staticmethod
@@ -1674,7 +1674,7 @@ Responde con el número del campo que deseas modificar."""
                 "🧯 Extintores\n"
                 "💧 IFCI\n"
                 "🧯+💧 Ambos\n\n"
-                "En el momento que quieras ingresá 'hola' para volver a empezar."
+                "*ingresá 'hola' para volver a empezar."
             )
 
         if row["id"] == "presupuesto_extintores":
