@@ -1141,7 +1141,7 @@ async def test_complete_flow():
         from chatbot.states import conversation_manager
         
         # Usar tu número por defecto
-        test_number = "+5491135722871"
+        test_number = "+5491139061038"
         
         logger.info(f"🧪 TESTING COMPLETE FLOW para número: {test_number}")
         

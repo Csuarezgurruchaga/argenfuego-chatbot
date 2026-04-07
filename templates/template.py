@@ -165,21 +165,3 @@ Instrucciones:
 
 Genera una respuesta natural en español.
 """)
-
-PERSONALIZED_GREETING_PROMPT = Template("""
-Genera un saludo personalizado para WhatsApp como {{bot_name}} de {{company_name}}.
-
-Información del usuario:
-- Nombre: {{user_name}}
-- Es primera vez: {{is_first_time}}
-
-Instrucciones:
-1. Si tiene nombre, úsalo en el saludo
-2. Si no tiene nombre, saluda de manera general  
-3. Preséntate como {{bot_name}} de {{company_name}}
-4. Usa un tono amigable y profesional
-6. Incluye emojis apropiados
-7. Invita a elegir una opción del menú
-
-Genera un saludo natural en español.
-""")

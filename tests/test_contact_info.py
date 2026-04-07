@@ -107,26 +107,6 @@ def test_contact_responses():
     
     return True
 
-def test_personalized_greetings():
-    print("\n👋 === TEST: Saludos Personalizados ===")
-    
-    test_names = [
-        ("Juan", "con nombre"),
-        ("María Elena", "nombre compuesto"),
-        ("", "sin nombre"),
-        (None, "nombre nulo")
-    ]
-    
-    for name, description in test_names:
-        try:
-            saludo = nlu_service.generar_saludo_personalizado(name or "")
-            print(f"✅ {description} -> Saludo generado ({len(saludo)} chars)")
-        except Exception as e:
-            print(f"❌ Error generando saludo {description}: {e}")
-            return False
-    
-    return True
-
 def test_contextual_interruption():
     print("\n🔄 === TEST: Interrupción Contextual ===")
     
@@ -209,7 +189,6 @@ def main():
         ("Configuración Multi-Empresa", test_company_configuration),
         ("Detección de Consultas de Contacto", test_contact_detection),
         ("Generación de Respuestas de Contacto", test_contact_responses),
-        ("Saludos Personalizados", test_personalized_greetings),
         ("Interrupción Contextual", test_contextual_interruption),
         ("Redirección de Urgencias", test_emergency_redirect)
     ]

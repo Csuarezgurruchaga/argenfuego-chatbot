@@ -72,7 +72,7 @@ class MetaWhatsAppService:
         Envía un mensaje de texto a través de WhatsApp Cloud API.
         
         Args:
-            to_number: Número de destino en formato E.164 (ej: +5491135722871)
+            to_number: Número de destino en formato E.164 (ej: +5491139061038)
             message: Texto del mensaje
             
         Returns:
@@ -614,7 +614,7 @@ class MetaWhatsAppService:
             phone_number: Número en cualquier formato
             
         Returns:
-            str: Número en formato E.164 (ej: 5491135722871 sin +)
+            str: Número en formato E.164 (ej: 5491139061038 sin +)
         """
         # Remover prefijo whatsapp: si existe
         normalized = phone_number.replace('whatsapp:', '')

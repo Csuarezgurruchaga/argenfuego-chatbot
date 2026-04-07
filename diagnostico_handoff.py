@@ -59,7 +59,7 @@ def verificar_formato_numero_agente():
     # Verificar formato
     if not agent_number.startswith('+'):
         print(f"⚠️  Número sin prefijo '+': {agent_number}")
-        print("💡 Debería ser: +5491135722871")
+        print("💡 Debería ser: +5491139061038")
         return False
     
     if not agent_number[1:].isdigit():
@@ -218,7 +218,7 @@ def generar_reporte_diagnostico():
         print("• Configura todas las variables de entorno en Railway")
     
     if not resultados["formato_numero"]:
-        print("• Verifica que AGENT_WHATSAPP_NUMBER tenga formato +5491135722871")
+        print("• Verifica que AGENT_WHATSAPP_NUMBER tenga formato +5491139061038")
     
     if not resultados["envio_directo"]:
         print("• El problema está en el envío de mensajes - revisa logs de Meta Cloud API")

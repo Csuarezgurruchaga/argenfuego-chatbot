@@ -23,7 +23,7 @@ def diagnosticar_problema_inicio():
         return
     
     # 2. Verificar si el número de prueba es el mismo que el agente
-    test_number = "+5491135722871"  # Número que estás usando para probar
+    test_number = "+5491139061038"  # Número que estás usando para probar
     print(f"2. Número de prueba: {test_number}")
     
     if test_number == agent_number:

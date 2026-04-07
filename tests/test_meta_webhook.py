@@ -18,7 +18,7 @@ def mock_env_vars(monkeypatch):
     monkeypatch.setenv("META_WA_PHONE_NUMBER_ID", "123456789")
     monkeypatch.setenv("META_WA_APP_SECRET", "test_secret")
     monkeypatch.setenv("META_WA_VERIFY_TOKEN", "test_verify_token")
-    monkeypatch.setenv("AGENT_WHATSAPP_NUMBER", "+5491135722871")
+    monkeypatch.setenv("AGENT_WHATSAPP_NUMBER", "+5491139061038")
 
 
 def _build_message_payload(text_body: str, from_number: str = "5491198765432"):
@@ -30,7 +30,7 @@ def _build_message_payload(text_body: str, from_number: str = "5491198765432"):
                 "value": {
                     "messaging_product": "whatsapp",
                     "metadata": {
-                        "display_phone_number": "5491135722871",
+                        "display_phone_number": "5491139061038",
                         "phone_number_id": "123456789"
                     },
                     "contacts": [{
@@ -143,7 +143,7 @@ def test_webhook_message_received_valid_signature():
                 "value": {
                     "messaging_product": "whatsapp",
                     "metadata": {
-                        "display_phone_number": "5491135722871",
+                        "display_phone_number": "5491139061038",
                         "phone_number_id": "123456789"
                     },
                     "contacts": [{
@@ -253,12 +253,12 @@ def test_meta_whatsapp_service_send_text():
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "messaging_product": "whatsapp",
-            "contacts": [{"input": "5491135722871", "wa_id": "5491135722871"}],
+            "contacts": [{"input": "5491139061038", "wa_id": "5491139061038"}],
             "messages": [{"id": "wamid.test123"}]
         }
         mock_post.return_value = mock_response
         
-        result = service.send_text_message("+5491135722871", "Hola mundo")
+        result = service.send_text_message("+5491139061038", "Hola mundo")
         
         assert result is True
         assert mock_post.called
@@ -271,16 +271,16 @@ def test_meta_whatsapp_service_normalize_phone():
     service = MetaWhatsAppService()
     
     # Con prefijo whatsapp:
-    assert service._normalize_phone_number("whatsapp:+5491135722871") == "5491135722871"
+    assert service._normalize_phone_number("whatsapp:+5491139061038") == "5491139061038"
     
     # Con +
-    assert service._normalize_phone_number("+5491135722871") == "5491135722871"
+    assert service._normalize_phone_number("+5491139061038") == "5491139061038"
     
     # Sin +
-    assert service._normalize_phone_number("5491135722871") == "5491135722871"
+    assert service._normalize_phone_number("5491139061038") == "5491139061038"
     
     # Con espacios
-    assert service._normalize_phone_number("+549 11 3572 2871") == "5491135722871"
+    assert service._normalize_phone_number("+549 11 3906 1038") == "5491139061038"
 
 
 def test_meta_whatsapp_service_extract_message_data():
@@ -367,7 +367,7 @@ def test_meta_whatsapp_service_strips_alias_from_main_menu_buttons():
         mock_post.return_value = mock_response
 
         result = service.send_interactive_buttons(
-            "+5491135722871",
+            "+5491139061038",
             "¡Hola Carlos R! 👋 Soy Eva de Argenfuego, bienvenido. ¿En qué puedo ayudarte?",
             buttons,
         )
@@ -384,7 +384,7 @@ def test_chatbot_rules_send_menu_interactivo_without_header():
     from services.meta_whatsapp_service import meta_whatsapp_service
 
     with patch.object(meta_whatsapp_service, "send_interactive_buttons", return_value=True) as mock_send:
-        result = ChatbotRules.send_menu_interactivo("+5491135722871", "Carlos R")
+        result = ChatbotRules.send_menu_interactivo("+5491139061038", "Carlos R")
 
     assert result is True
     assert mock_send.call_args.kwargs["body_text"] == "¿En qué puedo ayudarte hoy?"

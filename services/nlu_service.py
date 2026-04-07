@@ -5,7 +5,7 @@ import re
 from typing import Optional, Dict, Any
 from openai import OpenAI
 from chatbot.models import TipoConsulta
-from templates.template import NLU_INTENT_PROMPT, NLU_MESSAGE_PARSING_PROMPT, CONTACT_INFO_DETECTION_PROMPT, CONTACT_INFO_RESPONSE_PROMPT, PERSONALIZED_GREETING_PROMPT
+from templates.template import NLU_INTENT_PROMPT, NLU_MESSAGE_PARSING_PROMPT
 from config.company_profiles import get_active_company_profile, get_company_info_text
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,41 @@ HUMAN_INTENT_PATTERNS = [
     r"HABLAR\s+CON\s+HUMANO",
     r"humnao",
     r"operadro",
+]
+
+CONTACT_RESPONSE_FIELD_PATTERNS = {
+    "phone": [
+        r"\b(?:cu[aá]l|cual)\s+es\s+su\s+(?:tel[eé]fono|n[uú]mero|numero)",
+        r"\b(?:n[uú]mero|numero)\s+de\s+(?:tel[eé]fono|contacto)",
+        r"\b(?:llamo|llamarlos|llamarlas|contacto|contactarlos|contactarlas)\b",
+        r"\btel[eé]fonos?\b",
+    ],
+    "address": [
+        r"\b(?:d[oó]nde|donde)\s+(?:est[aá]n|estan|queda|quedan)\b",
+        r"\b(?:cu[aá]l|cual)\s+es\s+su\s+direcci[oó]n\b",
+        r"\b(?:direcci[oó]n|ubicaci[oó]n|ubicados|ubicada)\b",
+    ],
+    "hours": [
+        r"\b(?:cu[aá]ndo|cuando)\s+(?:abren|abre|atienden)\b",
+        r"\b(?:qu[eé]|que)\s+horarios?\s+tienen\b",
+        r"\bhasta\s+(?:qu[eé]|que)\s+hora\b",
+        r"\bhorarios?\b",
+    ],
+    "email": [
+        r"\b(?:cu[aá]l|cual)\s+es\s+su\s+(?:email|correo)\b",
+        r"\bcorreo(?:\s+electr[oó]nico)?\b",
+        r"\bmail\b",
+    ],
+    "website": [
+        r"\b(?:web|sitio\s+web|p[aá]gina\s+web|pagina\s+web|website)\b",
+    ],
+}
+
+CONTACT_SUMMARY_PATTERNS = [
+    r"\bdatos?\s+de\s+contacto\b",
+    r"\binformaci[oó]n\s+de\s+contacto\b",
+    r"\b(?:todos|toda)\s+sus\s+datos\b",
+    r"\bc[oó]mo\s+(?:los|las)\s+contacto\b",
 ]
 
 class NLUService:
@@ -193,6 +228,81 @@ class NLUService:
         except Exception as e:
             logger.error(f"Error validando campo {campo}: {str(e)}")
             return {'valido': True, 'sugerencia': valor}
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        import unicodedata
+
+        text = (text or "").lower().strip()
+        return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
+
+    def _extract_requested_contact_fields(self, mensaje_usuario: str, include_website: bool = True) -> list[str]:
+        normalized = self._normalize_text(mensaje_usuario)
+        requested_fields = []
+
+        for field, patterns in CONTACT_RESPONSE_FIELD_PATTERNS.items():
+            if field == "website" and not include_website:
+                continue
+            if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in patterns):
+                requested_fields.append(field)
+
+        wants_summary = any(
+            re.search(pattern, normalized, re.IGNORECASE)
+            for pattern in CONTACT_SUMMARY_PATTERNS
+        )
+
+        if wants_summary or not requested_fields:
+            requested_fields = ["phone", "address", "hours", "email"]
+            if include_website:
+                requested_fields.append("website")
+
+        return requested_fields
+
+    @staticmethod
+    def _build_contact_response(profile: Dict[str, Any], requested_fields: list[str]) -> str:
+        company_name = profile['name']
+        lines = []
+
+        if len(requested_fields) > 1:
+            lines.append(f"📞 *Información de contacto de {company_name}*")
+        elif requested_fields == ["phone"]:
+            lines.append(f"📞 *Teléfonos de {company_name}*")
+        elif requested_fields == ["address"]:
+            lines.append(f"📍 *Dirección de {company_name}*")
+        elif requested_fields == ["hours"]:
+            lines.append(f"🕒 *Horarios de {company_name}*")
+        elif requested_fields == ["email"]:
+            lines.append(f"📧 *Email de {company_name}*")
+        elif requested_fields == ["website"]:
+            lines.append(f"🌐 *Web de {company_name}*")
+        else:
+            lines.append(f"📞 *Información de contacto de {company_name}*")
+
+        if isinstance(profile.get('phone'), dict):
+            public_phone = profile['phone'].get('public_phone', '')
+            mobile_phone = profile['phone'].get('mobile_phone', '')
+        else:
+            public_phone = profile.get('phone', '')
+            mobile_phone = ''
+
+        for field in requested_fields:
+            if field == "phone":
+                if public_phone:
+                    lines.append(f"📞 Teléfono fijo: {public_phone}")
+                if mobile_phone:
+                    lines.append(f"📱 Celular / WhatsApp: {mobile_phone}")
+            elif field == "address" and profile.get("address"):
+                lines.append(f"📍 Dirección: {profile['address']}")
+            elif field == "hours" and profile.get("hours"):
+                lines.append(f"🕒 Horarios: {profile['hours']}")
+            elif field == "email" and profile.get("email"):
+                lines.append(f"📧 Email: {profile['email']}")
+            elif field == "website" and profile.get("website"):
+                lines.append(f"🌐 Web: {profile['website']}")
+
+        lines.append("")
+        lines.append("Si necesitás otro dato puntual, decímelo y te lo paso.")
+        return "\n".join(lines).strip()
     
     
     def detectar_consulta_contacto(self, mensaje_usuario: str) -> bool:
@@ -296,90 +406,26 @@ class NLUService:
     
     def generar_respuesta_contacto(self, mensaje_usuario: str) -> str:
         """
-        Genera una respuesta natural sobre información de contacto de la empresa
+        Genera una respuesta determinística sobre información de contacto de la empresa.
+        No usa LLM para evitar que texto arbitrario del usuario termine afectando
+        la redacción de salida.
         """
         try:
             company_profile = get_active_company_profile()
-            
-            # Manejar tanto formato de teléfono dict como string para compatibilidad
-            template_params = {
-                'mensaje_usuario': mensaje_usuario,
-                'company_name': company_profile['name'],
-                'company_address': company_profile['address'],
-                'company_hours': company_profile['hours'],
-                'company_email': company_profile['email'],
-                'company_website': company_profile.get('website', '')
-            }
-            
-            # Agregar parámetros de teléfono según el formato
-            if isinstance(company_profile['phone'], dict):
-                template_params['company_public_phone'] = company_profile['phone'].get('public_phone', '')
-                template_params['company_mobile_phone'] = company_profile['phone'].get('mobile_phone', '')
-                template_params['company_phone'] = ''
-            else:
-                template_params['company_phone'] = company_profile['phone']
-                template_params['company_public_phone'] = ''
-                template_params['company_mobile_phone'] = ''
-            
-            prompt = CONTACT_INFO_RESPONSE_PROMPT.render(**template_params)
-
-            response = self._get_client().chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": f"Eres {company_profile['bot_name']}, asistente virtual de {company_profile['name']}. Responde de manera amigable y profesional."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=200
+            requested_fields = self._extract_requested_contact_fields(
+                mensaje_usuario,
+                include_website=bool(company_profile.get("website")),
             )
-            
-            respuesta = response.choices[0].message.content.strip()
-            logger.info(f"Respuesta contacto generada para: '{mensaje_usuario}'")
-            
+            respuesta = self._build_contact_response(company_profile, requested_fields)
+            logger.info(
+                "Respuesta contacto determinística para '%s' con campos %s",
+                mensaje_usuario,
+                requested_fields,
+            )
             return respuesta
-            
         except Exception as e:
             logger.error(f"Error generando respuesta de contacto: {str(e)}")
-            # Fallback a respuesta estática si falla el LLM
             return get_company_info_text()
     
-    def generar_saludo_personalizado(self, nombre_usuario: str = "", es_primera_vez: bool = True) -> str:
-        """
-        Genera un saludo personalizado usando el nombre del usuario si está disponible
-        """
-        try:
-            company_profile = get_active_company_profile()
-            
-            prompt = PERSONALIZED_GREETING_PROMPT.render(
-                bot_name=company_profile['bot_name'],
-                company_name=company_profile['name'],
-                user_name=nombre_usuario or "sin nombre",
-                is_first_time=es_primera_vez
-            )
-
-            response = self._get_client().chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": f"Eres {company_profile['bot_name']}, asistente virtual amigable de {company_profile['name']}. Genera saludos naturales y profesionales."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.4,
-                max_tokens=150
-            )
-            
-            saludo = response.choices[0].message.content.strip()
-            logger.info(f"Saludo personalizado generado para usuario: '{nombre_usuario}'")
-            
-            return saludo
-            
-        except Exception as e:
-            logger.error(f"Error generando saludo personalizado: {str(e)}")
-            # Fallback a saludo estático si falla el LLM
-            company_profile = get_active_company_profile()
-            if nombre_usuario:
-                return f"¡Hola {nombre_usuario}! 👋 Soy {company_profile['bot_name']} de {company_profile['name']}"
-            else:
-                return f"¡Hola! 👋 Soy {company_profile['bot_name']} de {company_profile['name']}"
-
 # Instancia global del servicio
 nlu_service = NLUService()

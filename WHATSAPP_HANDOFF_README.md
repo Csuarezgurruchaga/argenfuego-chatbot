@@ -10,7 +10,7 @@ El sistema de handoff usa la WhatsApp Cloud API de Meta. Los agentes humanos rec
 
 ```bash
 # WhatsApp Agent Configuration
-AGENT_WHATSAPP_NUMBER=+5491135722871  # Número del agente (formato internacional)
+AGENT_WHATSAPP_NUMBER=+5491139061038  # Número del agente (formato internacional)
 
 # Meta WhatsApp Cloud API
 META_WA_ACCESS_TOKEN=<token_de_acceso>
@@ -192,7 +192,7 @@ To test the handoff system:
 ✅ Notificación de handoff enviada al agente para cliente +5491123456789
 
 # Agent message processing
-Procesando mensaje del agente +5491135722871: Hola, ¿en qué puedo ayudarte?
+Procesando mensaje del agente +5491139061038: Hola, ¿en qué puedo ayudarte?
 
 # Message delivery confirmation
 ✅ Mensaje enviado al cliente +5491123456789

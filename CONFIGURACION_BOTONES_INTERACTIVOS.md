@@ -45,7 +45,7 @@ Una vez configurado, puedes probar:
 # Probar menú interactivo
 curl -X POST 'https://tu-app.railway.app/test-interactive-buttons' \
      -H 'Content-Type: application/x-www-form-urlencoded' \
-     -d 'test_number=+5491135722871'
+     -d 'test_number=+5491139061038'
 ```
 
 ## ⚠️ **Limitaciones Importantes**
