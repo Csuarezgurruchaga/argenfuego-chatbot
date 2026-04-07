@@ -18,6 +18,9 @@ from services.email_service import email_service
 from services.error_reporter import error_reporter, ErrorTrigger
 from services.metrics_service import metrics_service
 from services.conversation_session_service import conversation_session_service
+from services.handoff_inbox_models import HandoffInboxMessageSender
+from services.handoff_inbox_reply_service import handoff_inbox_reply_service
+from services.handoff_inbox_service import handoff_inbox_service
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +37,11 @@ app = FastAPI(
 # Keep this as a constant to avoid configuration drift between deployments.
 TTL_MINUTES = 60
 SESSION_CHECKPOINT_CLEANUP_BATCH_SIZE = int(os.getenv("SESSION_CHECKPOINT_CLEANUP_BATCH_SIZE", "100"))
+HANDOFF_INACTIVITY_MINUTES = int(os.getenv("HANDOFF_INACTIVITY_MINUTES", str(TTL_MINUTES)))
+HANDOFF_AUTOCLOSE_MESSAGE = (
+    "Cerramos esta conversación por inactividad.\n"
+    "Si necesitás ayuda, escribinos nuevamente."
+)
 
 
 def get_messaging_service(user_id: str):
@@ -105,6 +113,96 @@ def _save_final_checkpoint_if_needed(numero_telefono: Optional[str]) -> None:
         )
 
 
+def _sync_runtime_handoff_state():
+    try:
+        cases = handoff_inbox_service.list_cases()
+    except Exception:
+        return []
+    if cases:
+        conversation_manager.sync_handoff_runtime(cases)
+    else:
+        conversation_manager.handoff_queue = []
+        conversation_manager.active_handoff = None
+    return cases
+
+
+def _get_open_handoff_case(numero_telefono: str):
+    try:
+        projection = handoff_inbox_service.get_open_case_for_client(numero_telefono)
+    except Exception:
+        return None
+    if projection is None:
+        return None
+    conversacion = conversation_manager.get_conversacion(numero_telefono)
+    conversacion.handoff_case_id = projection.case_id
+    return projection
+
+
+def _ensure_persisted_handoff_case(conversacion: ConversacionData):
+    projection = handoff_inbox_service.create_or_get_case(
+        client_phone=conversacion.numero_telefono,
+        client_name=conversacion.nombre_usuario,
+        tipo_consulta=getattr(conversacion.tipo_consulta, "value", conversacion.tipo_consulta),
+        handoff_context=conversacion.mensaje_handoff_contexto,
+    )
+    conversacion.handoff_case_id = projection.case_id
+    _sync_runtime_handoff_state()
+    return projection
+
+
+def _close_persisted_handoff_case(numero_telefono: str):
+    projection = _get_open_handoff_case(numero_telefono)
+    if projection is None:
+        return None
+    handoff_inbox_service.close_case(projection.case_id)
+    cases = _sync_runtime_handoff_state()
+    return cases[0].client_phone if cases else None
+
+
+def _rehydrate_handoff_conversation(numero_telefono: str) -> ConversacionData:
+    conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
+    persisted_open_case = _get_open_handoff_case(numero_telefono)
+    if persisted_open_case is not None:
+        _sync_runtime_handoff_state()
+        conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
+    return conversacion_actual
+
+
+def _append_handoff_history_message(
+    numero_telefono: str,
+    *,
+    sender: HandoffInboxMessageSender,
+    text: str,
+    source_message_id: Optional[str] = None,
+):
+    projection = _get_open_handoff_case(numero_telefono)
+    if projection is None:
+        return None
+    try:
+        return handoff_inbox_service.append_message(
+            projection.case_id,
+            sender=sender,
+            text=text,
+            source_message_id=source_message_id,
+        )
+    except Exception:
+        return None
+
+
+def _handoff_datetime_to_json(value):
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _handoff_result_value(item, field: str):
+    if item is None:
+        return None
+    if isinstance(item, dict):
+        return item.get(field)
+    return getattr(item, field, None)
+
+
 @app.get("/")
 async def root():
     return {
@@ -154,10 +252,10 @@ async def handoff_ttl_sweep(token: str = Form(...)):
                     should_close = True
                     close_reason = "Pregunta de resolución sin respuesta"
             
-            # Verificar TTL general (120 minutos)
+            # Verificar inactividad general del handoff
             elif conv.last_client_message_at or conv.handoff_started_at:
                 last_ts = conv.last_client_message_at or conv.handoff_started_at
-                if last_ts and (ahora - last_ts) > timedelta(minutes=TTL_MINUTES):
+                if last_ts and (ahora - last_ts) > timedelta(minutes=HANDOFF_INACTIVITY_MINUTES):
                     should_close = True
                     close_reason = "Inactividad general"
             
@@ -178,10 +276,15 @@ async def handoff_ttl_sweep(token: str = Form(...)):
                     pass
 
                 # Verificar si es la conversación activa en la cola
+                _sync_runtime_handoff_state()
                 active_phone = conversation_manager.get_active_handoff()
                 if active_phone == conv.numero_telefono:
                     # Era la conversación activa, usar close_active_handoff
-                    next_phone = conversation_manager.close_active_handoff()
+                    next_phone = _close_persisted_handoff_case(conv.numero_telefono)
+                    if next_phone is None:
+                        next_phone = conversation_manager.close_active_handoff()
+                    else:
+                        conversation_manager.finalizar_conversacion(conv.numero_telefono)
                     cerradas += 1
 
                     # Si hay siguiente conversación, notificar al agente
@@ -199,7 +302,9 @@ async def handoff_ttl_sweep(token: str = Form(...)):
                             logger.error(f"Error notificando siguiente handoff después de TTL: {e}")
                 else:
                     # No es la activa, solo remover de cola
-                    conversation_manager.remove_from_handoff_queue(conv.numero_telefono)
+                    next_phone = _close_persisted_handoff_case(conv.numero_telefono)
+                    if next_phone is None:
+                        conversation_manager.remove_from_handoff_queue(conv.numero_telefono)
                     conversation_manager.finalizar_conversacion(conv.numero_telefono)
                     cerradas += 1
 
@@ -230,6 +335,137 @@ async def session_checkpoints_cleanup(token: str = Form(...)):
         "deleted": len(deleted_doc_ids),
         "deleted_doc_ids": deleted_doc_ids,
         "batch_limit": SESSION_CHECKPOINT_CLEANUP_BATCH_SIZE,
+    }
+
+
+@app.post("/internal/handoff/purge")
+async def internal_handoff_purge(
+    token: str = Form(...),
+    dry_run: bool = Form(True),
+    batch_limit: int = Form(100),
+):
+    expected_token = (os.getenv("AGENT_API_TOKEN") or "").strip()
+    if not expected_token or token != expected_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        result = handoff_inbox_service.purge_closed_case_history(
+            dry_run=dry_run,
+            batch_limit=batch_limit,
+        )
+    except Exception as exc:
+        logger.exception(
+            "handoff_retention_purge_failed dry_run=%s batch_limit=%s",
+            dry_run,
+            batch_limit,
+        )
+        raise HTTPException(status_code=500, detail="Handoff retention purge failed") from exc
+
+    logger.info(
+        "handoff_retention_purge dry_run=%s batch_limit=%s cases_scanned=%s cases_deleted=%s messages_deleted=%s outbox_deleted=%s skipped_missing_closed_at=%s",
+        result.dry_run,
+        result.batch_limit,
+        result.cases_scanned,
+        result.cases_deleted,
+        result.messages_deleted,
+        result.outbox_deleted,
+        result.cases_skipped_missing_closed_at,
+    )
+    return {
+        "dry_run": result.dry_run,
+        "batch_limit": result.batch_limit,
+        "cases_scanned": result.cases_scanned,
+        "cases_skipped_missing_closed_at": result.cases_skipped_missing_closed_at,
+        "cases_deleted": result.cases_deleted,
+        "messages_deleted": result.messages_deleted,
+        "outbox_deleted": result.outbox_deleted,
+        "cutoffs": {
+            "messages_before": _handoff_datetime_to_json(result.cutoffs.messages_before),
+            "outbox_before": _handoff_datetime_to_json(result.cutoffs.outbox_before),
+            "cases_before": _handoff_datetime_to_json(result.cutoffs.cases_before),
+        },
+    }
+
+
+@app.post("/internal/handoff/autoclose")
+async def internal_handoff_autoclose(
+    token: str = Form(...),
+    dry_run: bool = Form(True),
+    batch_limit: int = Form(100),
+):
+    expected_token = (os.getenv("AGENT_API_TOKEN") or "").strip()
+    if not expected_token or token != expected_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        result = handoff_inbox_service.auto_close_inactive_cases(
+            dry_run=dry_run,
+            batch_limit=batch_limit,
+            inactivity_minutes=HANDOFF_INACTIVITY_MINUTES,
+        )
+    except Exception as exc:
+        logger.exception(
+            "handoff_autoclose_failed dry_run=%s batch_limit=%s inactivity_minutes=%s",
+            dry_run,
+            batch_limit,
+            HANDOFF_INACTIVITY_MINUTES,
+        )
+        raise HTTPException(status_code=500, detail="Handoff autoclose failed") from exc
+
+    closed_cases = list(_handoff_result_value(result, "closed_cases") or [])
+
+    if not dry_run:
+        for closed_case in closed_cases:
+            client_phone = _handoff_result_value(closed_case, "client_phone")
+            case_id = _handoff_result_value(closed_case, "case_id")
+            if client_phone:
+                try:
+                    sent = send_message(client_phone, HANDOFF_AUTOCLOSE_MESSAGE)
+                    if not sent:
+                        logger.warning(
+                            "handoff_autoclose_notify_failed case_id=%s client_phone=%s",
+                            case_id,
+                            client_phone,
+                        )
+                except Exception:
+                    logger.exception(
+                        "handoff_autoclose_notify_exception case_id=%s client_phone=%s",
+                        case_id,
+                        client_phone,
+                    )
+        _sync_runtime_handoff_state()
+        for closed_case in closed_cases:
+            client_phone = _handoff_result_value(closed_case, "client_phone")
+            if client_phone:
+                conversation_manager.finalizar_conversacion(client_phone)
+
+    logger.info(
+        "handoff_autoclose dry_run=%s batch_limit=%s inactivity_minutes=%s cases_scanned=%s cases_eligible=%s cases_closed=%s cutoff_before=%s",
+        _handoff_result_value(result, "dry_run"),
+        _handoff_result_value(result, "batch_limit"),
+        HANDOFF_INACTIVITY_MINUTES,
+        _handoff_result_value(result, "cases_scanned"),
+        _handoff_result_value(result, "cases_eligible"),
+        _handoff_result_value(result, "cases_closed"),
+        _handoff_datetime_to_json(_handoff_result_value(result, "cutoff_before")),
+    )
+    return {
+        "dry_run": _handoff_result_value(result, "dry_run"),
+        "batch_limit": _handoff_result_value(result, "batch_limit"),
+        "cases_scanned": _handoff_result_value(result, "cases_scanned"),
+        "cases_eligible": _handoff_result_value(result, "cases_eligible"),
+        "cases_closed": _handoff_result_value(result, "cases_closed"),
+        "cutoff_before": _handoff_datetime_to_json(_handoff_result_value(result, "cutoff_before")),
+        "closed_cases": [
+            {
+                "case_id": _handoff_result_value(item, "case_id"),
+                "client_phone": _handoff_result_value(item, "client_phone"),
+                "prior_status": _handoff_result_value(item, "prior_status"),
+                "last_client_message_at": _handoff_datetime_to_json(_handoff_result_value(item, "last_client_message_at")),
+                "last_agent_message_at": _handoff_datetime_to_json(_handoff_result_value(item, "last_agent_message_at")),
+            }
+            for item in closed_cases
+        ],
     }
 
 @app.get("/webhook/whatsapp")
@@ -377,7 +613,7 @@ async def webhook_whatsapp_receive(request: Request):
                     conversation_manager.clear_recently_finalized(numero_telefono)
             
             # Obtener conversación actual
-            conversacion_actual = conversation_manager.get_conversacion(numero_telefono)
+            conversacion_actual = _rehydrate_handoff_conversation(numero_telefono)
             
             # Verificar si está esperando respuesta de encuesta (PRIORIDAD MUY ALTA)
             if conversacion_actual.estado == EstadoConversacion.ESPERANDO_RESPUESTA_ENCUESTA:
@@ -514,31 +750,55 @@ async def webhook_whatsapp_receive(request: Request):
             
             # Si está en handoff, reenviar al agente
             if conversacion_actual.atendido_por_humano or conversacion_actual.estado == EstadoConversacion.ATENDIDO_POR_HUMANO:
+                persisted_case = _ensure_persisted_handoff_case(conversacion_actual)
                 # Notificar al agente vía WhatsApp con indicación de posición en cola
+                _sync_runtime_handoff_state()
                 active_phone = conversation_manager.get_active_handoff()
                 is_active = (active_phone == numero_telefono)
                 
                 if conversacion_actual.mensaje_handoff_contexto and not conversacion_actual.handoff_notified:
                     # Es el primer mensaje del handoff, incluir contexto completo
-                    # TODO: Implementar envío de botones con Meta API si es necesario
-                    # Por ahora, enviar notificación simple
                     nombre_cliente = conversacion_actual.nombre_usuario or profile_name or "Sin nombre"
                     handoff_contexto = conversacion_actual.mensaje_handoff_contexto or mensaje_usuario
-                    success = whatsapp_handoff_service.notify_agent_new_handoff(
-                        numero_telefono,
-                        nombre_cliente,
-                        handoff_contexto,
-                        mensaje_usuario,
-                    )
+                    if is_active:
+                        success = whatsapp_handoff_service.notify_agent_new_handoff(
+                            numero_telefono,
+                            nombre_cliente,
+                            handoff_contexto,
+                            mensaje_usuario,
+                        )
+                    else:
+                        position = persisted_case.queue_position or conversation_manager.get_queue_position(numero_telefono) or 1
+                        active_conv = (
+                            conversation_manager.get_conversacion(active_phone)
+                            if active_phone
+                            else conversacion_actual
+                        )
+                        notification = _format_handoff_queued_notification(
+                            conversacion_actual,
+                            position,
+                            conversation_manager.get_queue_size() or position,
+                            active_conv,
+                        )
+                        agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+                        success = meta_whatsapp_service.send_text_message(agent_number, notification)
                     if success:
                         conversacion_actual.handoff_notified = True
                 else:
                     # Es un mensaje posterior durante el handoff
                     # Obtener posición si no es activo
-                    position = None if is_active else conversation_manager.get_queue_position(numero_telefono)
+                    position = None if is_active else (
+                        persisted_case.queue_position or conversation_manager.get_queue_position(numero_telefono)
+                    )
                     
                     # Guardar mensaje del cliente en historial
                     conversation_manager.add_message_to_history(numero_telefono, "client", mensaje_usuario)
+                    _append_handoff_history_message(
+                        numero_telefono,
+                        sender=HandoffInboxMessageSender.CLIENT,
+                        text=mensaje_usuario,
+                        source_message_id=message_id,
+                    )
                     
                     # Enviar notificación de mensaje con indicador de posición
                     notification = _format_client_message_notification(
@@ -591,8 +851,11 @@ async def webhook_whatsapp_receive(request: Request):
                     (conversacion_post.atendido_por_humano or conversacion_post.estado == EstadoConversacion.ATENDIDO_POR_HUMANO)
                     and not conversacion_post.handoff_notified
                 ):
-                    # Agregar a la cola (esto activa automáticamente si no hay activo)
-                    position = conversation_manager.add_to_handoff_queue(numero_telefono)
+                    try:
+                        projection = _ensure_persisted_handoff_case(conversacion_post)
+                        position = projection.queue_position or conversation_manager.get_queue_position(numero_telefono) or 1
+                    except Exception:
+                        position = conversation_manager.add_to_handoff_queue(numero_telefono)
                     total = conversation_manager.get_queue_size()
                     
                     # Determinar tipo de notificación
@@ -611,7 +874,11 @@ async def webhook_whatsapp_receive(request: Request):
                     else:
                         # Está en cola, notificar con contexto
                         active_phone = conversation_manager.get_active_handoff()
-                        active_conv = conversation_manager.get_conversacion(active_phone)
+                        active_conv = (
+                            conversation_manager.get_conversacion(active_phone)
+                            if active_phone
+                            else conversacion_post
+                        )
                         
                         notification = _format_handoff_queued_notification(
                             conversacion_post,
@@ -702,10 +969,24 @@ async def agent_reply(to: str = Form(...), body: str = Form(...), token: str = F
     if token != os.getenv("AGENT_API_TOKEN", ""):
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
-        sent = send_message(to, body)  # Usa el servicio correcto según el tipo de usuario
+        sent = False
+        projection = _get_open_handoff_case(to)
+        if projection is not None:
+            result = handoff_inbox_reply_service.send_reply(
+                case_id=projection.case_id,
+                owner_email="agent_api",
+                text=body,
+            )
+            sent = result.sent
+            if sent:
+                conversation_manager.add_message_to_history(to, "agent", body)
+        else:
+            sent = send_message(to, body)  # Usa el servicio correcto según el tipo de usuario
         if not sent:
             raise HTTPException(status_code=500, detail="Failed to send message")
         return {"status": "ok"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"agent_reply error: {e}")
         raise HTTPException(status_code=500, detail="Internal error")
@@ -716,6 +997,7 @@ async def agent_close(to: str = Form(...), token: str = Form(...)):
     if token != os.getenv("AGENT_API_TOKEN", ""):
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:
+        _close_persisted_handoff_case(to)
         conversation_manager.finalizar_conversacion(to)
         cierre_msg = "¡Gracias por tu consulta! Damos por finalizada esta conversación. ✅"
         send_message(to, cierre_msg)  # Usa el servicio correcto según el tipo de usuario
@@ -933,6 +1215,7 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
         from services.agent_command_service import agent_command_service
 
         logger.info(f"Procesando mensaje del agente {agent_phone}: {message}")
+        _sync_runtime_handoff_state()
 
         # PASO 1: Verificar si es un comando
         if agent_command_service.is_command(message):
@@ -940,20 +1223,23 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
 
             if command == 'done':
                 # Cerrar conversación activa y activar siguiente
+                old_active = conversation_manager.get_active_handoff()
                 response = agent_command_service.execute_done_command(agent_phone)
                 meta_whatsapp_service.send_text_message(agent_phone, response)
 
                 # Si hay nuevo activo, notificar
+                _sync_runtime_handoff_state()
                 new_active = conversation_manager.get_active_handoff()
                 if new_active:
-                    new_conv = conversation_manager.get_conversacion(new_active)
-                    handoff_contexto = new_conv.mensaje_handoff_contexto or "N/A"
-                    whatsapp_handoff_service.notify_agent_new_handoff(
-                        new_conv.numero_telefono,
-                        new_conv.nombre_usuario or "Sin nombre",
-                        handoff_contexto,
-                        handoff_contexto,
-                    )
+                    if new_active != old_active:
+                        new_conv = conversation_manager.get_conversacion(new_active)
+                        handoff_contexto = new_conv.mensaje_handoff_contexto or "N/A"
+                        whatsapp_handoff_service.notify_agent_new_handoff(
+                            new_conv.numero_telefono,
+                            new_conv.nombre_usuario or "Sin nombre",
+                            handoff_contexto,
+                            handoff_contexto,
+                        )
                 return
 
             elif command == 'next':
@@ -962,6 +1248,7 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
                 meta_whatsapp_service.send_text_message(agent_phone, response)
 
                 # Notificar nuevo activo
+                _sync_runtime_handoff_state()
                 new_active = conversation_manager.get_active_handoff()
                 if new_active:
                     new_conv = conversation_manager.get_conversacion(new_active)
@@ -1012,12 +1299,18 @@ async def handle_agent_message(agent_phone: str, message: str, profile_name: str
 
         # Guardar mensaje del agente en historial
         conversation_manager.add_message_to_history(active_phone, "agent", message)
-        
-        # Enviar mensaje al cliente activo
-        success = whatsapp_handoff_service.send_agent_response_to_client(
-            active_phone,
-            message
+
+        conversacion_activa = conversation_manager.get_conversacion(active_phone)
+        case_projection = _get_open_handoff_case(active_phone)
+        if case_projection is None:
+            case_projection = _ensure_persisted_handoff_case(conversacion_activa)
+
+        reply_result = handoff_inbox_reply_service.send_reply(
+            case_id=case_projection.case_id,
+            owner_email=agent_phone,
+            text=message,
         )
+        success = reply_result.sent
 
         if not success:
             error_msg = f"❌ Error enviando mensaje al cliente {active_phone}"

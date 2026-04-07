@@ -1,6 +1,7 @@
 import logging
 from typing import Optional
 from chatbot.states import conversation_manager
+from services.handoff_inbox_service import handoff_inbox_service
 from services.meta_whatsapp_service import meta_whatsapp_service
 
 logger = logging.getLogger(__name__)
@@ -11,6 +12,29 @@ def _get_client_messaging_service(client_id: str):
     Devuelve el servicio para enviar mensajes al cliente (WhatsApp-only).
     """
     return meta_whatsapp_service, client_id
+
+
+def _sync_runtime_handoff_state():
+    try:
+        cases = handoff_inbox_service.list_cases()
+    except Exception:
+        return []
+    if cases:
+        conversation_manager.sync_handoff_runtime(cases)
+    else:
+        conversation_manager.handoff_queue = []
+        conversation_manager.active_handoff = None
+    return cases
+
+
+def _find_open_case_id(client_phone: str) -> Optional[str]:
+    try:
+        projection = handoff_inbox_service.get_open_case_for_client(client_phone)
+    except Exception:
+        return None
+    if projection is None:
+        return None
+    return projection.case_id
 
 
 class AgentCommandService:
@@ -88,6 +112,7 @@ class AgentCommandService:
             from chatbot.models import EstadoConversacion
             from datetime import datetime
 
+            _sync_runtime_handoff_state()
             active_phone = conversation_manager.get_active_handoff()
 
             if not active_phone:
@@ -112,6 +137,14 @@ class AgentCommandService:
                     conversacion.estado = EstadoConversacion.ESPERANDO_RESPUESTA_ENCUESTA
                     conversacion.survey_offered = True
                     conversacion.survey_offer_sent_at = datetime.utcnow()
+                    conversacion.atendido_por_humano = False
+
+                    case_id = _find_open_case_id(active_phone)
+                    if case_id:
+                        handoff_inbox_service.close_case(case_id)
+                        _sync_runtime_handoff_state()
+                    else:
+                        conversation_manager.remove_from_handoff_queue(active_phone)
 
                     logger.info(f"✅ Oferta de encuesta enviada al cliente {active_phone}")
                     return f"✅ Solicitud de cierre enviada a {nombre_cliente}.\n\n⏳ Esperando respuesta sobre la encuesta (auto-cierre en 2 min).\n\nLa conversación sigue activa hasta que el cliente responda o expire el tiempo."
@@ -130,7 +163,14 @@ class AgentCommandService:
                 )
 
                 # Cerrar conversación activa (esto automáticamente activa la siguiente)
-                next_phone = conversation_manager.close_active_handoff()
+                case_id = _find_open_case_id(active_phone)
+                if case_id:
+                    handoff_inbox_service.close_case(case_id)
+                    _sync_runtime_handoff_state()
+                    conversation_manager.finalizar_conversacion(active_phone)
+                    next_phone = conversation_manager.get_active_handoff()
+                else:
+                    next_phone = conversation_manager.close_active_handoff()
 
                 logger.info(f"✅ Agente {agent_phone} finalizó conversación con {active_phone} (encuestas deshabilitadas)")
 
@@ -175,6 +215,7 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente."""
             str: Mensaje de respuesta para el agente
         """
         try:
+            _sync_runtime_handoff_state()
             active_phone = conversation_manager.get_active_handoff()
 
             if not active_phone:
@@ -190,7 +231,12 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente."""
             old_nombre = old_conversacion.nombre_usuario or "Cliente anterior"
 
             # Mover al final y activar siguiente
-            next_phone = conversation_manager.move_to_next_in_queue()
+            next_projection = handoff_inbox_service.advance_next()
+            if next_projection is not None:
+                _sync_runtime_handoff_state()
+                next_phone = next_projection.client_phone
+            else:
+                next_phone = conversation_manager.move_to_next_in_queue()
 
             if next_phone:
                 new_conversacion = conversation_manager.get_conversacion(next_phone)
@@ -217,6 +263,7 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente."""
             str: Mensaje con estado de la cola formateado
         """
         try:
+            _sync_runtime_handoff_state()
             queue_status = conversation_manager.format_queue_status()
             logger.info(f"Agente {agent_phone} solicitó estado de cola")
             return queue_status
@@ -297,6 +344,7 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente."""
             str: Mensaje con información de conversación activa
         """
         try:
+            _sync_runtime_handoff_state()
             active_phone = conversation_manager.get_active_handoff()
 
             if not active_phone:
@@ -353,6 +401,7 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente."""
             str: Mensaje de respuesta con el historial
         """
         try:
+            _sync_runtime_handoff_state()
             # Determinar de qué conversación mostrar historial
             if numero_especifico:
                 numero_telefono = numero_especifico
@@ -371,8 +420,24 @@ Si no respondes en 2 minutos, cerraremos la conversación automáticamente."""
                 numero_telefono = active_phone
                 conversacion = conversation_manager.get_conversacion(numero_telefono)
             
-            # Obtener historial (últimos 5 mensajes)
-            historial = conversation_manager.get_message_history(numero_telefono, limit=5)
+            # Obtener historial (priorizar la versión persistida del inbox)
+            historial = []
+            case_id = conversacion.handoff_case_id or _find_open_case_id(numero_telefono)
+            if case_id:
+                try:
+                    detail = handoff_inbox_service.get_case_detail(case_id, limit=5)
+                    for message in detail.messages[-5:]:
+                        historial.append(
+                            {
+                                "timestamp": message.created_at,
+                                "sender": getattr(message.sender, "value", message.sender),
+                                "message": message.text,
+                            }
+                        )
+                except Exception:
+                    historial = []
+            if not historial:
+                historial = conversation_manager.get_message_history(numero_telefono, limit=5)
             
             if not historial:
                 nombre = conversacion.nombre_usuario or "Cliente"

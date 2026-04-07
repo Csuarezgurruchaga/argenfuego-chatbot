@@ -528,4 +528,37 @@ class ConversationManager:
         # Retornar los últimos N mensajes
         return conversacion.message_history[-limit:] if conversacion.message_history else []
 
+    def sync_handoff_runtime(self, cases: List[Any]) -> None:
+        """Sincroniza la cola runtime desde la proyección persistida del inbox."""
+        ordered_phones: List[str] = []
+        active_phone: Optional[str] = None
+        survey_states = {
+            EstadoConversacion.ESPERANDO_RESPUESTA_ENCUESTA,
+            EstadoConversacion.ENCUESTA_SATISFACCION,
+        }
+
+        for case in cases or []:
+            phone = getattr(case, "client_phone", None)
+            if not phone:
+                continue
+            ordered_phones.append(phone)
+            conversacion = self.get_conversacion(phone)
+            conversacion.handoff_case_id = getattr(case, "case_id", None)
+            conversacion.atendido_por_humano = True
+            if conversacion.estado not in survey_states:
+                conversacion.estado = EstadoConversacion.ATENDIDO_POR_HUMANO
+            if not conversacion.nombre_usuario and getattr(case, "client_name", None):
+                conversacion.nombre_usuario = case.client_name
+            if not conversacion.mensaje_handoff_contexto and getattr(case, "handoff_context", None):
+                conversacion.mensaje_handoff_contexto = case.handoff_context
+            if getattr(case, "created_at", None) and not conversacion.handoff_started_at:
+                conversacion.handoff_started_at = case.created_at
+            if getattr(case, "last_client_message_at", None):
+                conversacion.last_client_message_at = case.last_client_message_at
+            if getattr(case, "is_active", False):
+                active_phone = phone
+
+        self.handoff_queue = ordered_phones
+        self.active_handoff = active_phone or (ordered_phones[0] if ordered_phones else None)
+
 conversation_manager = ConversationManager()
