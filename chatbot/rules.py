@@ -120,7 +120,7 @@ class ChatbotRules:
         {"id": "extintor_vehicular_1kg", "title": "Vehicular (1 kg)", "capacidad": "1 kg", "tipo": "PQ (ABC)", "plazo": "24h", "detalle_plazo": "*Según disponibilidad del taller."},
         {"id": "extintor_pq_5kg", "title": "Extintor 5kg PQ (ABC)", "capacidad": "5 kg", "tipo": "PQ (ABC)", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller."},
         {"id": "extintor_pq_10kg", "title": "Extintor 10kg PQ (ABC)", "capacidad": "10 kg", "tipo": "PQ (ABC)", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller."},
-        {"id": "extintor_co2_5kg", "title": "Extintor 5kg CO2", "capacidad": "5 kg", "tipo": "CO2", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller y vigencia de la PH."},
+        {"id": "extintor_co2_5kg", "title": "Extintor 5kg CO2 (BC)", "capacidad": "5 kg", "tipo": "CO2 (BC)", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller y vigencia de la PH."},
         {"id": "extintor_otro", "title": "Otro"},
     )
     PRESUPUESTO_CONTACT_BUTTONS = (
@@ -784,7 +784,7 @@ Responde con el número de la opción que necesitas 📱"""
             "Vehicular (1 kg)\n"
             "Extintor 5kg PQ (ABC)\n"
             "Extintor 10kg PQ (ABC)\n"
-            "Extintor 5kg CO2\n"
+            "Extintor 5kg CO2 (BC)\n"
             "Otro"
         )
 
