@@ -139,7 +139,7 @@ class ChatbotRules:
     PRESUPUESTO_AGREGAR_OTRO_BUTTONS = (
         {"id": "presupuesto_add_extintores", "title": "Extintores"},
         {"id": "presupuesto_add_ifci", "title": "IFCI"},
-        {"id": "presupuesto_continuar", "title": "Continuar"},
+        {"id": "presupuesto_continuar", "title": "No, continuar"},
     )
     PRESUPUESTO_CORRECCION_SECCION_BUTTONS = (
         {"id": "presupuesto_corregir_contacto", "title": "Contacto"},
@@ -625,12 +625,16 @@ Responde con el número de la opción que necesitas 📱"""
         rows = ChatbotRules._build_presupuesto_delete_rows(numero_telefono)
         if not rows:
             return False
-        return meta_whatsapp_service.send_interactive_list(
+        return ChatbotRules._send_text_and_followup(
             numero_telefono,
-            body_text="Elegí qué producto querés borrar.",
-            button_text="Ver productos",
-            sections=ChatbotRules._build_single_section("Productos cargados", tuple(rows)),
-            footer_text="Seleccioná un producto",
+            ChatbotRules._build_presupuesto_delete_help_text(numero_telefono),
+            lambda: meta_whatsapp_service.send_interactive_list(
+                numero_telefono,
+                body_text="Elegí qué producto querés borrar.",
+                button_text="Ver productos",
+                sections=ChatbotRules._build_single_section("Productos", tuple(rows)),
+                footer_text="Seleccioná un número",
+            ),
         )
     
     @staticmethod
@@ -924,6 +928,10 @@ Responde con el número de la opción que necesitas 📱"""
     def _matches_dynamic_option(mensaje: str, options: list, target_id: str) -> bool:
         if ChatbotRules._matches_choice(mensaje, target_id):
             return True
+        if target_id == "presupuesto_continuar" and ChatbotRules._matches_choice(
+            mensaje, "continuar", "no continuar", "no, continuar"
+        ):
+            return True
 
         for index, option in enumerate(options, start=1):
             if option["id"] != target_id:
@@ -935,10 +943,26 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def _build_presupuesto_delete_rows(numero_telefono: str) -> list:
         rows = []
-        for index, item in enumerate(ChatbotRules._get_presupuesto_items(numero_telefono), start=1):
-            title = item.get("summary", item.get("kind", "Producto")).strip()
-            rows.append({"id": f"presupuesto_borrar_item_{index}", "title": f"{index}. {title}"[:24]})
+        for index, _item in enumerate(ChatbotRules._get_presupuesto_items(numero_telefono), start=1):
+            rows.append({"id": f"presupuesto_borrar_item_{index}", "title": str(index)})
         return rows
+
+    @staticmethod
+    def _build_presupuesto_delete_help_text(numero_telefono: str) -> str:
+        lines = ["Estos son los productos cargados:"]
+        for index, item in enumerate(ChatbotRules._get_presupuesto_items(numero_telefono), start=1):
+            if item.get("kind") == "extintor":
+                lines.append(f"{index}. {item.get('summary', '').strip()}")
+                continue
+
+            details = item.get("details", {})
+            lines.append(f"{index}. Consulta IFCI (Hidrantes)")
+            lines.append(f"   - Nivel de instalación: {details.get('nivel', 'No especificado')}")
+            lines.append(f"   - Cantidad de hidrantes: {details.get('hidrantes', 'No especificado')}")
+            lines.append(f"   - Pisos / subsuelo / estacionamiento: {details.get('establecimiento', 'No especificado')}")
+            lines.append(f"   - Detectores de humo: {details.get('detectores', 'No especificado')}")
+            lines.append(f"   - Plano de incendio: {details.get('plano', 'No especificado')}")
+        return "\n".join(lines)
 
     @staticmethod
     def _get_company_address() -> str:
@@ -1106,7 +1130,7 @@ Responde con el número de la opción que necesitas 📱"""
         options = ["- Extintores"]
         if not ChatbotRules._presupuesto_has_ifci(numero_telefono):
             options.append("- IFCI")
-        options.append("- Continuar")
+        options.append("- No, continuar")
         return f"{message}\n" + "\n".join(options)
 
     @staticmethod

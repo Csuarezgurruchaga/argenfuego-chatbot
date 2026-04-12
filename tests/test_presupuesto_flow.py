@@ -121,6 +121,11 @@ def test_extintor_purchase_flow_reaches_confirmation(meta_spy):
         "presupuesto_add_ifci",
         "presupuesto_continuar",
     ]
+    assert [button["title"] for button in meta_spy["buttons"][-1]["buttons"]] == [
+        "Extintores",
+        "IFCI",
+        "No, continuar",
+    ]
 
     response = asyncio.run(handle_interactive_button(numero, "presupuesto_continuar", "Ana"))
     assert "¿Cuál es tu email de contacto?" in response
@@ -334,6 +339,39 @@ def test_presupuesto_product_menu_numeric_fallback_tracks_visible_rows(meta_spy)
     assert response == ""
     assert conversation_manager.get_conversacion(numero).estado == EstadoConversacion.PRESUPUESTO_PRODUCTOS_BORRAR
     assert meta_spy["lists"][-1]["button_text"] == "Ver productos"
+    assert [row["title"] for row in meta_spy["lists"][-1]["sections"][0]["rows"]] == ["1"]
+    assert "1. Consulta IFCI (Hidrantes)" in meta_spy["texts"][-1]["message"]
+
+
+def test_presupuesto_delete_picker_sends_full_numbered_context_before_list(meta_spy):
+    numero = "+5491100000025"
+
+    ChatbotRules.procesar_mensaje(numero, "hola", "Lola")
+    asyncio.run(handle_interactive_button(numero, "presupuesto", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_extintores", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "extintor_vehicular_1kg", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_compra", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "cantidad_1", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_add_extintores", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "extintor_pq_5kg", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_mantenimiento", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "cantidad_1", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_continuar", "Lola"))
+    ChatbotRules.procesar_mensaje(numero, "lola@empresa.com")
+    ChatbotRules.procesar_mensaje(numero, "Av. Directorio 100, CABA")
+    ChatbotRules.procesar_mensaje(numero, "9 a 18")
+    ChatbotRules.procesar_mensaje(numero, "Lola SA")
+    ChatbotRules.procesar_mensaje(numero, "27-12345678-9")
+
+    asyncio.run(handle_interactive_button(numero, "no", "Lola"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_corregir_productos", "Lola"))
+    response = ChatbotRules.procesar_mensaje(numero, "3")
+
+    assert response == ""
+    assert "1. Compra de 1 extintor de 1 kg PQ (ABC)." in meta_spy["texts"][-1]["message"]
+    assert "2. Mantenimiento de 1 extintor de 5 kg PQ (ABC)." in meta_spy["texts"][-1]["message"]
+    assert [row["title"] for row in meta_spy["lists"][-1]["sections"][0]["rows"]] == ["1", "2"]
+    assert meta_spy["lists"][-1]["footer_text"] == "Seleccioná un número"
 
 
 def test_presupuesto_contact_correction_accepts_visible_text(meta_spy):
