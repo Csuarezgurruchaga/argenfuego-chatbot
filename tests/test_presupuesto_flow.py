@@ -67,7 +67,7 @@ def _post_signed(client: TestClient, payload: dict):
 
 
 @pytest.mark.parametrize("producto_id", ["extintor_pq_5kg", "extintor_pq_10kg"])
-def test_extintor_pq_products_show_72h_and_hug_emoji(meta_spy, producto_id):
+def test_extintor_pq_products_show_info_after_service_choice(meta_spy, producto_id):
     numero = "+5491100000001"
 
     assert ChatbotRules.procesar_mensaje(numero, "hola", "Juan") == "SALUDO"
@@ -91,13 +91,18 @@ def test_extintor_pq_products_show_72h_and_hug_emoji(meta_spy, producto_id):
 
     assert asyncio.run(handle_interactive_button(numero, producto_id, "Juan")) == ""
     assert conversation_manager.get_conversacion(numero).estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_SERVICIO
-    assert any("72h" in call["message"] for call in meta_spy["texts"])
-    assert any("Hipólito Yrigoyen 2020" in call["message"] for call in meta_spy["texts"])
-    assert any("Te esperamos! 🤗" in call["message"] for call in meta_spy["texts"])
+    assert not any("72h" in call["message"] for call in meta_spy["texts"])
     assert "Te voy a hacer unas preguntas rápidas para armar tu solicitud" in meta_spy["buttons"][-1]["body_text"]
     assert "Después un asesor te contacta con tu presupuesto." in meta_spy["buttons"][-1]["body_text"]
     assert "¿Necesitás un equipo nuevo o mantenimiento?" in meta_spy["buttons"][-1]["body_text"]
     assert [button["title"] for button in meta_spy["buttons"][-1]["buttons"]] == ["Equipo nuevo", "Mantenimiento"]
+
+    assert asyncio.run(handle_interactive_button(numero, "presupuesto_compra", "Juan")) == ""
+    assert conversation_manager.get_conversacion(numero).estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_CANTIDAD
+    assert any("72h" in call["message"] for call in meta_spy["texts"])
+    assert any("Hipólito Yrigoyen 2020" in call["message"] for call in meta_spy["texts"])
+    assert not any("Te esperamos! 🤗" in call["message"] for call in meta_spy["texts"])
+    assert meta_spy["buttons"][-1]["body_text"] == "¿Cuántos equipos necesitás?"
 
 
 def test_extintor_purchase_flow_reaches_confirmation(meta_spy):

@@ -1041,8 +1041,7 @@ Responde con el número de la opción que necesitas 📱"""
         return (
             f"Las recargas normalmente se realizan en el momento o en un plazo de {producto['plazo']}.\n"
             f"{producto['detalle_plazo']}\n\n"
-            f"Podés encontrarnos en {ChatbotRules._get_company_address()}\n"
-            f"Te esperamos! 🤗"
+            f"Podés encontrarnos en {ChatbotRules._get_company_address()}"
         )
 
     @staticmethod
@@ -1407,6 +1406,23 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def _get_presupuesto_cantidad_manual_prompt() -> str:
         return "¿Cuántos equipos necesitás?"
+
+    @staticmethod
+    def _send_extintor_info_and_quantity_prompt(numero_telefono: str) -> str:
+        producto = conversation_manager.get_datos_temporales(numero_telefono, "_presupuesto_producto")
+        if not producto:
+            if ChatbotRules.send_presupuesto_cantidad_menu(numero_telefono):
+                return ""
+            return ChatbotRules._get_presupuesto_cantidad_prompt_fallback()
+
+        info_message = ChatbotRules._get_extintor_info_message(producto)
+        if ChatbotRules._send_text_and_followup(
+            numero_telefono,
+            info_message,
+            lambda: ChatbotRules.send_presupuesto_cantidad_menu(numero_telefono),
+        ):
+            return ""
+        return f"{info_message}\n\n{ChatbotRules._get_presupuesto_cantidad_prompt_fallback()}"
 
     @staticmethod
     def _get_ifci_hidrantes_prompt() -> str:
@@ -2362,16 +2378,6 @@ Responde con el número del campo que deseas modificar."""
         conversation_manager.set_datos_temporales(numero_telefono, "_presupuesto_producto", row)
         conversation_manager.update_estado(numero_telefono, EstadoConversacion.PRESUPUESTO_EXTINTOR_SERVICIO)
 
-        first_extintor = not any(item.get("kind") == "extintor" for item in ChatbotRules._get_presupuesto_items(numero_telefono))
-        if first_extintor:
-            info_message = ChatbotRules._get_extintor_info_message(row)
-            if meta_whatsapp_service.send_text_message(numero_telefono, info_message):
-                if ChatbotRules.send_presupuesto_servicio_buttons(numero_telefono):
-                    return ""
-                meta_whatsapp_service.send_text_message(numero_telefono, ChatbotRules._get_presupuesto_service_prompt_fallback())
-                return ""
-            return f"{info_message}\n\n{ChatbotRules._get_presupuesto_service_prompt_fallback()}"
-
         if ChatbotRules.send_presupuesto_servicio_buttons(numero_telefono):
             return ""
         return ChatbotRules._get_presupuesto_service_prompt_fallback()
@@ -2427,6 +2433,9 @@ Responde con el número del campo que deseas modificar."""
             )
 
         conversation_manager.update_estado(numero_telefono, EstadoConversacion.PRESUPUESTO_EXTINTOR_CANTIDAD)
+        first_extintor = not any(item.get("kind") == "extintor" for item in ChatbotRules._get_presupuesto_items(numero_telefono))
+        if first_extintor:
+            return ChatbotRules._send_extintor_info_and_quantity_prompt(numero_telefono)
         if ChatbotRules.send_presupuesto_cantidad_menu(numero_telefono):
             return ""
         return ChatbotRules._get_presupuesto_cantidad_prompt_fallback()
