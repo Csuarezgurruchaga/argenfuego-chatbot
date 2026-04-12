@@ -6,6 +6,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+import main as main_module
 from chatbot.models import EstadoConversacion
 from chatbot.rules import ChatbotRules
 from chatbot.states import conversation_manager
@@ -339,6 +340,58 @@ def test_webhook_interactive_dispatch_reaches_new_presupuesto_flow(meta_spy):
     response = _post_signed(client, _build_interactive_payload("presupuesto_extintores", numero, "button_reply"))
     assert response.status_code == 200
     assert conversation_manager.get_conversacion(f"+{numero}").estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_TIPO
+
+
+def test_webhook_interactive_confirmacion_dispara_post_procesado(meta_spy, monkeypatch):
+    numero = "5491100000015"
+    numero_con_prefijo = f"+{numero}"
+    client = TestClient(app)
+    lead_calls = []
+
+    monkeypatch.setattr(
+        main_module.email_service,
+        "enviar_lead_email",
+        lambda conversacion: lead_calls.append(conversacion.numero_telefono) or True,
+    )
+    monkeypatch.setattr(main_module.metrics_service, "on_lead_sent", lambda: None)
+
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "hola", "Ana")
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "presupuesto", "Ana"))
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "presupuesto_extintores", "Ana"))
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "extintor_vehicular_1kg", "Ana"))
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "presupuesto_contacto_si", "Ana"))
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "presupuesto_compra", "Ana"))
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "2")
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "ana@empresa.com")
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "Av. Rivadavia 1234, CABA")
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "9 a 17")
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "ACME SA")
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "30-12345678-9")
+
+    assert conversation_manager.get_conversacion(numero_con_prefijo).estado == EstadoConversacion.CONFIRMANDO
+
+    response = _post_signed(client, _build_interactive_payload("si", numero, "button_reply"))
+
+    assert response.status_code == 200
+    assert lead_calls == [numero_con_prefijo]
+    assert any("Procesando tu solicitud" in call["message"] for call in meta_spy["texts"])
+    assert any("Tu solicitud ha sido enviada exitosamente" in call["message"] for call in meta_spy["texts"])
+    assert numero_con_prefijo not in conversation_manager.conversaciones
+
+
+def test_webhook_interactive_finalizar_chat_no_revive_conversacion(meta_spy):
+    numero = "5491100000016"
+    numero_con_prefijo = f"+{numero}"
+    client = TestClient(app)
+
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "hola", "Ana")
+    assert numero_con_prefijo in conversation_manager.conversaciones
+
+    response = _post_signed(client, _build_interactive_payload("finalizar_chat", numero, "button_reply"))
+
+    assert response.status_code == 200
+    assert any("Gracias por contactarnos" in call["message"] for call in meta_spy["texts"])
+    assert numero_con_prefijo not in conversation_manager.conversaciones
 
 
 @pytest.mark.parametrize(

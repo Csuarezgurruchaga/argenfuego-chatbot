@@ -127,6 +127,96 @@ def _save_final_checkpoint_if_needed(numero_telefono: Optional[str]) -> None:
         )
 
 
+def _run_post_response_actions(numero_telefono: str, profile_name: str, mensaje_usuario: str) -> None:
+    try:
+        conversacion_post = conversation_manager.conversaciones.get(numero_telefono)
+        if conversacion_post is None:
+            return
+        if (
+            (conversacion_post.atendido_por_humano or conversacion_post.estado == EstadoConversacion.ATENDIDO_POR_HUMANO)
+            and not conversacion_post.handoff_notified
+        ):
+            try:
+                projection = _ensure_persisted_handoff_case(conversacion_post)
+                position = projection.queue_position or conversation_manager.get_queue_position(numero_telefono) or 1
+            except Exception:
+                position = conversation_manager.add_to_handoff_queue(numero_telefono)
+            total = conversation_manager.get_queue_size()
+
+            agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
+
+            if position == 1:
+                nombre_cliente = conversacion_post.nombre_usuario or profile_name or "Sin nombre"
+                handoff_contexto = conversacion_post.mensaje_handoff_contexto or mensaje_usuario
+                success = whatsapp_handoff_service.notify_agent_new_handoff(
+                    numero_telefono,
+                    nombre_cliente,
+                    handoff_contexto,
+                    mensaje_usuario,
+                )
+            else:
+                active_phone = conversation_manager.get_active_handoff()
+                active_conv = (
+                    conversation_manager.get_conversacion(active_phone)
+                    if active_phone
+                    else conversacion_post
+                )
+                notification = _format_handoff_queued_notification(
+                    conversacion_post,
+                    position,
+                    total,
+                    active_conv,
+                )
+                success = meta_whatsapp_service.send_text_message(agent_number, notification)
+
+            if success:
+                conversacion_post.handoff_notified = True
+                logger.info(
+                    "✅ Handoff notificado para cliente %s (posición %s/%s)",
+                    numero_telefono,
+                    position,
+                    total,
+                )
+    except Exception as e:
+        logger.error(f"Error notificando handoff al agente: {e}")
+
+    conversacion = conversation_manager.conversaciones.get(numero_telefono)
+    if not conversacion or conversacion.estado != EstadoConversacion.ENVIANDO:
+        return
+
+    disable_lead_emails = os.getenv("DISABLE_LEAD_EMAILS", "false").lower() == "true"
+
+    if disable_lead_emails:
+        logger.info("Lead email deshabilitado por entorno; se omite envío para %s", numero_telefono)
+        email_enviado = True
+    else:
+        logger.info(
+            "lead_email_dispatch_start phone=%s source=%s destination=%s region=%s",
+            numero_telefono,
+            getattr(email_service, "from_email", ""),
+            getattr(email_service, "to_email", ""),
+            getattr(email_service, "region", ""),
+        )
+        email_enviado = email_service.enviar_lead_email(conversacion)
+
+    if email_enviado:
+        if not disable_lead_emails:
+            try:
+                metrics_service.on_lead_sent()
+            except Exception:
+                pass
+
+        mensaje_final = ChatbotRules.get_mensaje_final_exito()
+        send_message(numero_telefono, mensaje_final)
+        conversation_manager.finalizar_conversacion(numero_telefono)
+        logger.info(f"Lead procesado exitosamente para {numero_telefono}")
+        return
+
+    error_msg = "❌ Hubo un error procesando tu solicitud. Por favor intenta nuevamente más tarde."
+    send_message(numero_telefono, error_msg)
+    logger.error(f"Error enviando email para {numero_telefono}")
+
+
 def _sync_runtime_handoff_state():
     try:
         cases = handoff_inbox_service.list_cases()
@@ -603,6 +693,7 @@ async def webhook_whatsapp_receive(request: Request):
                     send_message(numero_telefono, respuesta_interactiva)
 
                 _save_final_checkpoint_if_needed(numero_telefono)
+                _run_post_response_actions(numero_telefono, profile_name, mensaje_usuario)
                 return PlainTextResponse("", status_code=200)
 
             # Fallback para contenidos no-texto
@@ -858,89 +949,7 @@ async def webhook_whatsapp_receive(request: Request):
                 logger.info(f"Respuesta vacía, no se envía mensaje a {numero_telefono}")
 
             _save_final_checkpoint_if_needed(numero_telefono)
-            
-            # Si durante el procesamiento se activó el handoff, agregar a cola y notificar al agente
-            try:
-                conversacion_post = conversation_manager.get_conversacion(numero_telefono)
-                if (
-                    (conversacion_post.atendido_por_humano or conversacion_post.estado == EstadoConversacion.ATENDIDO_POR_HUMANO)
-                    and not conversacion_post.handoff_notified
-                ):
-                    try:
-                        projection = _ensure_persisted_handoff_case(conversacion_post)
-                        position = projection.queue_position or conversation_manager.get_queue_position(numero_telefono) or 1
-                    except Exception:
-                        position = conversation_manager.add_to_handoff_queue(numero_telefono)
-                    total = conversation_manager.get_queue_size()
-                    
-                    # Determinar tipo de notificación
-                    agent_number = os.getenv("AGENT_WHATSAPP_NUMBER", "")
-                    
-                    if position == 1:
-                        # Es el activo, notificar como activado
-                        nombre_cliente = conversacion_post.nombre_usuario or profile_name or "Sin nombre"
-                        handoff_contexto = conversacion_post.mensaje_handoff_contexto or mensaje_usuario
-                        success = whatsapp_handoff_service.notify_agent_new_handoff(
-                            numero_telefono,
-                            nombre_cliente,
-                            handoff_contexto,
-                            mensaje_usuario,
-                        )
-                    else:
-                        # Está en cola, notificar con contexto
-                        active_phone = conversation_manager.get_active_handoff()
-                        active_conv = (
-                            conversation_manager.get_conversacion(active_phone)
-                            if active_phone
-                            else conversacion_post
-                        )
-                        
-                        notification = _format_handoff_queued_notification(
-                            conversacion_post,
-                            position,
-                            total,
-                            active_conv
-                        )
-                        success = meta_whatsapp_service.send_text_message(agent_number, notification)
-                    
-                    if success:
-                        conversacion_post.handoff_notified = True
-                        logger.info(f"✅ Handoff notificado para cliente {numero_telefono} (posición {position}/{total})")
-            except Exception as e:
-                logger.error(f"Error notificando handoff al agente: {e}")
-            
-            # Verificar si necesitamos enviar email
-            conversacion = conversation_manager.get_conversacion(numero_telefono)
-            
-            if conversacion.estado == EstadoConversacion.ENVIANDO:
-                disable_lead_emails = os.getenv("DISABLE_LEAD_EMAILS", "false").lower() == "true"
-
-                if disable_lead_emails:
-                    logger.info("Lead email deshabilitado por entorno; se omite envío para %s", numero_telefono)
-                    email_enviado = True
-                else:
-                    # Enviar email con los datos del lead
-                    email_enviado = email_service.enviar_lead_email(conversacion)
-                
-                if email_enviado:
-                    if not disable_lead_emails:
-                        try:
-                            metrics_service.on_lead_sent()
-                        except Exception:
-                            pass
-                    # Enviar mensaje de confirmación
-                    mensaje_final = ChatbotRules.get_mensaje_final_exito()
-                    send_message(numero_telefono, mensaje_final)
-                    
-                    # Finalizar la conversación
-                    conversation_manager.finalizar_conversacion(numero_telefono)
-                    
-                    logger.info(f"Lead procesado exitosamente para {numero_telefono}")
-                else:
-                    # Error enviando email
-                    error_msg = "❌ Hubo un error procesando tu solicitud. Por favor intenta nuevamente más tarde."
-                    send_message(numero_telefono, error_msg)
-                    logger.error(f"Error enviando email para {numero_telefono}")
+            _run_post_response_actions(numero_telefono, profile_name, mensaje_usuario)
         
         # Extraer datos de estado de mensaje (opcional, para métricas)
         status_data = meta_whatsapp_service.extract_status_data(webhook_data)

@@ -15,9 +15,20 @@ class EmailService:
     def __init__(self):
         # Obtener configuración de empresa activa
         company_profile = get_active_company_profile()
-        
-        self.from_email = company_profile['email_bot']
-        self.to_email = company_profile['email']
+
+        from_email_override = os.getenv("LEAD_FROM_EMAIL")
+        to_email_override = os.getenv("LEAD_TO_EMAIL")
+
+        self.from_email = (
+            from_email_override.strip()
+            if from_email_override and from_email_override.strip()
+            else company_profile["email_bot"]
+        )
+        self.to_email = (
+            to_email_override.strip()
+            if to_email_override and to_email_override.strip()
+            else company_profile["email"]
+        )
         self.company_name = company_profile['name']
         self.bot_name = company_profile['bot_name']
         self.reply_to = os.getenv("REPLY_TO_EMAIL", "").strip()
@@ -34,6 +45,13 @@ class EmailService:
         try:
             subject = self._get_email_subject(conversacion.tipo_consulta)
             html_content = self._generate_email_html(conversacion)
+            logger.info(
+                "SES lead send attempt phone=%s source=%s destination=%s region=%s",
+                conversacion.numero_telefono,
+                self.from_email,
+                self.to_email,
+                self.region,
+            )
             
             send_kwargs = {
                 "Source": f"{self.bot_name} - Asistente Virtual {self.company_name} <{self.from_email}>",
@@ -70,15 +88,23 @@ class EmailService:
                 
         except (ClientError, BotoCoreError) as e:
             logger.error(
-                "Error enviando email para %s con SES: %s",
+                "Error enviando email para %s con SES | source=%s destination=%s region=%s error_type=%s error=%s",
                 conversacion.numero_telefono,
+                self.from_email,
+                self.to_email,
+                self.region,
+                type(e).__name__,
                 str(e),
             )
             return False
         except Exception as e:
             logger.error(
-                "Error inesperado enviando email para %s: %s",
+                "Error inesperado enviando email para %s | source=%s destination=%s region=%s error_type=%s error=%s",
                 conversacion.numero_telefono,
+                self.from_email,
+                self.to_email,
+                self.region,
+                type(e).__name__,
                 str(e),
             )
             return False

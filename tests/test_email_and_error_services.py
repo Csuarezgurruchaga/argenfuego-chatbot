@@ -77,6 +77,56 @@ def test_email_service_envia_lead_falla_status(monkeypatch):
     assert service.enviar_lead_email(_build_conversacion()) is False
 
 
+def test_email_service_permite_override_por_entorno(monkeypatch):
+    ses_mock = MagicMock()
+    ses_mock.send_email.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200},
+        "MessageId": "msg-override",
+    }
+    mock_boto3 = MagicMock()
+    mock_boto3.client.return_value = ses_mock
+
+    monkeypatch.setattr(email_module, "boto3", mock_boto3)
+    monkeypatch.setattr(email_module, "get_active_company_profile", _mock_profile)
+    monkeypatch.setenv("LEAD_FROM_EMAIL", "bot@eventually-ai.com.ar")
+    monkeypatch.setenv("LEAD_TO_EMAIL", "ventas@eventually-ai.com.ar")
+
+    service = email_module.EmailService()
+
+    assert service.from_email == "bot@eventually-ai.com.ar"
+    assert service.to_email == "ventas@eventually-ai.com.ar"
+    assert service.enviar_lead_email(_build_conversacion()) is True
+
+    kwargs = ses_mock.send_email.call_args.kwargs
+    assert "bot@eventually-ai.com.ar" in kwargs["Source"]
+    assert kwargs["Destination"]["ToAddresses"] == ["ventas@eventually-ai.com.ar"]
+
+
+def test_email_service_ignora_overrides_vacios(monkeypatch):
+    ses_mock = MagicMock()
+    ses_mock.send_email.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200},
+        "MessageId": "msg-fallback",
+    }
+    mock_boto3 = MagicMock()
+    mock_boto3.client.return_value = ses_mock
+
+    monkeypatch.setattr(email_module, "boto3", mock_boto3)
+    monkeypatch.setattr(email_module, "get_active_company_profile", _mock_profile)
+    monkeypatch.setenv("LEAD_FROM_EMAIL", "   ")
+    monkeypatch.setenv("LEAD_TO_EMAIL", "")
+
+    service = email_module.EmailService()
+
+    assert service.from_email == "bot@example.com"
+    assert service.to_email == "ventas@example.com"
+    assert service.enviar_lead_email(_build_conversacion()) is True
+
+    kwargs = ses_mock.send_email.call_args.kwargs
+    assert "bot@example.com" in kwargs["Source"]
+    assert kwargs["Destination"]["ToAddresses"] == ["ventas@example.com"]
+
+
 def test_error_reporter_send_email_exitoso(monkeypatch):
     ses_mock = MagicMock()
     ses_mock.send_email.return_value = {
@@ -120,4 +170,3 @@ def test_error_reporter_send_email_falla(monkeypatch):
         )
         is False
     )
-
