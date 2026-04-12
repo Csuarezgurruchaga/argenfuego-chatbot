@@ -537,7 +537,11 @@ Responde con el número de la opción que necesitas 📱"""
 
         return meta_whatsapp_service.send_interactive_buttons(
             numero_telefono,
-            body_text="¿Necesitás un equipo nuevo o mantenimiento?",
+            body_text=(
+                "Te voy a hacer unas preguntas rápidas para armar tu solicitud 📝\n"
+                "Después un asesor te contacta con tu presupuesto.\n\n"
+                "¿Necesitás un equipo nuevo o mantenimiento?"
+            ),
             buttons=list(ChatbotRules.PRESUPUESTO_SERVICIO_BUTTONS),
         )
 
@@ -1384,6 +1388,8 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def _get_presupuesto_service_prompt_fallback() -> str:
         return (
+            "Te voy a hacer unas preguntas rápidas para armar tu solicitud 📝\n"
+            "Después un asesor te contacta con tu presupuesto.\n\n"
             "¿Necesitás un equipo nuevo o mantenimiento?\n"
             "1. Equipo nuevo\n"
             "2. Mantenimiento"

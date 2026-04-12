@@ -94,7 +94,9 @@ def test_extintor_pq_products_show_72h_and_hug_emoji(meta_spy, producto_id):
     assert any("72h" in call["message"] for call in meta_spy["texts"])
     assert any("Hipólito Yrigoyen 2020" in call["message"] for call in meta_spy["texts"])
     assert any("Te esperamos! 🤗" in call["message"] for call in meta_spy["texts"])
-    assert meta_spy["buttons"][-1]["body_text"] == "¿Necesitás un equipo nuevo o mantenimiento?"
+    assert "Te voy a hacer unas preguntas rápidas para armar tu solicitud" in meta_spy["buttons"][-1]["body_text"]
+    assert "Después un asesor te contacta con tu presupuesto." in meta_spy["buttons"][-1]["body_text"]
+    assert "¿Necesitás un equipo nuevo o mantenimiento?" in meta_spy["buttons"][-1]["body_text"]
     assert [button["title"] for button in meta_spy["buttons"][-1]["buttons"]] == ["Equipo nuevo", "Mantenimiento"]
 
 
