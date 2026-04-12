@@ -117,10 +117,10 @@ class ChatbotRules:
         },
     )
     EXTINTOR_PRODUCT_ROWS = (
-        {"id": "extintor_vehicular_1kg", "title": "Vehicular (1 kg)", "capacidad": "1 kg", "tipo": "PQ (ABC)", "plazo": "24h", "detalle_plazo": "*Según disponibilidad del taller."},
-        {"id": "extintor_pq_5kg", "title": "Extintor 5kg PQ (ABC)", "capacidad": "5 kg", "tipo": "PQ (ABC)", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller."},
-        {"id": "extintor_pq_10kg", "title": "Extintor 10kg PQ (ABC)", "capacidad": "10 kg", "tipo": "PQ (ABC)", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller."},
-        {"id": "extintor_co2_5kg", "title": "Extintor 5kg CO2 (BC)", "capacidad": "5 kg", "tipo": "CO2 (BC)", "plazo": "72h", "detalle_plazo": "*Según disponibilidad del taller y vigencia de la PH."},
+        {"id": "extintor_vehicular_1kg", "title": "Vehicular (1 kg)", "capacidad": "1 kg", "tipo": "PQ (ABC)", "plazo_texto": "en el momento o en un plazo de 24h", "detalle_plazo": "*Según disponibilidad del taller."},
+        {"id": "extintor_pq_5kg", "title": "Extintor 5kg PQ (ABC)", "capacidad": "5 kg", "tipo": "PQ (ABC)", "plazo_texto": "en un plazo de 72h", "detalle_plazo": "*Según disponibilidad del taller."},
+        {"id": "extintor_pq_10kg", "title": "Extintor 10kg PQ (ABC)", "capacidad": "10 kg", "tipo": "PQ (ABC)", "plazo_texto": "en un plazo de 72h", "detalle_plazo": "*Según disponibilidad del taller."},
+        {"id": "extintor_co2_5kg", "title": "Extintor 5kg CO2 (BC)", "capacidad": "5 kg", "tipo": "CO2 (BC)", "plazo_texto": "en un plazo de 72h", "detalle_plazo": "*Según disponibilidad del taller y vigencia de la PH."},
         {"id": "extintor_otro", "title": "Otro"},
     )
     PRESUPUESTO_CONTACT_BUTTONS = (
@@ -1039,7 +1039,7 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def _get_extintor_info_message(producto: dict) -> str:
         return (
-            f"Las recargas normalmente se realizan en el momento o en un plazo de {producto['plazo']}.\n"
+            f"Las recargas normalmente se realizan {producto['plazo_texto']}.\n"
             f"{producto['detalle_plazo']}\n\n"
             f"Podés encontrarnos en {ChatbotRules._get_company_address()}"
         )
