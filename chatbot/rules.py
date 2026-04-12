@@ -141,6 +141,7 @@ class ChatbotRules:
         {"id": "presupuesto_add_ifci", "title": "IFCI"},
         {"id": "presupuesto_continuar", "title": "No, continuar"},
     )
+    PRESUPUESTO_MAX_DISTINCT_ITEMS = 10
     PRESUPUESTO_CORRECCION_SECCION_BUTTONS = (
         {"id": "presupuesto_corregir_contacto", "title": "Contacto"},
         {"id": "presupuesto_corregir_productos", "title": "Productos"},
@@ -579,7 +580,7 @@ Responde con el número de la opción que necesitas 📱"""
         buttons = ChatbotRules._get_presupuesto_agregar_otro_buttons(numero_telefono)
         return meta_whatsapp_service.send_interactive_buttons(
             numero_telefono,
-            body_text="¿Querés agregar otro producto o continuar con tus datos de contacto?",
+            body_text=ChatbotRules._get_presupuesto_agregar_otro_body_text(numero_telefono),
             buttons=buttons,
         )
 
@@ -829,6 +830,14 @@ Responde con el número de la opción que necesitas 📱"""
         return bool(ChatbotRules._get_presupuesto_items(numero_telefono))
 
     @staticmethod
+    def _presupuesto_distinct_item_count(numero_telefono: str) -> int:
+        return len(ChatbotRules._get_presupuesto_items(numero_telefono))
+
+    @staticmethod
+    def _presupuesto_reached_max_distinct_items(numero_telefono: str) -> bool:
+        return ChatbotRules._presupuesto_distinct_item_count(numero_telefono) >= ChatbotRules.PRESUPUESTO_MAX_DISTINCT_ITEMS
+
+    @staticmethod
     def _presupuesto_has_ifci(numero_telefono: str) -> bool:
         return any(item.get("kind") == "ifci" for item in ChatbotRules._get_presupuesto_items(numero_telefono))
 
@@ -847,10 +856,51 @@ Responde con el número de la opción que necesitas 📱"""
         return ChatbotRules._presupuesto_has_items(numero_telefono) or ChatbotRules._presupuesto_has_contact_progress(numero_telefono)
 
     @staticmethod
-    def _append_presupuesto_item(numero_telefono: str, item: dict) -> None:
+    def _append_presupuesto_item(numero_telefono: str, item: dict) -> dict:
         items = ChatbotRules._get_presupuesto_items(numero_telefono)
+        if item.get("kind") == "extintor":
+            for index, existing in enumerate(items):
+                if not ChatbotRules._extintor_items_are_mergeable(existing, item):
+                    continue
+                merged = ChatbotRules._merge_extintor_items(existing, item)
+                items[index] = merged
+                ChatbotRules._set_presupuesto_items(numero_telefono, items)
+                return merged
+        if ChatbotRules._presupuesto_reached_max_distinct_items(numero_telefono):
+            raise ValueError("presupuesto_max_distinct_items_reached")
         items.append(item)
         ChatbotRules._set_presupuesto_items(numero_telefono, items)
+        return item
+
+    @staticmethod
+    def _extintor_items_are_mergeable(existing: dict, incoming: dict) -> bool:
+        if existing.get("kind") != "extintor" or incoming.get("kind") != "extintor":
+            return False
+        existing_details = existing.get("details", {})
+        incoming_details = incoming.get("details", {})
+        return (
+            existing_details.get("producto_id") == incoming_details.get("producto_id")
+            and existing_details.get("capacidad") == incoming_details.get("capacidad")
+            and existing_details.get("tipo") == incoming_details.get("tipo")
+            and existing_details.get("servicio") == incoming_details.get("servicio")
+        )
+
+    @staticmethod
+    def _render_extintor_summary_from_details(details: dict) -> str:
+        cantidad = str(details.get("cantidad", "")).strip()
+        tipo_accion = "Compra" if details.get("servicio") == "compra" else "Mantenimiento"
+        unidad = "extintor" if cantidad == "1" else "extintores"
+        return f"{tipo_accion} de {cantidad} {unidad} de {details.get('capacidad')} {details.get('tipo')}."
+
+    @staticmethod
+    def _merge_extintor_items(existing: dict, incoming: dict) -> dict:
+        merged = {"kind": "extintor", "summary": existing.get("summary", ""), "details": dict(existing.get("details", {}))}
+        merged_quantity = int(str(existing.get("details", {}).get("cantidad", "0"))) + int(
+            str(incoming.get("details", {}).get("cantidad", "0"))
+        )
+        merged["details"]["cantidad"] = str(merged_quantity)
+        merged["summary"] = ChatbotRules._render_extintor_summary_from_details(merged["details"])
+        return merged
 
     @staticmethod
     def _remove_presupuesto_item(numero_telefono: str, index: int) -> Optional[dict]:
@@ -908,12 +958,25 @@ Responde con el número de la opción que necesitas 📱"""
             dict(button)
             for button in ChatbotRules.PRESUPUESTO_AGREGAR_OTRO_BUTTONS
             if button["id"] != "presupuesto_add_ifci" or not ChatbotRules._presupuesto_has_ifci(numero_telefono)
+            if button["id"] != "presupuesto_add_ifci" or not ChatbotRules._presupuesto_reached_max_distinct_items(numero_telefono)
         ]
 
     @staticmethod
+    def _get_presupuesto_agregar_otro_body_text(numero_telefono: str) -> str:
+        if ChatbotRules._presupuesto_reached_max_distinct_items(numero_telefono):
+            return (
+                f"Ya cargaste el máximo de {ChatbotRules.PRESUPUESTO_MAX_DISTINCT_ITEMS} productos distintos "
+                "para esta solicitud.\n\n"
+                "Si necesitás sumar más cantidad a un extintor ya cargado, podés volver a elegirlo. "
+                "Si no, continuá con tus datos de contacto."
+            )
+        return "¿Querés agregar otro producto o continuar con tus datos de contacto?"
+
+    @staticmethod
     def _build_presupuesto_product_edit_rows(numero_telefono: str) -> list:
-        rows = [{"id": "presupuesto_productos_agregar_extintores", "title": "Agregar Extintores"}]
-        if not ChatbotRules._presupuesto_has_ifci(numero_telefono):
+        rows = []
+        rows.append({"id": "presupuesto_productos_agregar_extintores", "title": "Agregar Extintores"})
+        if not ChatbotRules._presupuesto_has_ifci(numero_telefono) and not ChatbotRules._presupuesto_reached_max_distinct_items(numero_telefono):
             rows.append({"id": "presupuesto_productos_agregar_ifci", "title": "Agregar IFCI"})
         rows.extend(
             [
@@ -1028,6 +1091,11 @@ Responde con el número de la opción que necesitas 📱"""
 
     @staticmethod
     def _start_ifci_flow(numero_telefono: str) -> str:
+        if ChatbotRules._presupuesto_reached_max_distinct_items(numero_telefono):
+            return ChatbotRules._start_presupuesto_add_more(
+                numero_telefono,
+                f"Ya cargaste el máximo de {ChatbotRules.PRESUPUESTO_MAX_DISTINCT_ITEMS} productos distintos en esta solicitud.",
+            )
         ChatbotRules._clear_presupuesto_draft(numero_telefono)
         conversation_manager.set_datos_temporales(numero_telefono, "_ifci_flow", "1")
         return ChatbotRules._start_ifci_questions(numero_telefono)
@@ -1120,15 +1188,17 @@ Responde con el número de la opción que necesitas 📱"""
     @staticmethod
     def _start_presupuesto_add_more(numero_telefono: str, prefix: str = "") -> str:
         conversation_manager.update_estado(numero_telefono, EstadoConversacion.PRESUPUESTO_AGREGAR_OTRO)
-        base_message = "¿Querés agregar otro producto o continuar con tus datos de contacto?"
+        base_message = ChatbotRules._get_presupuesto_agregar_otro_body_text(numero_telefono)
         message = f"{prefix}\n\n{base_message}" if prefix else base_message
         if prefix:
             if ChatbotRules._send_text_and_followup(numero_telefono, prefix, lambda: ChatbotRules.send_presupuesto_agregar_otro_buttons(numero_telefono)):
                 return ""
         elif ChatbotRules.send_presupuesto_agregar_otro_buttons(numero_telefono):
             return ""
-        options = ["- Extintores"]
-        if not ChatbotRules._presupuesto_has_ifci(numero_telefono):
+        options = []
+        if not ChatbotRules._presupuesto_reached_max_distinct_items(numero_telefono):
+            options.append("- Extintores")
+        if not ChatbotRules._presupuesto_has_ifci(numero_telefono) and not ChatbotRules._presupuesto_reached_max_distinct_items(numero_telefono):
             options.append("- IFCI")
         options.append("- No, continuar")
         return f"{message}\n" + "\n".join(options)
@@ -1404,6 +1474,11 @@ Responde con el número de la opción que necesitas 📱"""
     def _finalize_ifci_confirmation(numero_telefono: str, prefix: str = "") -> str:
         item = ChatbotRules._build_ifci_item(numero_telefono)
         existing_items = [existing for existing in ChatbotRules._get_presupuesto_items(numero_telefono) if existing.get("kind") != "ifci"]
+        if len(existing_items) >= ChatbotRules.PRESUPUESTO_MAX_DISTINCT_ITEMS:
+            return ChatbotRules._start_presupuesto_add_more(
+                numero_telefono,
+                f"Ya cargaste el máximo de {ChatbotRules.PRESUPUESTO_MAX_DISTINCT_ITEMS} productos distintos en esta solicitud.",
+            )
         existing_items.append(item)
         ChatbotRules._set_presupuesto_items(numero_telefono, existing_items)
         ChatbotRules._clear_presupuesto_draft(numero_telefono)
@@ -1421,11 +1496,17 @@ Responde con el número de la opción que necesitas 📱"""
         item = ChatbotRules._build_extintor_item(numero_telefono)
         if not item:
             return "❌ No pude armar ese producto. Intentá nuevamente."
-        ChatbotRules._append_presupuesto_item(numero_telefono, item)
+        try:
+            saved_item = ChatbotRules._append_presupuesto_item(numero_telefono, item)
+        except ValueError:
+            return ChatbotRules._start_presupuesto_add_more(
+                numero_telefono,
+                f"Ya cargaste el máximo de {ChatbotRules.PRESUPUESTO_MAX_DISTINCT_ITEMS} productos distintos en esta solicitud.",
+            )
         ChatbotRules._clear_presupuesto_draft(numero_telefono)
         return ChatbotRules._start_presupuesto_add_more(
             numero_telefono,
-            f"✅ Perfecto. Agregué este producto a tu solicitud:\n- {item['summary']}",
+            f"✅ Perfecto. Agregué este producto a tu solicitud:\n- {saved_item['summary']}",
         )
     
     @staticmethod

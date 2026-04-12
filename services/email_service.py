@@ -125,7 +125,9 @@ class EmailService:
             TipoConsulta.URGENCIA: "Urgencia",
             TipoConsulta.OTRAS: "Consulta General"
         }
-        descripcion_html = html.escape(conversacion.datos_contacto.descripcion).replace("\n", "<br>")
+        email_value = html.escape(str(conversacion.datos_contacto.email))
+        phone_value = html.escape(conversacion.numero_telefono)
+        phone_href = html.escape(conversacion.numero_telefono.replace("+", ""))
         
         urgencia_style = ""
         if conversacion.tipo_consulta == TipoConsulta.URGENCIA:
@@ -165,8 +167,8 @@ class EmailService:
                         <tr>
                             <td style="padding: 8px 0; font-weight: bold; color: #374151; width: 30%;">📧 Email:</td>
                             <td style="padding: 8px 0; color: #1f2937;">
-                                <a href="mailto:{conversacion.datos_contacto.email}" style="color: #2563eb; text-decoration: none;">
-                                    {conversacion.datos_contacto.email}
+                                <a href="mailto:{email_value}" style="color: #2563eb; text-decoration: none;">
+                                    {email_value}
                                 </a>
                             </td>
                         </tr>"""
@@ -176,51 +178,46 @@ class EmailService:
             # Razón social (si existe)
             razon_social = getattr(conversacion.datos_contacto, "razon_social", None)
             if razon_social:
+                razon_social_value = html.escape(razon_social)
                 html_template += f"""
                         <tr style="background-color: #ffffff;">
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 Razón social:</td>
-                            <td style="padding: 8px 0; color: #1f2937;">{razon_social}</td>
+                            <td style="padding: 8px 0; color: #1f2937;">{razon_social_value}</td>
                         </tr>"""
 
             # CUIT (si existe)
             cuit = getattr(conversacion.datos_contacto, "cuit", None)
             if cuit:
+                cuit_value = html.escape(cuit)
                 html_template += f"""
                         <tr style="background-color: #f9fafb;">
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">🧾 CUIT:</td>
-                            <td style="padding: 8px 0; color: #1f2937;">{cuit}</td>
+                            <td style="padding: 8px 0; color: #1f2937;">{cuit_value}</td>
                         </tr>"""
 
+            direccion_value = html.escape(conversacion.datos_contacto.direccion)
+            horario_value = html.escape(conversacion.datos_contacto.horario_visita)
             html_template += f"""
                         <tr style="background-color: #f9fafb;">
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">📍 Dirección:</td>
-                            <td style="padding: 8px 0; color: #1f2937;">{conversacion.datos_contacto.direccion}</td>
+                            <td style="padding: 8px 0; color: #1f2937;">{direccion_value}</td>
                         </tr>
                         <tr>
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">🕒 Horario de visita:</td>
-                            <td style="padding: 8px 0; color: #1f2937;">{conversacion.datos_contacto.horario_visita}</td>
+                            <td style="padding: 8px 0; color: #1f2937;">{horario_value}</td>
                         </tr>"""
 
         html_template += f"""
                         <tr style="background-color: #f9fafb;">
                             <td style="padding: 8px 0; font-weight: bold; color: #374151;">📱 WhatsApp:</td>
                             <td style="padding: 8px 0; color: #1f2937;">
-                                <a href="https://wa.me/{conversacion.numero_telefono.replace('+', '')}" style="color: #059669; text-decoration: none;">
-                                    {conversacion.numero_telefono}
+                                <a href="https://wa.me/{phone_href}" style="color: #059669; text-decoration: none;">
+                                    {phone_value}
                                 </a>
                             </td>
                         </tr>
                     </table>
-                    
-                    <h3 style="color: #1f2937; border-bottom: 2px solid #f59e0b; padding-bottom: 5px; margin-top: 30px;">
-                        📝 Descripción de la Necesidad
-                    </h3>
-                    
-                    <div style="background-color: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 15px; margin: 15px 0; border-radius: 0 8px 8px 0;">
-                        <p style="margin: 0; color: #1f2937; font-style: italic;">
-                            "{descripcion_html}"
-                        </p>
-                    </div>
+                    {self._build_need_section_html(conversacion)}
                     
                 </div>
                 
@@ -247,5 +244,91 @@ class EmailService:
         """
         
         return html_template
+
+    def _build_need_section_html(self, conversacion: ConversacionData) -> str:
+        descripcion = conversacion.datos_contacto.descripcion
+        if conversacion.tipo_consulta == TipoConsulta.PRESUPUESTO:
+            rendered = self._render_presupuesto_description_html(descripcion)
+            if rendered:
+                return f"""
+                    <h3 style="color: #1f2937; border-bottom: 2px solid #f59e0b; padding-bottom: 5px; margin-top: 30px;">
+                        🧯 Productos solicitados
+                    </h3>
+
+                    <div style="margin: 15px 0;">
+                        {rendered}
+                    </div>
+                """
+        descripcion_html = html.escape(descripcion).replace("\n", "<br>")
+        return f"""
+                    <h3 style="color: #1f2937; border-bottom: 2px solid #f59e0b; padding-bottom: 5px; margin-top: 30px;">
+                        📝 Descripción de la Necesidad
+                    </h3>
+                    <div style="background-color: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 15px; margin: 15px 0; border-radius: 0 8px 8px 0;">
+                        <p style="margin: 0; color: #1f2937; font-style: italic;">
+                            "{descripcion_html}"
+                        </p>
+                    </div>
+                """
+
+    def _render_presupuesto_description_html(self, descripcion: str) -> str:
+        items = self._parse_presupuesto_description(descripcion)
+        if not items:
+            return ""
+
+        blocks = []
+        for index, item in enumerate(items, start=1):
+            details_html = ""
+            if item["details"]:
+                detail_items = "".join(
+                    f"<li style=\"margin: 0 0 6px 0;\">{html.escape(detail)}</li>"
+                    for detail in item["details"]
+                )
+                details_html = f"""
+                    <ul style="margin: 10px 0 0 18px; padding: 0; color: #374151;">
+                        {detail_items}
+                    </ul>
+                """
+
+            blocks.append(
+                f"""
+                <div style="background-color: #f0f9ff; border: 1px solid #dbeafe; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px;">
+                    <div style="color: #0f172a; font-weight: 700; margin: 0;">
+                        {index}. {html.escape(item["title"])}
+                    </div>
+                    {details_html}
+                </div>
+                """
+            )
+
+        return "".join(blocks)
+
+    def _parse_presupuesto_description(self, descripcion: str) -> list[dict]:
+        items = []
+        current = None
+
+        for raw_line in descripcion.splitlines():
+            line = raw_line.rstrip()
+            if not line.strip():
+                continue
+
+            stripped = line.lstrip()
+            if stripped.startswith("- "):
+                is_nested = len(line) - len(stripped) > 0
+                content = stripped[2:].strip()
+                if is_nested:
+                    if current is None:
+                        return []
+                    current["details"].append(content)
+                    continue
+                current = {"title": content, "details": []}
+                items.append(current)
+                continue
+
+            if current is None:
+                return []
+            current["details"].append(stripped)
+
+        return items
 
 email_service = EmailService()

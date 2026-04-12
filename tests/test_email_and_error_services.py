@@ -29,6 +29,31 @@ def _build_conversacion(tipo: TipoConsulta = TipoConsulta.PRESUPUESTO) -> Conver
     )
 
 
+def _build_multi_producto_conversacion() -> ConversacionData:
+    datos = DatosContacto(
+        email="lead@example.com",
+        direccion="Calle Falsa 123",
+        horario_visita="Lunes 9-12",
+        descripcion=(
+            "- Compra de 1 extintor de 1 kg PQ (ABC).\n"
+            "- Consulta IFCI (Hidrantes)\n"
+            "  - Nivel de instalación: No sé\n"
+            "  - Cantidad de hidrantes: No sé\n"
+            "  - Pisos / subsuelo / estacionamiento: PB y 1 piso\n"
+            "  - Detectores de humo: No\n"
+            "  - Plano de incendio: Sí"
+        ),
+        razon_social="Empresa de Prueba SA",
+        cuit="30-12345678-9",
+    )
+    return ConversacionData(
+        numero_telefono="+5491112345678",
+        estado=EstadoConversacion.ENVIANDO,
+        tipo_consulta=TipoConsulta.PRESUPUESTO,
+        datos_contacto=datos,
+    )
+
+
 def _mock_profile():
     return {
         "email_bot": "bot@example.com",
@@ -125,6 +150,58 @@ def test_email_service_ignora_overrides_vacios(monkeypatch):
     kwargs = ses_mock.send_email.call_args.kwargs
     assert "bot@example.com" in kwargs["Source"]
     assert kwargs["Destination"]["ToAddresses"] == ["ventas@example.com"]
+
+
+def test_email_service_renderiza_presupuesto_multi_producto_como_bloques_html(monkeypatch):
+    mock_boto3 = MagicMock()
+    monkeypatch.setattr(email_module, "boto3", mock_boto3)
+    monkeypatch.setattr(email_module, "get_active_company_profile", _mock_profile)
+
+    service = email_module.EmailService()
+    html_output = service._generate_email_html(_build_multi_producto_conversacion())
+
+    assert "🧯 Productos solicitados" in html_output
+    assert "📝 Descripción de la Necesidad" not in html_output
+    assert '1. Compra de 1 extintor de 1 kg PQ (ABC).' in html_output
+    assert '2. Consulta IFCI (Hidrantes)' in html_output
+    assert '<ul style="margin: 10px 0 0 18px; padding: 0; color: #374151;">' in html_output
+    assert 'Nivel de instalación: No sé' in html_output
+    assert '"- Compra de 1 extintor' not in html_output
+
+
+def test_email_service_mantiene_bloque_legacy_para_consultas_no_presupuesto(monkeypatch):
+    mock_boto3 = MagicMock()
+    monkeypatch.setattr(email_module, "boto3", mock_boto3)
+    monkeypatch.setattr(email_module, "get_active_company_profile", _mock_profile)
+
+    service = email_module.EmailService()
+    html_output = service._generate_email_html(_build_conversacion(TipoConsulta.OTRAS))
+
+    assert "📝 Descripción de la Necesidad" in html_output
+    assert "🧯 Productos solicitados" not in html_output
+    assert '"Necesito un presupuesto completo para planta industrial."' in html_output
+
+
+def test_email_service_escapa_campos_usuario_en_html(monkeypatch):
+    mock_boto3 = MagicMock()
+    monkeypatch.setattr(email_module, "boto3", mock_boto3)
+    monkeypatch.setattr(email_module, "get_active_company_profile", _mock_profile)
+
+    conversacion = _build_conversacion()
+    conversacion.datos_contacto.razon_social = '<b onclick="x">Empresa</b>'
+    conversacion.datos_contacto.cuit = '<script>alert(1)</script>'
+    conversacion.datos_contacto.direccion = 'Calle <i>123</i>'
+    conversacion.datos_contacto.horario_visita = '9 < 18'
+    conversacion.numero_telefono = '+54911<234>'
+
+    service = email_module.EmailService()
+    html_output = service._generate_email_html(conversacion)
+
+    assert '&lt;b onclick=&quot;x&quot;&gt;Empresa&lt;/b&gt;' in html_output
+    assert '&lt;script&gt;alert(1)&lt;/script&gt;' in html_output
+    assert 'Calle &lt;i&gt;123&lt;/i&gt;' in html_output
+    assert '9 &lt; 18' in html_output
+    assert '+54911&lt;234&gt;' in html_output
 
 
 def test_error_reporter_send_email_exitoso(monkeypatch):

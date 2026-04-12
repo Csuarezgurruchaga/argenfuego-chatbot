@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main as main_module
-from chatbot.models import EstadoConversacion
+from chatbot.models import EstadoConversacion, TipoConsulta
 from chatbot.rules import ChatbotRules
 from chatbot.states import conversation_manager
 from main import app, handle_interactive_button
@@ -374,6 +374,136 @@ def test_presupuesto_delete_picker_sends_full_numbered_context_before_list(meta_
     assert meta_spy["lists"][-1]["footer_text"] == "Seleccioná un número"
 
 
+def test_presupuesto_merges_identical_extintor_items_in_single_row(meta_spy):
+    numero = "+5491100000026"
+
+    ChatbotRules.procesar_mensaje(numero, "hola", "Nora")
+    asyncio.run(handle_interactive_button(numero, "presupuesto", "Nora"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_extintores", "Nora"))
+    asyncio.run(handle_interactive_button(numero, "extintor_vehicular_1kg", "Nora"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_compra", "Nora"))
+    asyncio.run(handle_interactive_button(numero, "cantidad_1", "Nora"))
+
+    asyncio.run(handle_interactive_button(numero, "presupuesto_add_extintores", "Nora"))
+    asyncio.run(handle_interactive_button(numero, "extintor_vehicular_1kg", "Nora"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_compra", "Nora"))
+    asyncio.run(handle_interactive_button(numero, "cantidad_2", "Nora"))
+
+    items = conversation_manager.get_conversacion(numero).datos_temporales["_presupuesto_items"]
+    assert len(items) == 1
+    assert items[0]["summary"] == "Compra de 3 extintores de 1 kg PQ (ABC)."
+    assert "Compra de 3 extintores de 1 kg PQ (ABC)." in meta_spy["texts"][-1]["message"]
+
+    asyncio.run(handle_interactive_button(numero, "presupuesto_continuar", "Nora"))
+    ChatbotRules.procesar_mensaje(numero, "nora@empresa.com")
+    ChatbotRules.procesar_mensaje(numero, "Av. Directorio 200, CABA")
+    ChatbotRules.procesar_mensaje(numero, "9 a 18")
+    ChatbotRules.procesar_mensaje(numero, "Nora SA")
+    ChatbotRules.procesar_mensaje(numero, "27-12345678-9")
+    asyncio.run(handle_interactive_button(numero, "no", "Nora"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_corregir_productos", "Nora"))
+    response = ChatbotRules.procesar_mensaje(numero, "3")
+
+    assert response == ""
+    assert [row["title"] for row in meta_spy["lists"][-1]["sections"][0]["rows"]] == ["1"]
+    assert "1. Compra de 3 extintores de 1 kg PQ (ABC)." in meta_spy["texts"][-1]["message"]
+
+
+def test_presupuesto_max_distinct_items_blocks_more_additions(meta_spy):
+    numero = "+5491100000027"
+
+    ChatbotRules.procesar_mensaje(numero, "hola", "Tina")
+    conversation_manager.set_tipo_consulta(numero, TipoConsulta.PRESUPUESTO)
+    conversation_manager.set_datos_temporales(
+        numero,
+        "_presupuesto_items",
+        [
+            {
+                "kind": "extintor",
+                "summary": f"Compra de {index} extintores de {index} kg PQ (ABC).",
+                "details": {
+                    "producto_id": f"extintor_custom_{index}",
+                    "capacidad": f"{index} kg",
+                    "tipo": "PQ (ABC)",
+                    "servicio": "compra",
+                    "cantidad": str(index),
+                },
+            }
+            for index in range(1, ChatbotRules.PRESUPUESTO_MAX_DISTINCT_ITEMS + 1)
+        ],
+    )
+    conversation_manager.update_estado(numero, EstadoConversacion.PRESUPUESTO_AGREGAR_OTRO)
+
+    response = ChatbotRules.procesar_mensaje(numero, "presupuesto_add_extintores")
+
+    assert response == ""
+    assert conversation_manager.get_conversacion(numero).estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_TIPO
+
+    response = ChatbotRules._send_presupuesto_productos_correccion(numero)
+    assert response == ""
+
+    row_ids = [row["id"] for row in meta_spy["lists"][-1]["sections"][0]["rows"]]
+    assert "presupuesto_productos_agregar_extintores" in row_ids
+    assert "presupuesto_productos_agregar_ifci" not in row_ids
+    assert "presupuesto_productos_borrar" in row_ids
+
+    ChatbotRules._start_presupuesto_add_more(numero)
+    assert "máximo de 10 productos distintos" in meta_spy["buttons"][-1]["body_text"]
+    assert "sumar más cantidad a un extintor ya cargado" in meta_spy["buttons"][-1]["body_text"]
+
+
+def test_presupuesto_max_distinct_items_still_allows_merging_existing_extintor(meta_spy):
+    numero = "+5491100000029"
+
+    ChatbotRules.procesar_mensaje(numero, "hola", "Tina")
+    conversation_manager.set_tipo_consulta(numero, TipoConsulta.PRESUPUESTO)
+    conversation_manager.set_datos_temporales(
+        numero,
+        "_presupuesto_items",
+        [
+            {
+                "kind": "extintor",
+                "summary": "Compra de 1 extintor de 1 kg PQ (ABC).",
+                "details": {
+                    "producto_id": "extintor_vehicular_1kg",
+                    "capacidad": "1 kg",
+                    "tipo": "PQ (ABC)",
+                    "servicio": "compra",
+                    "cantidad": "1",
+                },
+            }
+        ]
+        + [
+            {
+                "kind": "extintor",
+                "summary": f"Compra de {index} extintores de {index} kg PQ (ABC).",
+                "details": {
+                    "producto_id": f"extintor_custom_{index}",
+                    "capacidad": f"{index} kg",
+                    "tipo": "PQ (ABC)",
+                    "servicio": "compra",
+                    "cantidad": str(index),
+                },
+            }
+            for index in range(2, ChatbotRules.PRESUPUESTO_MAX_DISTINCT_ITEMS + 1)
+        ],
+    )
+    conversation_manager.update_estado(numero, EstadoConversacion.PRESUPUESTO_AGREGAR_OTRO)
+
+    response = ChatbotRules.procesar_mensaje(numero, "presupuesto_add_extintores")
+    assert response == ""
+    assert conversation_manager.get_conversacion(numero).estado == EstadoConversacion.PRESUPUESTO_EXTINTOR_TIPO
+
+    asyncio.run(handle_interactive_button(numero, "extintor_vehicular_1kg", "Tina"))
+    asyncio.run(handle_interactive_button(numero, "presupuesto_compra", "Tina"))
+    asyncio.run(handle_interactive_button(numero, "cantidad_2", "Tina"))
+
+    items = conversation_manager.get_conversacion(numero).datos_temporales["_presupuesto_items"]
+    assert len(items) == ChatbotRules.PRESUPUESTO_MAX_DISTINCT_ITEMS
+    assert items[0]["summary"] == "Compra de 3 extintores de 1 kg PQ (ABC)."
+    assert items[0]["details"]["cantidad"] == "3"
+
+
 def test_presupuesto_contact_correction_accepts_visible_text(meta_spy):
     numero = "+5491100000021"
 
@@ -593,6 +723,34 @@ def test_webhook_interactive_confirmacion_dispara_post_procesado(meta_spy, monke
     assert lead_calls == [numero_con_prefijo]
     assert any("Procesando tu solicitud" in call["message"] for call in meta_spy["texts"])
     assert any("Tu solicitud ha sido enviada exitosamente" in call["message"] for call in meta_spy["texts"])
+    assert numero_con_prefijo not in conversation_manager.conversaciones
+
+
+def test_webhook_interactive_confirmacion_con_error_de_email_finaliza_conversacion(meta_spy, monkeypatch):
+    numero = "5491100000028"
+    numero_con_prefijo = f"+{numero}"
+    client = TestClient(app)
+
+    monkeypatch.setattr(main_module.email_service, "enviar_lead_email", lambda conversacion: False)
+
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "hola", "Ana")
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "presupuesto", "Ana"))
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "presupuesto_extintores", "Ana"))
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "extintor_vehicular_1kg", "Ana"))
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "presupuesto_compra", "Ana"))
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "cantidad_2", "Ana"))
+    asyncio.run(handle_interactive_button(numero_con_prefijo, "presupuesto_continuar", "Ana"))
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "ana@empresa.com")
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "Av. Rivadavia 1234, CABA")
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "9 a 17")
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "ACME SA")
+    ChatbotRules.procesar_mensaje(numero_con_prefijo, "30-12345678-9")
+
+    response = _post_signed(client, _build_interactive_payload("si", numero, "button_reply"))
+
+    assert response.status_code == 200
+    assert any("Procesando tu solicitud" in call["message"] for call in meta_spy["texts"])
+    assert any("Hubo un error procesando tu solicitud" in call["message"] for call in meta_spy["texts"])
     assert numero_con_prefijo not in conversation_manager.conversaciones
 
 

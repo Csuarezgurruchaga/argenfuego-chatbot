@@ -46,6 +46,9 @@
 - La validación local ampliada posterior a esos fixes quedó en `pytest -q tests/test_presupuesto_flow.py tests/test_email_and_error_services.py tests/test_session_checkpoint_service.py` con `31 passed`.
 - Al 2026-04-12 quedó cerrada la navegación local `volver/atrás` del presupuesto multi-producto para builder, captura de contacto final y corrección; la review final ya no encontró findings nuevos.
 - La validación local final para este feature quedó en `pytest -q tests/test_presupuesto_flow.py tests/test_email_and_error_services.py tests/test_session_checkpoint_service.py` con `34 passed`.
+- También al 2026-04-12, el presupuesto multi-producto dejó robusto el picker de borrado: el tope operativo es `10` ítems distintos por solicitud, mientras que extintores idénticos se consolidan sumando cantidad en un único renglón para no consumir filas extra de Meta.
+- También al 2026-04-12, el email de `Presupuesto` dejó de renderizar multi-producto como una sola descripción textual: ahora usa una sección HTML `Productos solicitados` con bloques por ítem y sublista clara para IFCI, mientras que consultas no-presupuesto conservan el bloque legacy de descripción.
+- También al 2026-04-12, el tope de `10` ítems distintos no bloquea volver a elegir `Extintores`: se permite reingresar para sumar cantidad a un extintor ya existente y recién se rechaza al final si intentaba crear un undécimo ítem distinto; además, si falla SES, la conversación ya no queda trabada en `ENVIANDO` y se finaliza tras notificar el error al cliente.
 - Antes de extender otra vez este chatbot, cerrar cambios de flujo en el spec externo y no asumir que el flujo legacy de `hybrid-chatbot` se conserva automáticamente.
 
 ## Notas del entorno

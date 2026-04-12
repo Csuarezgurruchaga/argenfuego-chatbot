@@ -214,6 +214,7 @@ def _run_post_response_actions(numero_telefono: str, profile_name: str, mensaje_
 
     error_msg = "❌ Hubo un error procesando tu solicitud. Por favor intenta nuevamente más tarde."
     send_message(numero_telefono, error_msg)
+    conversation_manager.finalizar_conversacion(numero_telefono)
     logger.error(f"Error enviando email para {numero_telefono}")
 
 
