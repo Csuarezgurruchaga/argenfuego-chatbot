@@ -37,6 +37,15 @@
 - Al 2026-04-07, las respuestas de datos de contacto ya no usan OpenAI: salen de forma determinística desde `config/company_profiles.py` para evitar prompt-injection y copy inventado.
 - También al 2026-04-07, se eliminó la función de saludo personalizado con OpenAI; el saludo operativo de Eva queda únicamente por la ruta estática de `chatbot/rules.py`.
 - También al 2026-04-07, `requirements.txt` dejó de incluir `guardrails-*` porque no tenía usos en el repo y rompía el build limpio de Cloud Run por conflictos de dependencias.
+- Al 2026-04-11, `origin/main` quedó en `611ce0e` (`fix(chatbot): unblock lead email post-processing`): el webhook ahora ejecuta el post-procesado del lead también para confirmaciones interactivas `Sí`, y `services/email_service.py` soporta `LEAD_FROM_EMAIL` / `LEAD_TO_EMAIL` por entorno con logs más claros de SES.
+- También al 2026-04-11, Cloud Run `argenfuego-chatbot` en el proyecto `argenfuego` tenía ya activa la configuración `DISABLE_LEAD_EMAILS=false` y `LEAD_FROM_EMAIL=no-reply@eventually-ai.com.ar`, pero esa activación se verificó como cambio de configuración sobre la misma imagen previa.
+- Al 2026-04-11 quedó desplegado explícitamente `611ce0e` en Cloud Run mediante imagen `southamerica-west1-docker.pkg.dev/argenfuego/argenfuego-chatbot/argenfuego-chatbot@sha256:855edee47435b90faad963e6174902da533a51d230ffd5557b882f851cc54a18`, sirviendo 100% del tráfico en la revisión `argenfuego-chatbot-00010-znv`.
+- También al 2026-04-11 quedó implementada localmente la v1 de `Presupuesto` multi-producto guiado: `Extintores` e `IFCI` ahora arman primero una lista `_presupuesto_items`, piden contacto sólo al elegir `Continuar`, muestran `Productos solicitados` en el resumen y separan la corrección final entre `Contacto` y `Productos`.
+- Esa implementación multi-producto sigue sin commit al cierre de esta iteración, pero quedó validada localmente con `pytest -q tests/test_presupuesto_flow.py` (`18 passed`) y `pytest -q tests/test_email_and_error_services.py` (`6 passed`).
+- También al 2026-04-11 se corrigieron dos riesgos detectados por review antes del commit del feature: elegir `Otro` dentro del builder guiado ya no destruye `_presupuesto_items` ni contacto previo, y los estados nuevos del presupuesto multi-producto quedaron incluidos en la persistencia resumible de `conversation_session_service`.
+- La validación local ampliada posterior a esos fixes quedó en `pytest -q tests/test_presupuesto_flow.py tests/test_email_and_error_services.py tests/test_session_checkpoint_service.py` con `31 passed`.
+- Al 2026-04-12 quedó cerrada la navegación local `volver/atrás` del presupuesto multi-producto para builder, captura de contacto final y corrección; la review final ya no encontró findings nuevos.
+- La validación local final para este feature quedó en `pytest -q tests/test_presupuesto_flow.py tests/test_email_and_error_services.py tests/test_session_checkpoint_service.py` con `34 passed`.
 - Antes de extender otra vez este chatbot, cerrar cambios de flujo en el spec externo y no asumir que el flujo legacy de `hybrid-chatbot` se conserva automáticamente.
 
 ## Notas del entorno

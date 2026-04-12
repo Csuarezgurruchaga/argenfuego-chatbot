@@ -181,6 +181,8 @@ class ConversationManager:
         # Siempre empezamos con la descripción (motivo de la consulta)
         descripcion = datos_temp.get('descripcion')
         if descripcion is None:
+            if conversacion.tipo_consulta == TipoConsulta.PRESUPUESTO and datos_temp.get('_presupuesto_items'):
+                return 'email'
             return 'descripcion'
         
         # Después de la descripción, pedimos datos de contacto como opcionales

@@ -1191,24 +1191,8 @@ async def handle_interactive_button(numero_telefono: str, button_id: str, profil
             conversation_manager.finalizar_conversacion(numero_telefono)
             return "¡Gracias por contactarnos! 👋 Esperamos poder ayudarte en el futuro."
             
-        elif button_id == "si":
-            # Confirmar datos
-            if conversacion.estado == EstadoConversacion.CONFIRMANDO:
-                conversation_manager.update_estado(numero_telefono, EstadoConversacion.ENVIANDO)
-                return "⏳ Procesando tu solicitud..."
-            else:
-                return "No hay nada que confirmar en este momento."
-                
-        elif button_id == "no":
-            # Corregir datos
-            if conversacion.estado == EstadoConversacion.CONFIRMANDO:
-                if conversacion.datos_temporales.get("_ifci_flow"):
-                    conversation_manager.update_estado(numero_telefono, EstadoConversacion.IFCI_CORRIGIENDO)
-                    return ChatbotRules._get_ifci_correction_menu()
-                conversation_manager.update_estado(numero_telefono, EstadoConversacion.CORRIGIENDO)
-                return ChatbotRules._get_mensaje_pregunta_campo_a_corregir()
-            else:
-                return "No hay datos para corregir en este momento."
+        elif button_id in {"si", "no"}:
+            return ChatbotRules.procesar_mensaje(numero_telefono, button_id, profile_name)
                 
         elif button_id == "menu":
             # Volver al menú principal

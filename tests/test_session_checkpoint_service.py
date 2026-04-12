@@ -227,3 +227,16 @@ def test_cleanup_service_deletes_only_expired_checkpoints(monkeypatch):
     assert deleted_doc_ids == ["whatsapp:+5491111111111"]
     assert service.load("whatsapp", "+5491111111111") is None
     assert service.load("whatsapp", "+5491222222222") is not None
+
+
+def test_new_presupuesto_multi_states_are_resumable():
+    resumable_states = [
+        EstadoConversacion.PRESUPUESTO_AGREGAR_OTRO,
+        EstadoConversacion.PRESUPUESTO_CORRIGIENDO_SECCION,
+        EstadoConversacion.PRESUPUESTO_CORRIGIENDO_CONTACTO,
+        EstadoConversacion.PRESUPUESTO_PRODUCTOS_CORRIGIENDO,
+        EstadoConversacion.PRESUPUESTO_PRODUCTOS_BORRAR,
+    ]
+
+    for state in resumable_states:
+        assert session_module.conversation_session_service.is_resumable_state(state) is True

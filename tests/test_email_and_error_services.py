@@ -136,6 +136,7 @@ def test_error_reporter_send_email_exitoso(monkeypatch):
     mock_boto3 = MagicMock()
     mock_boto3.client.return_value = ses_mock
     monkeypatch.setattr(error_module, "boto3", mock_boto3)
+    monkeypatch.setenv("ERROR_LOG_EMAIL", "alerts@example.com")
 
     reporter = error_module.ErrorReporter()
     assert (
@@ -160,6 +161,7 @@ def test_error_reporter_send_email_falla(monkeypatch):
     mock_boto3 = MagicMock()
     mock_boto3.client.return_value = ses_mock
     monkeypatch.setattr(error_module, "boto3", mock_boto3)
+    monkeypatch.setenv("ERROR_LOG_EMAIL", "alerts@example.com")
 
     reporter = error_module.ErrorReporter()
     assert (
